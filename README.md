@@ -186,7 +186,7 @@ client/   Vite + three.js: scene, avatars, effects, input, HUD, character creati
 docs/     architecture, class reference, asset sources
 ```
 
-Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the pieces fit.
+Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the pieces fit, and [docs/WORLD.md](docs/WORLD.md) for the setting and story outline (spoilers).
 
 ## Roadmap
 
