@@ -102,6 +102,7 @@ When the server is not running with `NODE_ENV=production`, these chat commands h
 | --- | --- |
 | `deploy/update.sh` | On the server: pull, rebuild and restart the game (closes open worlds) |
 | `npm run build:offline` | Single-player build (game rules run in the page) into `client/dist-offline/` |
+| `npm run balance -w server` | Simulated fights per class and level (difficulty check) |
 | `npm run typecheck` | Type-check all three packages |
 | `npm test` | Unit tests for shared data/world/movement |
 | `npm run docs:classes` | Regenerate [docs/CLASSES.md](docs/CLASSES.md) from the class data |
@@ -160,7 +161,8 @@ screen to run full-screen (it ships a web app manifest).
   calling (base class), a **first memory** that secretly picks your background
   (revealed through memories at levels 3, 8 and 15), faith (flavour), and
   point-buy attributes. See [docs/CHARACTER_CREATION.md](docs/CHARACTER_CREATION.md).
-- **A level 1–5 starting zone** ([docs/VALLEY.md](docs/VALLEY.md)):
+- **A level 1–5 starting zone** ([docs/VALLEY.md](docs/VALLEY.md)), about
+  3 km x 4.5 km (10 minutes across, 15 end to end), streamed in chunks:
   - **Four hunting grounds**: Tusk Meadow (boars, 1–2), Greypine Wood (wolves,
     2–3), Webbed Hollow (spiders, 3–4) and the Thornbrake (thornlings, 4–5).
     Creatures have levels, and wolves, spiders and thornlings inflict
@@ -189,7 +191,7 @@ screen to run full-screen (it ships a web app manifest).
     Resting there heals you, makes you Well Rested (+15% XP) and brings every
     hunting ground back to full strength. You respawn at the camp once it's
     built.
-- **The starting valley**: a small forested valley (~100 m × 160 m) walled in by
+- **The starting valley**: a forested valley (~3 km × 4.5 km) walled in by
   mountains. A waterfall in the north cliffs feeds a pool and a winding stream
   (wading slows you down) that leaves through a gorge in the south. Worn trails
   lead from the clearing where you wake to three places you can't enter yet:

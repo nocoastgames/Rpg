@@ -2,35 +2,73 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateWorld, isFree, isInWater, resolveCollisions, type World } from "../src/world.ts";
 import { DUNGEON_CELL, dungeonSdf, inDungeon } from "../src/valley.ts";
-import { PASS_END, fromUV, landmarks, terrainHeight, valleySdf } from "../src/valley.ts";
+import { GUARD_POST, PASS_BLOCK, fromUV, landmarks, terrainHeight, valleySdf } from "../src/valley.ts";
+import { BASE_MOVE_SPEED } from "../src/constants.ts";
 
 const world = generateWorld(1337);
 
-/** Grid flood fill over walkable cells (0.5 m) from the spawn point. */
-function reachable(w: World): (x: number, z: number) => boolean {
-  const cell = 0.5;
-  const key = (i: number, j: number) => `${i},${j}`;
-  const seen = new Set<string>();
-  const si = Math.round(w.spawn.x / cell);
-  const sj = Math.round(w.spawn.z / cell);
-  const queue: Array<[number, number]> = [[si, sj]];
-  seen.add(key(si, sj));
-  while (queue.length) {
-    const [i, j] = queue.pop()!;
-    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+/**
+ * A* over 1 m cells with full collision (trees included): can a player walk
+ * from `from` to `to`? `limit` bounds the search (nodes expanded, and an
+ * optional radius around the start) so blocked routes fail fast.
+ */
+function pathExists(w: World, from: { x: number; z: number }, to: { x: number; z: number }, opts: { radius?: number; limit?: number } = {}): boolean {
+  const cell = 1;
+  const limit = opts.limit ?? 400_000;
+  const si = Math.round(from.x / cell);
+  const sj = Math.round(from.z / cell);
+  const ti = Math.round(to.x / cell);
+  const tj = Math.round(to.z / cell);
+  const key = (i: number, j: number) => (i + 10000) * 20011 + (j + 10000);
+  const g = new Map<number, number>([[key(si, sj), 0]]);
+  const heap: Array<[number, number, number]> = [[1.6 * Math.hypot(ti - si, tj - sj), si, sj]];
+  const push = (n: [number, number, number]) => {
+    heap.push(n);
+    let i = heap.length - 1;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (heap[p]![0] <= heap[i]![0]) break;
+      [heap[p], heap[i]] = [heap[i]!, heap[p]!];
+      i = p;
+    }
+  };
+  const pop = () => {
+    const top = heap[0]!;
+    const last = heap.pop()!;
+    if (heap.length) {
+      heap[0] = last;
+      let i = 0;
+      for (;;) {
+        const l = i * 2 + 1;
+        const r = l + 1;
+        let m = i;
+        if (l < heap.length && heap[l]![0] < heap[m]![0]) m = l;
+        if (r < heap.length && heap[r]![0] < heap[m]![0]) m = r;
+        if (m === i) break;
+        [heap[m], heap[i]] = [heap[i]!, heap[m]!];
+        i = m;
+      }
+    }
+    return top;
+  };
+  let expanded = 0;
+  while (heap.length && expanded++ < limit) {
+    const [, i, j] = pop();
+    if (Math.abs(i - ti) <= 2 && Math.abs(j - tj) <= 2) return true;
+    const gi = g.get(key(i, j))!;
+    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]] as const) {
       const ni = i + di;
       const nj = j + dj;
       const k = key(ni, nj);
-      if (seen.has(k)) continue;
+      const cost = gi + (di && dj ? Math.SQRT2 : 1);
+      if ((g.get(k) ?? Infinity) <= cost) continue;
+      if (opts.radius && Math.hypot(ni - si, nj - sj) > opts.radius) continue;
       if (!isFree(w, ni * cell, nj * cell, 0.45)) continue;
-      seen.add(k);
-      queue.push([ni, nj]);
+      g.set(k, cost);
+      push([cost + 1.6 * Math.hypot(ti - ni, tj - nj), ni, nj]);
     }
   }
-  return (x, z) => {
-    for (let di = -2; di <= 2; di++) for (let dj = -2; dj <= 2; dj++) if (seen.has(key(Math.round(x / cell) + di, Math.round(z / cell) + dj))) return true;
-    return false;
-  };
+  return false;
 }
 
 test("spawn is a dry free spot inside the valley, next to the stream", () => {
@@ -40,16 +78,18 @@ test("spawn is a dry free spot inside the valley, next to the stream", () => {
 });
 
 test("every landmark can be walked to from the spawn point", () => {
-  const canReach = reachable(world);
-  for (const l of landmarks()) if (!inDungeon(l.x, l.z)) assert.ok(canReach(l.x, l.z), `${l.id} is not reachable`);
+  for (const l of landmarks()) {
+    if (inDungeon(l.x, l.z)) continue;
+    // Gates (rockslide, thorns, sealed slab) are inspected from in front: aim for the landmark's own spot.
+    assert.ok(pathExists(world, world.spawn, l), `${l.id} is not reachable`);
+  }
 });
 
 test("the dungeon cell is far from the valley, walkable inside, and sealed", () => {
   const w = generateWorld(1337);
-  const canReach = reachable(w);
-  assert.ok(Math.hypot(DUNGEON_CELL.x, DUNGEON_CELL.z) > 400, "far away");
+  assert.ok(Math.hypot(DUNGEON_CELL.x, DUNGEON_CELL.z) > 6000, "far away");
   assert.ok(isFree(w, DUNGEON_CELL.x, DUNGEON_CELL.z), "you can stand in the cell");
-  assert.equal(canReach(DUNGEON_CELL.x, DUNGEON_CELL.z), false, "no walking there from the valley");
+  assert.equal(pathExists(w, DUNGEON_CELL, { x: DUNGEON_CELL.x + 30, z: DUNGEON_CELL.z }, { radius: 40 }), false, "no walking out of the cell");
   // Walls hold: pushing out of the cell ends up back inside.
   const out = resolveCollisions(w, DUNGEON_CELL.x + DUNGEON_CELL.halfW + 1, DUNGEON_CELL.z);
   assert.ok(out.x < DUNGEON_CELL.x + DUNGEON_CELL.halfW, "cell wall");
@@ -57,16 +97,35 @@ test("the dungeon cell is far from the valley, walkable inside, and sealed", () 
 });
 
 test("the pass is sealed while the gate is closed and walkable once opened", () => {
-  const end = fromUV(PASS_END.u - 3, PASS_END.v + 0.5);
-  assert.equal(reachable(world)(end.x, end.z), false, "pass should be blocked");
+  const before = fromUV(PASS_BLOCK.u - 25, PASS_BLOCK.v + 5);
+  const beyond = fromUV(GUARD_POST.u + 20, GUARD_POST.v - 4);
+  assert.equal(pathExists(world, before, beyond, { radius: 160 }), false, "pass should be blocked");
   const opened = generateWorld(1337);
   opened.openGates.add("valley_exit");
-  assert.equal(reachable(opened)(end.x, end.z), true, "pass should open");
+  assert.equal(pathExists(opened, before, beyond, { radius: 160 }), true, "pass should open");
+});
+
+test("the valley takes about 10 minutes to cross east to west and 15 north to south", () => {
+  const span = (dir: (t: number) => { x: number; z: number }) => {
+    let lo = 0;
+    let hi = 0;
+    for (let t = 0; t < 3500; t += 5) {
+      const a = dir(t);
+      const b = dir(-t);
+      if (valleySdf(a.x, a.z) > 0) hi = t;
+      if (valleySdf(b.x, b.z) > 0) lo = t;
+    }
+    return (lo + hi) / BASE_MOVE_SPEED / 60;
+  };
+  const ew = span((t) => fromUV(t, 0));
+  const ns = span((t) => fromUV(0, t));
+  assert.ok(ew >= 9.5 && ew <= 12, `east-west ${ew.toFixed(1)} min`);
+  assert.ok(ns >= 15 && ns <= 18, `north-south ${ns.toFixed(1)} min`);
 });
 
 test("mountains rise outside the valley and the valley floor stays low", () => {
   assert.ok(terrainHeight(world.spawn.x, world.spawn.z) < 2);
-  const peak = fromUV(-80, -40);
+  const peak = fromUV(-2300, -200);
   assert.ok(terrainHeight(peak.x, peak.z) > 12);
 });
 
@@ -90,7 +149,8 @@ test("starting zone content: a shrine per god, campsite, quest nodes, hunting gr
   }
   for (const n of w.nodes) assert.ok(isFree(w, n.x, n.z, 0.6) && !isInWater(n.x, n.z), n.id);
   // Zones cover levels 1-5 in order, with known enemies, and get tougher.
-  assert.deepEqual([ZONES[0]!.levels[0], ZONES[ZONES.length - 1]!.levels[1]], [1, 5]);
+  const grounds = ZONES.filter((z) => !z.ambient);
+  assert.deepEqual([Math.min(...grounds.map((z) => z.levels[0])), Math.max(...grounds.map((z) => z.levels[1]))], [1, 5]);
   for (const z of ZONES) for (const e of z.enemies) assert.ok(getEnemy(e.id), e.id);
   for (const def of ENEMIES) assert.ok(enemyStats(def, 5).maxHp > enemyStats(def, 1).maxHp);
 });

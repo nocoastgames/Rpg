@@ -99,6 +99,21 @@ whenever the hour changes, so a day/night cycle only needs to call
 **Art is optional.** See [ASSETS.md](ASSETS.md). Procedural placeholders are
 always available; glTF models are layered on through a manifest.
 
+## A big world: streaming
+
+The valley is about 3 km x 4.5 km. Nothing is generated or drawn all at once:
+
+- **Props and their colliders** (`shared/src/world.ts`) are generated per
+  32 m chunk the first time anything asks for them (`chunkProps`;
+  `collidersNear` makes sure the chunks around a collision query exist).
+  Server and client generate identical chunks from the seed.
+- **The client** draws one instanced mesh per prop kind, refilled with the
+  props within 75 m whenever you move 15 m. The ground is a 260 m terrain tile
+  that follows you and is rebuilt a few rows per frame. Creature models exist
+  only within 110 m. The map background is painted progressively.
+- **The server** keeps every creature, but those more than 200 m from all
+  players don't think or move, so they cost nothing on the network.
+
 ## Room logic and the single-player build
 
 `server/src/rooms/RoomLogic.ts` holds everything a world instance does

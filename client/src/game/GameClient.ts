@@ -76,6 +76,8 @@ interface Entity {
 type ScreenAim = { x: number; y: number; mag: number };
 
 const MOVE_RESEND_MS = 120;
+/** Creatures farther than this aren't drawn. */
+const ENEMY_DRAW_RADIUS = 110;
 const MOVE_DIR_MIN_INTERVAL = 50;
 const AUTO_ATTACK_REACQUIRE_MS = 350;
 const DISCOVERY_KEY = "rpg.discovered";
@@ -837,6 +839,9 @@ export class GameClient {
 
     const seenE = new Set<string>();
     state.enemies.forEach((e: EnemyView, id) => {
+      // Only creatures near you get a model (the valley holds hundreds).
+      const d = Math.hypot(e.x - this.pred.x, e.z - this.pred.z);
+      if (d > (this.enemies.has(id) ? ENEMY_DRAW_RADIUS + 20 : ENEMY_DRAW_RADIUS)) return;
       seenE.add(id);
       let ent = this.enemies.get(id);
       if (!ent) {

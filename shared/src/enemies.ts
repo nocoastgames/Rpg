@@ -98,7 +98,7 @@ export const ENEMIES: readonly EnemyDef[] = [
     attackRange: 1.6,
     attackCooldown: 1.2,
     moveSpeed: 5.5,
-    aggroRange: 10,
+    aggroRange: 8,
     leashRange: 30,
     radius: 0.55,
     xp: 20,
@@ -117,7 +117,7 @@ export const ENEMIES: readonly EnemyDef[] = [
     attackRange: 1.6,
     attackCooldown: 1.1,
     moveSpeed: 4.8,
-    aggroRange: 9,
+    aggroRange: 7,
     leashRange: 24,
     radius: 0.6,
     xp: 20,
@@ -136,7 +136,7 @@ export const ENEMIES: readonly EnemyDef[] = [
     attackRange: 1.5,
     attackCooldown: 1.0,
     moveSpeed: 3.6,
-    aggroRange: 9,
+    aggroRange: 8,
     leashRange: 25,
     radius: 0.45,
     xp: 19,
@@ -156,7 +156,7 @@ export const ENEMIES: readonly EnemyDef[] = [
     attackRange: 1.6,
     attackCooldown: 1.7,
     moveSpeed: 2.7,
-    aggroRange: 8,
+    aggroRange: 7,
     leashRange: 22,
     radius: 0.45,
     xp: 21,
@@ -173,7 +173,7 @@ export const ENEMIES: readonly EnemyDef[] = [
     attackRange: 1.7,
     attackCooldown: 1.2,
     moveSpeed: 4.0,
-    aggroRange: 10,
+    aggroRange: 8,
     leashRange: 24,
     radius: 0.45,
     xp: 21,
@@ -185,8 +185,8 @@ export const ENEMIES: readonly EnemyDef[] = [
   {
     id: "gravedigger",
     name: "Old Corwin, the Gravedigger",
-    maxHp: 140,
-    damage: [6, 9],
+    maxHp: 115,
+    damage: [5, 6],
     attackRange: 1.9,
     attackCooldown: 1.5,
     moveSpeed: 3.2,
@@ -203,8 +203,8 @@ export const ENEMIES: readonly EnemyDef[] = [
   {
     id: "hollow_priest",
     name: "The Hollow Priest",
-    maxHp: 230,
-    damage: [7, 10],
+    maxHp: 125,
+    damage: [4, 5],
     attackRange: 2.0,
     attackCooldown: 1.6,
     moveSpeed: 3.4,
@@ -216,7 +216,7 @@ export const ENEMIES: readonly EnemyDef[] = [
     scale: 1.25,
     elite: true,
     special: {
-      nova: { every: 7, radius: 4.5, multiplier: 0.8, status: "blight" },
+      nova: { every: 7, radius: 4.5, multiplier: 0.6, status: "blight" },
       summon: { kind: "skeleton", count: 2, atHpFraction: 0.5 },
     },
     loot: [{ item: "healing_draught", chance: 1 }, { item: "thorn_splinter", chance: 1, qty: [2, 3] }],
@@ -224,12 +224,16 @@ export const ENEMIES: readonly EnemyDef[] = [
   },
 ];
 
+/** Overall creature toughness relative to the per-kind numbers above (tuned with simulated fights). */
+const ENEMY_HP_SCALE = 1.3;
+const ENEMY_DAMAGE_SCALE = 1.8;
+
 /** A creature's numbers at a given level. */
 export function enemyStats(def: EnemyDef, level: number): { maxHp: number; damage: [number, number]; xp: number } {
   const l = Math.max(0, level - 1);
-  const dmg = 1 + 0.15 * l;
+  const dmg = (1 + 0.15 * l) * ENEMY_DAMAGE_SCALE;
   return {
-    maxHp: Math.round(def.maxHp * (1 + 0.3 * l)),
+    maxHp: Math.round(def.maxHp * (1 + 0.3 * l) * ENEMY_HP_SCALE),
     damage: [def.damage[0] * dmg, def.damage[1] * dmg],
     xp: Math.round(def.xp * (1 + 0.3 * l)),
   };

@@ -3,9 +3,7 @@ import {
   distanceToWater,
   forestDensity,
   fromUV,
-  terrainHeight,
   toUV,
-  valleyBase,
   valleySdf,
   ZONES,
   getFaith,
@@ -20,11 +18,14 @@ const xz = (u: number, v: number): [number, number] => {
 };
 
 /** Map area in the valley's screen-aligned (u, v) frame, so the map matches the camera orientation. */
-const U0 = -75;
-const U1 = 95;
-const V0 = -100;
-const V1 = 100;
-const RES = 2; // world metres per background pixel
+const U0 = -1800;
+const U1 = 2000;
+const V0 = -2450;
+const V1 = 2450;
+const RES = 6; // world metres per background pixel
+/** The corner map shows this many metres across; the large map (without Haskel's map) shows this much. */
+const CORNER_SPAN = 180;
+const LARGE_SPAN = 1100;
 
 export interface MapMarker {
   x: number;
@@ -47,7 +48,7 @@ export interface MapContext {
 }
 
 /** How far around you the map fills in as you explore (m). */
-const EXPLORE_RADIUS = 24;
+const EXPLORE_RADIUS = 45;
 
 /**
  * Corner minimap (M toggles a large view). The background is rendered once
@@ -65,7 +66,7 @@ export class Minimap {
   private large = false;
 
   constructor(private readonly world: World) {
-    this.bg = this.renderBackground();
+    this.bg = this.createBackground();
     this.mask = document.createElement("canvas");
     this.mask.width = this.bg.width;
     this.mask.height = this.bg.height;
@@ -83,39 +84,50 @@ export class Minimap {
     this.el.classList.toggle("large", this.large);
   }
 
-  private renderBackground(): HTMLCanvasElement {
+  /** The map background is painted a few rows per frame (it covers kilometres). */
+  private createBackground(): HTMLCanvasElement {
     const w = Math.round((U1 - U0) / RES);
     const hgt = Math.round((V1 - V0) / RES);
     const c = document.createElement("canvas");
     c.width = w;
     c.height = hgt;
     const ctx = c.getContext("2d")!;
-    const img = ctx.createImageData(w, hgt);
-    for (let py = 0; py < hgt; py++) {
-      for (let px = 0; px < w; px++) {
-        const { x, z } = fromUV(U0 + px * RES, V0 + py * RES);
-        const sdf = valleySdf(x, z);
-        let r: number, g: number, b: number;
-        if (distanceToWater(x, z) < 0.6) {
-          [r, g, b] = [70, 130, 160];
-        } else if (sdf > 0) {
-          const d = forestDensity(this.world.seed, x, z);
-          [r, g, b] = [86 - d * 30, 124 - d * 34, 62 - d * 20];
-          if (distanceToTrail(x, z) < 1.5) [r, g, b] = [150, 128, 90];
-        } else {
-          const alt = terrainHeight(x, z) - valleyBase(toUV(x, z).v);
-          const k = Math.min(1, alt / 28);
-          [r, g, b] = [70 + k * 120, 70 + k * 115, 66 + k * 120];
+    ctx.fillStyle = "#3a3a36";
+    ctx.fillRect(0, 0, w, hgt);
+    let row = 0;
+    const paint = () => {
+      const start = performance.now();
+      while (row < hgt && performance.now() - start < 6) {
+        const img = ctx.createImageData(w, 1);
+        for (let px = 0; px < w; px++) {
+          const [r, g, b] = this.pixel(U0 + px * RES, V0 + row * RES);
+          img.data[px * 4] = r;
+          img.data[px * 4 + 1] = g;
+          img.data[px * 4 + 2] = b;
+          img.data[px * 4 + 3] = 255;
         }
-        const i = (py * w + px) * 4;
-        img.data[i] = r;
-        img.data[i + 1] = g;
-        img.data[i + 2] = b;
-        img.data[i + 3] = 255;
+        ctx.putImageData(img, 0, row);
+        row++;
       }
-    }
-    ctx.putImageData(img, 0, 0);
+      if (row < hgt) requestAnimationFrame(paint);
+      this.lastExplore = null; // refresh the explored copy as rows arrive
+    };
+    requestAnimationFrame(paint);
     return c;
+  }
+
+  private pixel(u: number, v: number): [number, number, number] {
+    const { x, z } = fromUV(u, v);
+    const sdf = valleySdf(x, z);
+    if (distanceToWater(x, z) < 1.5 && sdf > -20) return [70, 130, 160];
+    if (sdf > 0) {
+      if (distanceToTrail(x, z) < 3) return [150, 128, 90];
+      const d = forestDensity(this.world.seed, x, z);
+      return [86 - d * 30, 124 - d * 34, 62 - d * 20];
+    }
+    // Mountains: lighter with height (approximated by distance into the rock).
+    const k = Math.min(1, -sdf / 120);
+    return [70 + k * 120, 70 + k * 115, 66 + k * 120];
   }
 
   /** Fill in the map around where you are (without a map, that's all you see). */
@@ -170,12 +182,17 @@ export class Minimap {
     let scale: number; // canvas px per metre
     let cu: number;
     let cv: number;
-    if (this.large || !self) {
+    if ((this.large && ctxInfo?.hasMap) || !self) {
+      // With Haskel's map: the whole valley.
       scale = Math.min(W / (U1 - U0), H / (V1 - V0));
       cu = (U0 + U1) / 2;
       cv = (V0 + V1) / 2;
+    } else if (this.large) {
+      // Without one: the country around you (the valley is kilometres across).
+      scale = Math.min(W, H) / LARGE_SPAN;
+      ({ u: cu, v: cv } = toUV(self.x, self.z));
     } else {
-      scale = W / 90;
+      scale = W / CORNER_SPAN;
       ({ u: cu, v: cv } = toUV(self.x, self.z));
     }
     const toPx = (x: number, z: number) => {

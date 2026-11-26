@@ -8,8 +8,8 @@ export const MAX_PLAYERS_PER_ROOM = 16;
 export const TICK_RATE = 20;
 export const TICK_MS = 1000 / TICK_RATE;
 
-/** World units are metres. The playable forest is a square of WORLD_SIZE x WORLD_SIZE centred on the origin. */
-export const WORLD_SIZE = 260;
+/** World units are metres. The valley fits in a square of WORLD_SIZE x WORLD_SIZE centred on the origin. */
+export const WORLD_SIZE = 6000;
 export const WORLD_HALF = WORLD_SIZE / 2;
 
 /** Analog stick input below this magnitude counts as "not moving". */

@@ -18,7 +18,9 @@ import {
   valleySdf,
   valueNoise,
   waterSurface,
-  type Prop,
+  CHUNK_SIZE,
+  VALLEY_HALF_V,
+  chunkProps,
   type PropKind,
   type World,
 } from "@rpg/shared";
@@ -29,6 +31,16 @@ import { buildPropGeometry } from "./propGeometry.ts";
 import type { AssetLibrary } from "./Assets.ts";
 
 const ruinsCenter = fromUV(RUINS_CENTER.u, RUINS_CENTER.v);
+const GRASS_A = new THREE.Color("#4f7a35");
+const GRASS_B = new THREE.Color("#6c8f3d");
+const FOREST_FLOOR = new THREE.Color("#3b4f2a");
+const DIRT = new THREE.Color("#7d6a47");
+const MUD = new THREE.Color("#6b5a3c");
+const BED = new THREE.Color("#4a5a55");
+const MOSS = new THREE.Color("#55643f");
+const ROCK = new THREE.Color("#5f5a53");
+const DARK_ROCK = new THREE.Color("#4c4843");
+const SNOW = new THREE.Color("#b9c2c9");
 const ruinsCos = Math.cos(RUINS_ROTATION);
 const ruinsSin = Math.sin(RUINS_ROTATION);
 
@@ -51,7 +63,16 @@ export function groundHeight(x: number, z: number): number {
   return h;
 }
 
-const TERRAIN_SIZE = 340;
+/** The ground is a tile that follows the camera (the valley is kilometres across). */
+const TERRAIN_SIZE = 260;
+const TERRAIN_STEP = 2;
+/** Rebuild the tile around you once you are this far from its centre. */
+const TERRAIN_RECENTRE = 50;
+/** Trees, rocks and bushes are drawn within this distance. */
+const PROP_RADIUS = 75;
+const PROP_REFRESH = 15;
+const PROP_KINDS: readonly PropKind[] = ["pine", "oak", "birch", "rock", "bush", "log", "mushroom", "stone"];
+const PROP_CAPACITY = 4000;
 
 export interface EnvironmentOptions {
   /** Lower-cost settings for phones/tablets. */
@@ -74,6 +95,15 @@ export class Environment {
   private readonly motes: THREE.Points;
   private readonly mist: THREE.Points;
   private readonly mistBase: THREE.Vector3;
+  private readonly terrain: THREE.Mesh;
+  private terrainCentre = { x: Number.NaN, z: Number.NaN };
+  /** A terrain rebuild in progress, a few rows per frame. */
+  private terrainJob: { cx: number; cz: number; row: number; pos: Float32Array; col: Float32Array } | null = null;
+  private readonly propMeshes = new Map<PropKind, THREE.InstancedMesh>();
+  private readonly gltfPropMeshes: THREE.Object3D[] = [];
+  private readonly chunkMatrices = new Map<string, Map<PropKind, number[]>>();
+  private propCentre = { x: Number.NaN, z: Number.NaN };
+  private readonly assets: AssetLibrary;
 
   constructor(
     private readonly world: World,
@@ -103,10 +133,15 @@ export class Environment {
     this.sun.shadow.normalBias = 0.09;
     scene.add(this.sun, this.sun.target);
 
-    this.group.add(this.buildTerrain(opts.lowPower ? 220 : 300));
+    this.assets = assets;
+    this.terrain = this.buildTerrain();
+    this.group.add(this.terrain);
+    const sp = world.spawn;
+    this.rebuildTerrainNow(sp.x, sp.z);
     this.waterMat = this.buildWaterMaterial();
     this.group.add(this.buildStream(), this.buildPool());
-    this.buildProps(assets);
+    this.buildPropMeshes();
+    this.refreshProps(sp.x, sp.z);
     this.motes = this.buildMotes(opts.lowPower ? 80 : 220);
     const pc = poolCenter();
     const top = fromUV(pc.u, POOL_V - POOL_RADIUS + 1);
@@ -142,6 +177,7 @@ export class Environment {
 
   /** Keep the shadow frustum centred on the player; animate water and particles. */
   update(_dt: number, time: number, focus: THREE.Vector3): void {
+    this.streamWorld(focus);
     this.sun.position.copy(focus).add(this.sunOffset);
     this.sun.target.position.copy(focus);
     this.waterMat.uniforms.uTime!.value = time;
@@ -160,52 +196,27 @@ export class Environment {
 
   // -------------------------------------------------------------------------
 
-  private buildTerrain(seg: number): THREE.Mesh {
+  // --- Streaming: terrain tile and props follow the player --------------------
+
+  private streamWorld(focus: THREE.Vector3): void {
+    // Terrain: start a background rebuild when we drift from the tile's centre; finish it a slice per frame.
+    if (!this.terrainJob && Math.hypot(focus.x - this.terrainCentre.x, focus.z - this.terrainCentre.z) > TERRAIN_RECENTRE) {
+      this.startTerrainJob(focus.x, focus.z);
+    }
+    if (this.terrainJob) {
+      // Far off (a teleport): finish at once rather than walk off the edge.
+      const far = Math.hypot(focus.x - this.terrainCentre.x, focus.z - this.terrainCentre.z) > TERRAIN_SIZE / 2 - 40;
+      this.stepTerrainJob(far ? Infinity : 6);
+    }
+    if (Math.hypot(focus.x - this.propCentre.x, focus.z - this.propCentre.z) > PROP_REFRESH) this.refreshProps(focus.x, focus.z);
+  }
+
+  private buildTerrain(): THREE.Mesh {
+    const seg = TERRAIN_SIZE / TERRAIN_STEP;
     const geo = new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, seg, seg);
     geo.rotateX(-Math.PI / 2);
-    const pos = geo.attributes.position as THREE.BufferAttribute;
-    const colors = new Float32Array(pos.count * 3);
-    const c = new THREE.Color();
-    const grassA = new THREE.Color("#4f7a35");
-    const grassB = new THREE.Color("#6c8f3d");
-    const forestFloor = new THREE.Color("#3b4f2a");
-    const dirt = new THREE.Color("#7d6a47");
-    const mud = new THREE.Color("#6b5a3c");
-    const bed = new THREE.Color("#4a5a55");
-    const moss = new THREE.Color("#55643f");
-    const rock = new THREE.Color("#5f5a53");
-    const darkRock = new THREE.Color("#4c4843");
-    const snow = new THREE.Color("#b9c2c9");
-    const seed = this.world.seed;
-
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i);
-      const z = pos.getZ(i);
-      const h = terrainHeight(x, z);
-      pos.setY(i, h);
-      const sdf = valleySdf(x, z);
-      const n = valueNoise(seed + 3, x / 6, z / 6);
-      if (sdf >= -0.5) {
-        c.copy(grassA).lerp(grassB, n).lerp(forestFloor, Math.min(1, forestDensity(seed, x, z) * 0.9));
-        const trail = distanceToTrail(x, z);
-        if (trail < 1.8) c.lerp(dirt, (1 - trail / 1.8) * (0.65 + n * 0.35));
-        const dw = distanceToWater(x, z);
-        if (dw < 0) c.copy(bed);
-        else if (dw < 1.6) c.lerp(mud, 1 - dw / 1.6);
-      } else {
-        const { v } = toUV(x, z);
-        const alt = h - valleyBase(v);
-        c.copy(moss).lerp(rock, smoothstep(5, 15, alt)).lerp(darkRock, n * 0.5 * smoothstep(3, 10, alt));
-        if (alt > 21 + n * 6) c.lerp(snow, smoothstep(21 + n * 6, 25 + n * 6, alt));
-        const dw = distanceToWater(x, z);
-        if (dw < 0.5) c.lerp(bed, 0.6);
-      }
-      colors[i * 3] = c.r;
-      colors[i * 3 + 1] = c.g;
-      colors[i * 3 + 2] = c.b;
-    }
-    geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-    geo.computeVertexNormals();
+    const count = (geo.attributes.position as THREE.BufferAttribute).count;
+    geo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(count * 3), 3));
     const mat = applyOcclusionCutout(toonMaterial({ vertexColors: true }), {
       minHeightAbovePlayer: 2.2,
       radiusScale: 1.7,
@@ -214,7 +225,76 @@ export class Environment {
     mesh.receiveShadow = true;
     mesh.castShadow = true;
     mesh.name = "terrain";
+    mesh.frustumCulled = false;
     return mesh;
+  }
+
+  private rebuildTerrainNow(x: number, z: number): void {
+    this.startTerrainJob(x, z);
+    this.stepTerrainJob(Infinity);
+  }
+
+  private startTerrainJob(x: number, z: number): void {
+    const cx = Math.round(x / TERRAIN_STEP) * TERRAIN_STEP;
+    const cz = Math.round(z / TERRAIN_STEP) * TERRAIN_STEP;
+    const n = (TERRAIN_SIZE / TERRAIN_STEP + 1) ** 2;
+    this.terrainJob = { cx, cz, row: 0, pos: new Float32Array(n * 3), col: new Float32Array(n * 3) };
+  }
+
+  /** Compute up to `rows` rows of the next terrain tile; swap it in when complete. */
+  private stepTerrainJob(rows: number): void {
+    const job = this.terrainJob;
+    if (!job) return;
+    const side = TERRAIN_SIZE / TERRAIN_STEP + 1;
+    const end = Math.min(side, job.row + rows);
+    const c = new THREE.Color();
+    const seed = this.world.seed;
+    for (let r = job.row; r < end; r++) {
+      const z = job.cz - TERRAIN_SIZE / 2 + r * TERRAIN_STEP;
+      for (let q = 0; q < side; q++) {
+        const x = job.cx - TERRAIN_SIZE / 2 + q * TERRAIN_STEP;
+        const i = r * side + q;
+        const h = terrainHeight(x, z);
+        job.pos[i * 3] = x;
+        job.pos[i * 3 + 1] = h;
+        job.pos[i * 3 + 2] = z;
+        this.groundColour(c, seed, x, z, h);
+        job.col[i * 3] = c.r;
+        job.col[i * 3 + 1] = c.g;
+        job.col[i * 3 + 2] = c.b;
+      }
+    }
+    job.row = end;
+    if (job.row < side) return;
+    const geo = this.terrain.geometry;
+    (geo.attributes.position as THREE.BufferAttribute).array.set(job.pos);
+    (geo.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+    (geo.attributes.color as THREE.BufferAttribute).array.set(job.col);
+    (geo.attributes.color as THREE.BufferAttribute).needsUpdate = true;
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+    this.terrainCentre = { x: job.cx, z: job.cz };
+    this.terrainJob = null;
+  }
+
+  private groundColour(c: THREE.Color, seed: number, x: number, z: number, h: number): void {
+    const sdf = valleySdf(x, z);
+    const n = valueNoise(seed + 3, x / 6, z / 6);
+    if (sdf >= -0.5) {
+      c.copy(GRASS_A).lerp(GRASS_B, n).lerp(FOREST_FLOOR, Math.min(1, forestDensity(seed, x, z) * 0.9));
+      const trail = distanceToTrail(x, z);
+      if (trail < 1.8) c.lerp(DIRT, (1 - trail / 1.8) * (0.65 + n * 0.35));
+      const dw = distanceToWater(x, z);
+      if (dw < 0) c.copy(BED);
+      else if (dw < 1.6) c.lerp(MUD, 1 - dw / 1.6);
+    } else {
+      const { v } = toUV(x, z);
+      const alt = h - valleyBase(v);
+      c.copy(MOSS).lerp(ROCK, smoothstep(5, 15, alt)).lerp(DARK_ROCK, n * 0.5 * smoothstep(3, 10, alt));
+      if (alt > 21 + n * 6) c.lerp(SNOW, smoothstep(21 + n * 6, 25 + n * 6, alt));
+      const dw = distanceToWater(x, z);
+      if (dw < 0.5) c.lerp(BED, 0.6);
+    }
   }
 
   private buildWaterMaterial(): THREE.ShaderMaterial {
@@ -269,9 +349,9 @@ export class Environment {
 
   /** Ribbon following the stream from above the waterfall, through the valley and out the gorge. */
   private buildStream(): THREE.Mesh {
-    const vStart = POOL_V - 30;
-    const vEnd = 135;
-    const steps = 520;
+    const vStart = POOL_V - 40;
+    const vEnd = VALLEY_HALF_V + 200;
+    const steps = Math.round((vEnd - vStart) / 2.5);
     const positions: number[] = [];
     const uvs: number[] = [];
     const steep: number[] = [];
@@ -327,41 +407,95 @@ export class Environment {
     return mesh;
   }
 
-  private buildProps(assets: AssetLibrary): void {
-    const byKind = new Map<PropKind, Prop[]>();
-    for (const p of this.world.props) {
-      let list = byKind.get(p.kind);
-      if (!list) byKind.set(p.kind, (list = []));
-      list.push(p);
-    }
-
-    const q = new THREE.Quaternion();
-    const up = new THREE.Vector3(0, 1, 0);
-    for (const [kind, props] of byKind) {
-      const matrices = props.map((p) =>
-        new THREE.Matrix4().compose(
-          new THREE.Vector3(p.x, groundHeight(p.x, p.z) - (kind === "stone" ? 0.02 : 0), p.z),
-          q.clone().setFromAxisAngle(up, p.rotation),
-          new THREE.Vector3(p.scale, p.scale, p.scale),
-        ),
-      );
-
-      // Prefer a downloaded glTF model if the manifest provides one.
-      const gltfMeshes = assets.instancedProp(kind, matrices);
-      if (gltfMeshes) {
-        for (const mesh of gltfMeshes) this.group.add(mesh);
-        continue;
-      }
-
+  /** One instanced mesh per prop kind, refilled with whatever is near the player. */
+  private buildPropMeshes(): void {
+    for (const kind of PROP_KINDS) {
       const geo = buildPropGeometry(kind);
       const mat = applyOcclusionCutout(toonMaterial({ vertexColors: true }));
-      const inst = new THREE.InstancedMesh(geo, mat, matrices.length);
-      matrices.forEach((mat4, i) => inst.setMatrixAt(i, mat4));
+      const inst = new THREE.InstancedMesh(geo, mat, PROP_CAPACITY);
+      inst.count = 0;
       inst.castShadow = kind !== "mushroom" && kind !== "stone";
       inst.receiveShadow = true;
-      inst.computeBoundingSphere();
+      inst.frustumCulled = false;
       inst.name = `props:${kind}`;
       this.group.add(inst);
+      this.propMeshes.set(kind, inst);
+    }
+  }
+
+  /** Instance matrices for one chunk's props, by kind (cached). */
+  private chunkMatricesFor(cx: number, cz: number): Map<PropKind, number[]> {
+    const key = `${cx},${cz}`;
+    let m = this.chunkMatrices.get(key);
+    if (m) return m;
+    m = new Map();
+    const tmp = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const up = new THREE.Vector3(0, 1, 0);
+    const pos = new THREE.Vector3();
+    const scale = new THREE.Vector3();
+    for (const p of chunkProps(this.world, cx, cz)) {
+      pos.set(p.x, groundHeight(p.x, p.z) - (p.kind === "stone" ? 0.02 : 0), p.z);
+      tmp.compose(pos, q.setFromAxisAngle(up, p.rotation), scale.setScalar(p.scale));
+      let list = m.get(p.kind);
+      if (!list) m.set(p.kind, (list = []));
+      list.push(...tmp.elements);
+    }
+    this.chunkMatrices.set(key, m);
+    return m;
+  }
+
+  private refreshProps(x: number, z: number): void {
+    this.propCentre = { x, z };
+    const r = PROP_RADIUS;
+    const cx0 = Math.floor((x - r) / CHUNK_SIZE);
+    const cx1 = Math.floor((x + r) / CHUNK_SIZE);
+    const cz0 = Math.floor((z - r) / CHUNK_SIZE);
+    const cz1 = Math.floor((z + r) / CHUNK_SIZE);
+    const byKind = new Map<PropKind, number[][]>();
+    const keep = new Set<string>();
+    for (let cx = cx0; cx <= cx1; cx++) {
+      for (let cz = cz0; cz <= cz1; cz++) {
+        // Round area: skip chunk corners well outside the radius.
+        const ccx = (cx + 0.5) * CHUNK_SIZE;
+        const ccz = (cz + 0.5) * CHUNK_SIZE;
+        if (Math.hypot(ccx - x, ccz - z) > r + CHUNK_SIZE) continue;
+        keep.add(`${cx},${cz}`);
+        for (const [kind, list] of this.chunkMatricesFor(cx, cz)) {
+          let lists = byKind.get(kind);
+          if (!lists) byKind.set(kind, (lists = []));
+          lists.push(list);
+        }
+      }
+    }
+    // Forget matrices of chunks far behind us.
+    if (this.chunkMatrices.size > keep.size * 3) for (const k of this.chunkMatrices.keys()) if (!keep.has(k)) this.chunkMatrices.delete(k);
+
+    // A downloaded glTF model replaces the placeholder for its kind.
+    for (const o of this.gltfPropMeshes) this.group.remove(o);
+    this.gltfPropMeshes.length = 0;
+    for (const kind of PROP_KINDS) {
+      const inst = this.propMeshes.get(kind)!;
+      const lists = byKind.get(kind) ?? [];
+      const arr = inst.instanceMatrix.array as Float32Array;
+      let n = 0;
+      for (const list of lists) {
+        const count = Math.min(list.length / 16, PROP_CAPACITY - n);
+        arr.set(count * 16 === list.length ? list : list.slice(0, count * 16), n * 16);
+        n += count;
+      }
+      inst.count = n;
+      inst.instanceMatrix.needsUpdate = true;
+      if (this.assets.hasProp(kind) && n > 0) {
+        const matrices: THREE.Matrix4[] = [];
+        for (let i = 0; i < n; i++) matrices.push(new THREE.Matrix4().fromArray(arr, i * 16));
+        const meshes = this.assets.instancedProp(kind, matrices);
+        if (meshes) {
+          inst.count = 0;
+          for (const m of meshes) this.group.add(m);
+          this.gltfPropMeshes.push(...meshes);
+        }
+      }
     }
   }
 

@@ -1,61 +1,94 @@
 # The starting valley (levels 1–5)
 
-The Unknown Forest is a small valley walled in by mountains and the first
-zone of the game, built for **levels 1 to 5**. You wake by the stream in
-ragged clothes with a crude weapon that suits your class (a rusty shortsword,
-a cracked wand, a dented mace or a chipped dagger), a heel of stale bread and
-an empty waterskin.
+The Unknown Forest is a valley walled in by mountains and the first zone of
+the game, built for **levels 1 to 5**. It is big: about **3 km east to west
+and 4.5 km north to south**, roughly 10 minutes across and 15 minutes from end
+to end at a walk. You wake by the stream in ragged clothes with a crude weapon
+that suits your class (a rusty shortsword, a cracked wand, an oak cudgel or a
+chipped dagger), a heel of stale bread and an empty waterskin.
 
-All of the data below lives in `shared/src/valley.ts` (zones, shrines, the
-campsite), `shared/src/quests.ts` (the first quest, resting), `shared/src/enemies.ts`
-and `shared/src/status.ts`. The rules run on the server in
+All of the data below lives in `shared/src/valley.ts` (layout, zones,
+shrines, the campsite), `shared/src/quests.ts`, `shared/src/enemies.ts` and
+`shared/src/status.ts`. The rules run on the server in
 `server/src/sim/Game.ts`.
 
 ## Map
 
+North is up (away from the camera); distances are walking time from where you wake.
+
 ```
-                    waterfall + pool
-         Shrine of the Veil      Greypine Wood (2-3, wolves)
-   Shrine of the Deep Rot             Shrine of the Green Mother
- The Thornbrake (4-5)                          Shrine of the Oathshield
- Cave Mouth (sealed)   Shrine of the Roads                The Narrow Pass (sealed)
-                     The Clearing (camp)  * you wake here
- Shrine of the Hunger                   ford     Tusk Meadow (1-2, boars)
-                                                       Shrine of the Dawn
+                          waterfall + pool (9 min)
+              Shrine of the Veil
+   Cave Mouth (sealed)                Greypine Wood (2-3, wolves; 5 min north)
+ The Thornbrake (4-5)
+   Shrine of the Deep Rot
+                         Shrine of the Green Mother          Shrine of the Oathshield
+                                                       Haskel   The Narrow Pass (sealed)
+  Shrine of the Hunger                        Ashford (2-3)        (5 min east)
+                         Shrine of the Roads   ford
+                   The Clearing (camp) * you wake      Tusk Meadow (1-2)   Shrine of the Dawn
+  Shrine of the Hidden Ledger            Shrine of the Far Shore
      Unknown Ruins (sealed)
-   Shrine of the Hidden Ledger     Webbed Hollow (3-4, spiders)
-                                 Shrine of the Far Shore
-                           gorge (the stream leaves)
+                                     Webbed Hollow (3-4, spiders; 3 min south)
+                              gorge (the stream leaves)
 ```
+
+The **old road** runs from the wake-up clearing across the ford, east through
+Ashford, past Haskel's cart and up into the pass. Fainter trails lead
+south-west to the ruins and up the western valley to the cave.
 
 ## Hunting grounds
 
 | Zone | Levels | Creatures | Status effect | Where |
 | --- | --- | --- | --- | --- |
-| Tusk Meadow | 1–2 | Tusked boars, wild hares | none | East bank, across the ford |
-| Greypine Wood | 2–3 | Grey wolves | Bleeding (20% of hits): 3 damage a second for 5 s | North, around the waterfall pool |
-| Ashford (the village) | 2–3 | Risen villagers, skeletons; Old Corwin the Gravedigger (named); the Hollow Priest (boss, level 4) | none (the Priest's blast blights) | West, on the old road |
-| Webbed Hollow | 3–4 | Hollow spiders | Poisoned (35%): 2 damage a second for 8 s | South, toward the gorge |
-| The Thornbrake | 4–5 | Thornlings | Blighted (25%): you deal 25% less damage for 10 s | North-west, in front of the cave |
+| Tusk Meadow | 1–2 | Tusked boars, wild hares | none | Open grassland east of the ford, a minute from the clearing |
+| Greypine Wood | 2–3 | Grey wolves, hares | Bleeding (20% of hits): 3 damage a second for 5 s | The dense pine forest filling the north |
+| Ashford (the village) | 2–3 | Risen villagers, skeletons; Old Corwin the Gravedigger (named, level 3); the Hollow Priest (boss, level 4) | none (the Priest's blast blights) | On the old road, east of the ford |
+| Webbed Hollow | 3–4 | Hollow spiders | Poisoned (35%): 2 damage a second for 8 s | The south, toward the gorge |
+| The Thornbrake | 4–5 | Thornlings | Blighted (25%): you deal 25% less damage for 10 s | The far north-west, in front of the cave |
 
-- Each zone keeps a set population (11, 9, 10, 7, 7). Hares never fight back; they bolt. A creature killed returns to
-  its own zone after 20 seconds.
+Wild hares live everywhere else in the valley.
+
+- **Spread out.** Every creature keeps its distance from the others (30–40 m
+  in the wild, 8 m inside Ashford), and aggro ranges are short (6–8 m), so you
+  can pick your fights instead of pulling a crowd.
+- A creature killed returns to its own zone after 20 seconds.
 - Creatures spawn at a level inside the zone's range. Health, damage and
   experience scale with level (`enemyStats`).
-- Nothing spawns near where you wake, near the campsite, or within 12 m of a
-  shrine.
+- Nothing spawns within 45 m of where you wake, the campsite or Haskel, or
+  within 12 m of a shrine.
+- Creatures more than 200 m from every player stand still (saves the server
+  and the network).
 - Entering a zone shows its name and level range. The large map (`M`) labels
   the zones you've found.
 - Status effects don't stack: being hit again refreshes the timer. Damage over
   time ignores armour. Death clears them.
+
+### Difficulty
+
+Fighting above your level is punishing: each level of difference shifts damage
+by 38% in the stronger side's favour, both ways (`levelGapMultiplier` in
+`shared/src/stats.ts`). Results from the balance simulator (`npm run balance
+-w server`: every calling, auto-attacks plus its first ability, no potions or
+food):
+
+| You | vs same level | vs one level higher | vs two or more higher |
+| --- | --- | --- | --- |
+| Level 1 | win, ~75% health left | win, ~30% left (a Priest ~10%) | always lose |
+| Level 2 | win, ~70–90% left | win, ~25–45% left | always lose |
+| Level 3 | win | Thornling (4): about half your fights | lose |
+
+Old Corwin (level 3) is a fair fight at level 3. The Hollow Priest (level 4
+boss) needs level 4: Fighters, Priests and Thieves win with 25–45% health left,
+and a Mage should keep its distance and bring a draught.
 
 Rough pacing: the first quest takes you to about level 3, and the hunting
 grounds carry you to 5 (about 1,150 experience in total).
 
 ## Shrines
 
-Each of the nine gods has a shrine somewhere in the valley, set where that
-god's domain shows: Solenne's faces the sunrise, Orren's stands at the
+Each of the nine gods has a shrine somewhere in the valley (from half a minute
+to 9 minutes from where you wake), set where that god's domain shows: Solenne's faces the sunrise, Orren's stands at the
 crossroads, the Ferryman's cairn sits where the stream leaves the valley, the
 Deep Rot's stump is split by black thorns near the cave.
 

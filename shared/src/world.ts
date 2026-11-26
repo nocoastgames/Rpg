@@ -136,7 +136,6 @@ export interface Collider {
 
 export interface World {
   seed: number;
-  props: Prop[];
   structures: Structure[];
   colliders: Collider[];
   landmarks: LandmarkDef[];
@@ -146,8 +145,12 @@ export interface World {
   spawn: { x: number; z: number };
   /** Gates currently open. Mutated from synced state on the client, by the game on the server. */
   openGates: Set<GateId>;
-  /** Spatial hash of colliders for fast lookups. */
+  /** Spatial hash of colliders for fast lookups (prop colliders arrive as chunks are generated). */
   grid: Map<number, Collider[]>;
+  /** Generated prop chunks (see chunkProps). */
+  chunks: Map<number, Prop[]>;
+  /** Hand-placed props (ford stones, the wake-up log), by chunk. */
+  extraProps: Map<number, Prop[]>;
 }
 
 const GRID_CELL = 4;
@@ -161,9 +164,13 @@ export function isNearWater(x: number, z: number): boolean {
   return distanceToWater(x, z) < WATER_INTERACT_RANGE;
 }
 
-/** Forest density in [0,1]: 0 = open glade, 1 = thick woods. */
+/** Forest density in [0,1]: 0 = open glade, 1 = thick woods. Meadows are open; Greypine Wood is dense. */
 export function forestDensity(seed: number, x: number, z: number): number {
-  return valueNoise(seed, x / 24, z / 24) * 0.65 + valueNoise(seed + 7, x / 8, z / 8) * 0.35;
+  let d = valueNoise(seed, x / 24, z / 24) * 0.5 + valueNoise(seed + 7, x / 8, z / 8) * 0.25 + valueNoise(seed + 11, x / 260, z / 260) * 0.35;
+  const zone = zoneAt(x, z);
+  if (zone?.id === "tusk_meadow") d *= 0.3;
+  else if (zone?.id === "greypine_wood") d = Math.min(1, d * 1.3 + 0.1);
+  return Math.min(1, d);
 }
 
 export function getSpawnPoint(): { x: number; z: number } {
@@ -171,7 +178,7 @@ export function getSpawnPoint(): { x: number; z: number } {
 }
 
 function cellKey(cx: number, cz: number): number {
-  return (cx + 1000) * 2003 + (cz + 1000);
+  return (cx + 4000) * 8009 + (cz + 4000);
 }
 
 function addToGrid(grid: Map<number, Collider[]>, c: Collider): void {
@@ -357,12 +364,14 @@ function buildStructures(): { structures: Structure[]; colliders: Collider[] } {
 
   // A few big boulders strewn on the valley floor.
   const boulders: Array<[number, number, number]> = [
-    [-20, -25, 1.8],
-    [28, 20, 2.2],
-    [-8, 58, 1.6],
-    [33, -48, 2.0],
-    [-30, -62, 1.7],
-    [18, 55, 1.4],
+    [-600, -700, 1.8],
+    [840, 560, 2.2],
+    [-240, 1620, 1.6],
+    [990, -1340, 2.0],
+    [-900, -1740, 1.7],
+    [540, 1540, 1.4],
+    [60, 300, 1.9],
+    [-420, 600, 2.1],
   ];
   for (const [u, v, s] of boulders) {
     const p = fromUV(u, v);
@@ -376,35 +385,99 @@ function buildStructures(): { structures: Structure[]; colliders: Collider[] } {
 // Generation
 // ---------------------------------------------------------------------------
 
+/** Procedural props and their colliders are made per chunk, on demand (the valley is kilometres across). */
+export const CHUNK_SIZE = 32;
+const PROP_STEP = 3.1;
+
+function chunkKey(cx: number, cz: number): number {
+  return (cx + 5000) * 10007 + (cz + 5000);
+}
+
+/** Deterministic random numbers for one prop-grid cell. */
+function cellRng(seed: number, gx: number, gz: number): () => number {
+  let h = (seed ^ Math.imul(gx, 73856093) ^ Math.imul(gz, 19349663)) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 2246822507) >>> 0;
+  return mulberry32(h);
+}
+
 export function generateWorld(seed: number): World {
-  const rng = mulberry32(seed);
-  const props: Prop[] = [];
   const { structures, colliders } = buildStructures();
   const spawn = getSpawnPoint();
   const marks = landmarks();
+  const extraProps = new Map<number, Prop[]>();
+  const addExtra = (p: Prop) => {
+    const k = chunkKey(Math.floor(p.x / CHUNK_SIZE), Math.floor(p.z / CHUNK_SIZE));
+    const list = extraProps.get(k) ?? [];
+    list.push(p);
+    extraProps.set(k, list);
+  };
+
+  // Stepping stones across the ford.
+  const fu = streamU(FORD_V);
+  const fhw = streamHalfWidth(FORD_V);
+  for (let du = -fhw + 0.4; du <= fhw - 0.3; du += 0.95) {
+    const p = fromUV(fu + du, FORD_V + Math.sin(du * 2) * 0.3);
+    addExtra({ kind: "stone", ...p, scale: 0.9 + ((du * 7) % 1) * 0.2, rotation: du });
+  }
+  // A fallen log to sit on in the wake-up clearing.
+  const logPos = { x: spawn.x - 2.2, z: spawn.z + 2.8 };
+  addExtra({ kind: "log", ...logPos, scale: 1, rotation: 0.9 });
+  colliders.push({ ...logPos, r: 0.6 });
+
+  const grid = new Map<number, Collider[]>();
+  for (const c of colliders) addToGrid(grid, c);
+
+  const world: World = { seed, structures, colliders, landmarks: marks, nodes: [], spawn, openGates: new Set(), grid, chunks: new Map(), extraProps };
+  world.nodes = placeNodes(world);
+  return world;
+}
+
+/** The props in one chunk (generated the first time it's asked for; their colliders join the grid). */
+export function chunkProps(world: World, cx: number, cz: number): Prop[] {
+  const key = chunkKey(cx, cz);
+  const cached = world.chunks.get(key);
+  if (cached) return cached;
+  const props = generateChunk(world, cx, cz);
+  props.push(...(world.extraProps.get(key) ?? []));
+  world.chunks.set(key, props);
+  return props;
+}
+
+function generateChunk(world: World, cx: number, cz: number): Prop[] {
+  const seed = world.seed;
+  const props: Prop[] = [];
+  const colliders: Collider[] = [];
+  const spawn = world.spawn;
   const rc = fromUV(RUINS_CENTER.u, RUINS_CENTER.v);
   const campPos = fromUV(CAMP.u, CAMP.v);
   const villagePos = fromUV(VILLAGE.u, VILLAGE.v);
   const vendorPos = fromUV(VENDOR.u, VENDOR.v);
-
-  const step = 3.1;
-  const half = WORLD_HALF + 20;
-  for (let gx = -half; gx < half; gx += step) {
-    for (let gz = -half; gz < half; gz += step) {
-      const x = gx + randRange(rng, 0, step);
-      const z = gz + randRange(rng, 0, step);
+  const x0 = cx * CHUNK_SIZE;
+  const z0 = cz * CHUNK_SIZE;
+  // Grid cells whose origin lies in this chunk (each cell belongs to exactly one chunk).
+  const gx0 = Math.ceil(x0 / PROP_STEP);
+  const gx1 = Math.ceil((x0 + CHUNK_SIZE) / PROP_STEP);
+  const gz0 = Math.ceil(z0 / PROP_STEP);
+  const gz1 = Math.ceil((z0 + CHUNK_SIZE) / PROP_STEP);
+  for (let gx = gx0; gx < gx1; gx++) {
+    for (let gz = gz0; gz < gz1; gz++) {
+      const rng = cellRng(seed, gx, gz);
+      const x = gx * PROP_STEP + randRange(rng, 0, PROP_STEP);
+      const z = gz * PROP_STEP + randRange(rng, 0, PROP_STEP);
       const roll = rng();
       const rotation = randRange(rng, 0, Math.PI * 2);
       const scaleRoll = rng();
       const kindRoll = rng();
+      if (inDungeon(x, z)) continue;
 
       const sdf = valleySdf(x, z);
       const { u, v } = toUV(x, z);
 
-      // Mountain slopes: scattered pines (visual only), thinning with altitude.
+      // Mountain slopes: scattered pines (visual only), thinning with altitude. Far out: nothing.
       if (sdf < -1.5) {
+        if (sdf < -140) continue;
         const alt = terrainHeight(x, z) - valleyBase(v);
-        if (Math.abs(u - streamU(v)) < 5) continue;
+        if (Math.abs(u - streamU(v)) < 8) continue;
         if (roll < 0.42 * (1 - smoothstep(6, 18, alt))) props.push({ kind: "pine", x, z, scale: 0.8 + scaleRoll * 0.7, rotation });
         else if (roll > 0.96) props.push({ kind: "rock", x, z, scale: 1 + scaleRoll * 1.5, rotation });
         continue;
@@ -420,7 +493,7 @@ export function generateWorld(seed: number): World {
       const ruinsDist = Math.hypot(x - rc.x, z - rc.z);
       const inPass = segPointDist(x, z, PASS_START, PASS_END) < PASS_RADIUS + 2;
       const inAlcove = segPointDist(x, z, CAVE_ALCOVE_START, CAVE_MOUTH) < 6;
-      const nearMark = marks.some((m) => Math.hypot(x - m.x, z - m.z) < m.interactRadius + 2);
+      const nearMark = world.landmarks.some((m) => Math.abs(x - m.x) < 40 && Math.abs(z - m.z) < 40 && Math.hypot(x - m.x, z - m.z) < m.interactRadius + 2);
       const campDist = Math.hypot(x - campPos.x, z - campPos.z);
       const villageDist = Math.hypot(x - villagePos.x, z - villagePos.z);
       const vendorDist = Math.hypot(x - vendorPos.x, z - vendorPos.z);
@@ -459,26 +532,8 @@ export function generateWorld(seed: number): World {
       }
     }
   }
-
-  // Stepping stones across the ford.
-  const fu = streamU(FORD_V);
-  const fhw = streamHalfWidth(FORD_V);
-  for (let du = -fhw + 0.4; du <= fhw - 0.3; du += 0.95) {
-    const p = fromUV(fu + du, FORD_V + Math.sin(du * 2) * 0.3);
-    props.push({ kind: "stone", ...p, scale: 0.9 + ((du * 7) % 1) * 0.2, rotation: du });
-  }
-
-  // A fallen log to sit on in the wake-up clearing.
-  const logPos = { x: spawn.x - 2.2, z: spawn.z + 2.8 };
-  props.push({ kind: "log", ...logPos, scale: 1, rotation: 0.9 });
-  colliders.push({ ...logPos, r: 0.6 });
-
-  const grid = new Map<number, Collider[]>();
-  for (const c of colliders) addToGrid(grid, c);
-
-  const world: World = { seed, props, structures, colliders, landmarks: marks, nodes: [], spawn, openGates: new Set(), grid };
-  world.nodes = placeNodes(world);
-  return world;
+  for (const c of colliders) addToGrid(world.grid, c);
+  return props;
 }
 
 /**
@@ -512,7 +567,7 @@ function placeNodes(world: World): GatherNode[] {
   });
   // River stones: on the banks from the waterfall woods down past the meadow.
   tryPlace("river_stone", 12, 5, () => {
-    const v = randRange(rng, -60, 40);
+    const v = world.spawn ? toUV(world.spawn.x, world.spawn.z).v + randRange(rng, -180, 180) : 0;
     const side = rng() < 0.5 ? -1 : 1;
     const u = streamU(v) + side * (streamHalfWidth(v) + randRange(rng, 0.5, 1.3));
     return fromUV(u, v);
@@ -536,6 +591,12 @@ export function randomValleyPoint(world: World, rng: () => number, minWallDist =
 // ---------------------------------------------------------------------------
 
 export function collidersNear(world: World, x: number, z: number, radius: number): Collider[] {
+  // Make sure every chunk whose props could reach this area exists.
+  const cx0 = Math.floor((x - radius - 2) / CHUNK_SIZE);
+  const cx1 = Math.floor((x + radius + 2) / CHUNK_SIZE);
+  const cz0 = Math.floor((z - radius - 2) / CHUNK_SIZE);
+  const cz1 = Math.floor((z + radius + 2) / CHUNK_SIZE);
+  for (let cx = cx0; cx <= cx1; cx++) for (let cz = cz0; cz <= cz1; cz++) if (!world.chunks.has(chunkKey(cx, cz))) chunkProps(world, cx, cz);
   const out: Collider[] = [];
   const seen = new Set<Collider>();
   const minX = Math.floor((x - radius) / GRID_CELL);

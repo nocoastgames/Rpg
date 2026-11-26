@@ -95,6 +95,10 @@ export class AssetLibrary {
     return l ? instantiate(l) : null;
   }
 
+  hasProp(kind: PropKind): boolean {
+    return this.props.has(kind);
+  }
+
   /** Build InstancedMeshes for every mesh in a glTF prop, or null if none is configured. */
   instancedProp(kind: PropKind, matrices: THREE.Matrix4[]): THREE.InstancedMesh[] | null {
     const l = this.props.get(kind);

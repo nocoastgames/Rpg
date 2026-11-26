@@ -21,6 +21,7 @@ import {
   REST,
   ZONES,
   enemyStats,
+  levelGapMultiplier,
   getQuest,
   getStatus,
   prayedFlag,
@@ -184,8 +185,10 @@ const FLYING_KINDS = new Set(["hawk", "raven", "owl", "dove", "crane", "parrot",
 const COMPANION_SPEED = 6.5;
 const COMPANION_RESPAWN_MS = 12_000;
 
-/** Creatures don't spawn this close to where players wake or to the campsite. */
-const SPAWN_SAFE_RADIUS = 16;
+/** Creatures don't spawn this close to where players wake, the campsite or Haskel. */
+const SPAWN_SAFE_RADIUS = 45;
+/** Creatures farther than this from every player stand still (saves the server and the network). */
+const ENEMY_ACTIVE_RADIUS = 200;
 const PRAY_COOLDOWN_MS = 30_000;
 /** Nothing spawns this close to a shrine. */
 const SHRINE_SANCTUARY = 12;
@@ -1619,6 +1622,9 @@ export class Game {
 
   private damageEnemy(enemyId: string, e: Enemy, amount: number, sourceId: string, crit = false): void {
     if (e.hp <= 0) return;
+    // Fighting above your level: blows land weaker (and below it, harder).
+    const attacker = this.state.players.get(sourceId.startsWith("c:") ? sourceId.slice(2) : sourceId);
+    if (attacker) amount = Math.max(1, Math.round(amount * levelGapMultiplier(attacker.level, e.level)));
     // Trappers know where beasts are soft.
     const src = this.state.players.get(sourceId);
     if (src && this.enemies.get(enemyId)?.def.beast) amount = Math.round(amount * (1 + bonus(src, "beastDamage")));
@@ -1788,6 +1794,15 @@ export class Game {
       if (Math.hypot(pos.x - this.campPos.x, pos.z - this.campPos.z) < SPAWN_SAFE_RADIUS) continue;
       if (Math.hypot(pos.x - this.vendorPos.x, pos.z - this.vendorPos.z) < SPAWN_SAFE_RADIUS) continue;
       if (this.world.landmarks.some((l) => l.kind === "shrine" && Math.hypot(pos.x - l.x, pos.z - l.z) < SHRINE_SANCTUARY)) continue;
+      // Keep creatures spread out, so you can pick your fights.
+      let crowded = false;
+      for (const other of this.state.enemies.values()) {
+        if (Math.abs(other.x - pos.x) < zone.spacing && Math.abs(other.z - pos.z) < zone.spacing && Math.hypot(other.x - pos.x, other.z - pos.z) < zone.spacing) {
+          crowded = true;
+          break;
+        }
+      }
+      if (crowded) continue;
       let roll = this.rng() * totalWeight;
       const pick = zone.enemies.find((e) => (roll -= e.weight) <= 0) ?? zone.enemies[0]!;
       const def = getEnemy(pick.id);
@@ -1859,7 +1874,7 @@ export class Game {
         this.events.fx({ kind: "nova", sourceId: id, fromX: e.x, fromZ: e.z, toX: e.x, toZ: e.z, radius: sp.nova.radius, color: "#7a4fa0" });
         const avg = (rt.damage[0] + rt.damage[1]) / 2;
         for (const [pid, p] of this.playersInRadius(e.x, e.z, sp.nova.radius)) {
-          this.damagePlayer(pid, p, avg * sp.nova.multiplier, id);
+          this.damagePlayer(pid, p, avg * sp.nova.multiplier * levelGapMultiplier(rt.level, p.level), id);
           if (sp.nova.status && p.anim !== "dead") this.inflict(p, sp.nova.status);
         }
       }
@@ -1878,6 +1893,10 @@ export class Game {
     const rt = this.enemies.get(id);
     if (!rt) return;
     const def = rt.def;
+    if (!rt.targetId && !rt.returning && !this.nearAnyPlayer(e.x, e.z, ENEMY_ACTIVE_RADIUS)) {
+      if (e.anim !== "idle") e.anim = "idle";
+      return;
+    }
     const homeDist = Math.hypot(e.x - rt.homeX, e.z - rt.homeZ);
 
     // Passive creatures (hares) never fight: they bolt from whatever hurt them.
@@ -1934,7 +1953,8 @@ export class Game {
           e.anim = "attack";
           e.actionSeq = (e.actionSeq + 1) % 65535;
           this.events.fx({ kind: "swing", sourceId: id, fromX: e.x, fromZ: e.z, toX: target.x, toZ: target.z });
-          const dmg = randRange(this.rng, rt.damage[0], rt.damage[1]);
+          const victimLevel = rt.targetId!.startsWith("c:") ? (this.state.players.get(rt.targetId!.slice(2))?.level ?? rt.level) : (target as Player).level;
+          const dmg = randRange(this.rng, rt.damage[0], rt.damage[1]) * levelGapMultiplier(rt.level, victimLevel);
           if (rt.targetId!.startsWith("c:")) this.damageCompanion(rt.targetId!, target as Companion, dmg, id);
           else {
             const victim = target as Player;
@@ -1979,6 +1999,11 @@ export class Game {
   // -------------------------------------------------------------------------
   // Queries & helpers
   // -------------------------------------------------------------------------
+
+  private nearAnyPlayer(x: number, z: number, radius: number): boolean {
+    for (const p of this.state.players.values()) if (Math.abs(p.x - x) < radius && Math.abs(p.z - z) < radius) return true;
+    return false;
+  }
 
   private enemiesInRadius(x: number, z: number, radius: number): Array<[string, Enemy]> {
     const out: Array<[string, Enemy]> = [];

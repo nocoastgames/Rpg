@@ -38,7 +38,7 @@ export const VENDOR_LINES = {
     "\"And worse. Ashford, the village down the old west road: I've traded there twenty years. I went first thing. It's full of the dead. Walking dead, friend.\"",
   ],
   ask: "\"Would you go and find out what happened there? I'm too old for it. I'll make it worth your while.\"",
-  during: "\"Ashford's down the old west road, past the clearing. Mind yourself.\"",
+  during: "\"Ashford's a short walk down the old west road, toward the ford. Mind yourself.\"",
   after: "\"The road's open, thanks to you. I'll be on my way soon enough. Still buying, still selling.\"",
   noWeapon: "\"No weapon? Out here? Take this. It's not much, but it's better than your fists.\"",
 };

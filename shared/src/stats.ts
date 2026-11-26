@@ -62,6 +62,16 @@ export function critChanceFor(agility: number, bonus = 0): number {
   return Math.min(0.4, 0.05 + agility * 0.003 + bonus);
 }
 
+/**
+ * Fighting above your level is punishing: each level of difference shifts
+ * damage by LEVEL_GAP_STEP in the stronger side's favour, both ways.
+ */
+export const LEVEL_GAP_STEP = 0.38;
+
+export function levelGapMultiplier(attackerLevel: number, defenderLevel: number): number {
+  return Math.min(2.5, Math.max(0.25, 1 + LEVEL_GAP_STEP * (attackerLevel - defenderLevel)));
+}
+
 /** Experience required to go from `level` to `level + 1`. */
 export function xpForNextLevel(level: number): number {
   return Math.round(60 * Math.pow(level, 1.6));

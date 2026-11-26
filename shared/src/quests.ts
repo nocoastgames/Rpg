@@ -106,7 +106,7 @@ export const VILLAGE_QUEST: QuestDef = {
   steps: [
     {
       title: "The old west road",
-      text: "Follow the old road west, past the clearing, and find Ashford.",
+      text: "Follow the old road west from Haskel's cart and find Ashford.",
       objective: { type: "reach", landmark: "village", radius: 13 },
       xp: 40,
       doneText: "Doors hang open. Nothing moves in Ashford but the dead.",

@@ -62,31 +62,37 @@ const SHAPE_SEED = 9001;
 // Valley shape (signed distance: positive = walkable, metres to the cliffs)
 // ---------------------------------------------------------------------------
 
-export const VALLEY_HALF_U = 50;
-export const VALLEY_HALF_V = 80;
+/**
+ * The valley is about 3 km east to west and 4.5 km north to south: at a
+ * walk (5 m/s) roughly 10 minutes across and 15 from end to end.
+ */
+export const VALLEY_HALF_U = 1580;
+export const VALLEY_HALF_V = 2250;
 
 /** The pass out of the valley (east). A corridor from the valley floor into the mountains. */
-export const PASS_START = { u: 38, v: -18 };
-export const PASS_END = { u: 82, v: -30 };
-export const PASS_RADIUS = 4.5;
+export const PASS_START = { u: 1150, v: -140 };
+export const PASS_END = { u: 1950, v: -300 };
+export const PASS_RADIUS = 6;
 
 /** Alcove leading north into the north-west cliffs, so the cave mouth faces the camera. */
-export const CAVE_ALCOVE_START = { u: -29, v: -42 };
-export const CAVE_MOUTH = { u: -37, v: -63 };
-export const CAVE_ALCOVE_RADIUS = 4.2;
+export const CAVE_ALCOVE_START = { u: -900, v: -1450 };
+export const CAVE_ALCOVE_RADIUS = 5;
 
-export const RUINS_CENTER = { u: -24, v: 40 };
+export const RUINS_CENTER = { u: -800, v: 1250 };
 export const RUINS_ROTATION = 0.35;
 
+/** Where you wake: the west bank of the stream, south of the valley's middle. */
+const SPAWN_V = 700;
+
 /** Sheltered clearing west of where you wake: the campsite you build in the first quest. */
-export const CAMP = { u: -9, v: -10 };
+export const CAMP = { u: streamU(SPAWN_V) - streamHalfWidth(SPAWN_V) - 3.2 - 70, v: SPAWN_V - 25 };
 export const CAMP_CLEARING_RADIUS = 8;
 
-/** Haskel the peddler's cart, by the old signpost on the road to the pass. */
-export const VENDOR = { u: 31, v: -10 };
+/** Haskel the peddler's cart, by the road where it leaves for the pass. */
+export const VENDOR = { u: 1080, v: -90 };
 
-/** Ashford: the farming village on the old west road, overrun by the dead. */
-export const VILLAGE = { u: -29, v: 12 };
+/** Ashford: the farming village on the old road between the ford and the pass, overrun by the dead. */
+export const VILLAGE = { u: 740, v: 160 };
 export const VILLAGE_CLEARING_RADIUS = 15;
 
 export type VillagePieceKind = "cottage" | "headman_house" | "chapel" | "well" | "cart" | "fence" | "headstone" | "crypt" | "gate_posts";
@@ -170,12 +176,34 @@ function basinSdf(u: number, v: number): number {
   return (1 - r) / Math.max(g, 1 / Math.max(a, b));
 }
 
+/** The cliff line without the pass and cave corridors: a big ellipse made irregular at several scales. */
+function wallSdf(u: number, v: number): number {
+  const { x, z } = fromUV(u, v);
+  const wobble =
+    (valueNoise(SHAPE_SEED + 6, x / 420, z / 420) - 0.5) * 320 +
+    (valueNoise(SHAPE_SEED + 7, x / 90, z / 90) - 0.5) * 60 +
+    (valueNoise(SHAPE_SEED, x / 16, z / 16) - 0.5) * 12 +
+    (valueNoise(SHAPE_SEED + 1, x / 6, z / 6) - 0.5) * 3;
+  return basinSdf(u, v) + wobble;
+}
+
+/** Walk from `from` toward `toward` until the rock on both sides is at least `depth` m thick. */
+function intoTheCliffs(from: UV, toward: UV, depth: number): UV {
+  const len = Math.hypot(toward.u - from.u, toward.v - from.v);
+  for (let t = 0; t <= len; t += 2) {
+    const p = { u: from.u + ((toward.u - from.u) * t) / len, v: from.v + ((toward.v - from.v) * t) / len };
+    if (wallSdf(p.u, p.v) < -depth) return p;
+  }
+  return toward;
+}
+
+/** The cave mouth: deep enough in the north-west cliffs that the alcove leading to it is walled in. */
+export const CAVE_MOUTH = intoTheCliffs(CAVE_ALCOVE_START, { u: -1000, v: -2400 }, 22);
+
 /** Signed distance to the valley walls in metres (positive inside the walkable area). */
 export function valleySdf(x: number, z: number): number {
   const { u, v } = toUV(x, z);
-  // Irregular cliff line.
-  const wobble = (valueNoise(SHAPE_SEED, x / 16, z / 16) - 0.5) * 12 + (valueNoise(SHAPE_SEED + 1, x / 6, z / 6) - 0.5) * 3;
-  let d = basinSdf(u, v) + wobble;
+  let d = wallSdf(u, v);
   d = Math.max(d, PASS_RADIUS - segDist(u, v, PASS_START, PASS_END).d);
   d = Math.max(d, CAVE_ALCOVE_RADIUS - segDist(u, v, CAVE_ALCOVE_START, CAVE_MOUTH).d);
   return d;
@@ -185,18 +213,18 @@ export function valleySdf(x: number, z: number): number {
 // Stream: waterfall in the north, pool, meandering channel, gorge in the south
 // ---------------------------------------------------------------------------
 
-export const POOL_V = -74;
-export const POOL_RADIUS = 7;
-const WATERFALL_TOP_V = -84;
-const WATERFALL_DROP = 9;
+export const POOL_V = -2120;
+export const POOL_RADIUS = 14;
+const WATERFALL_TOP_V = -2160;
+const WATERFALL_DROP = 14;
 
-/** Stream centre line (u) as a function of v. */
+/** Stream centre line (u) as a function of v: long meanders down the length of the valley. */
 export function streamU(v: number): number {
-  return 6 + 9 * Math.sin(v * 0.045 + 0.6) + 4 * Math.sin(v * 0.12 + 1.7) + 1.5 * Math.sin(v * 0.29);
+  return 60 + 280 * Math.sin(v * 0.0014 + 0.6) + 90 * Math.sin(v * 0.0041 + 1.7) + 20 * Math.sin(v * 0.013);
 }
 
 export function streamHalfWidth(v: number): number {
-  return 2.1 + 0.7 * Math.sin(v * 0.07 + 2.1) + 0.35 * Math.sin(v * 0.23);
+  return 3.2 + 1.1 * Math.sin(v * 0.004 + 2.1) + 0.5 * Math.sin(v * 0.017);
 }
 
 export function poolCenter(): { u: number; v: number } {
@@ -205,7 +233,7 @@ export function poolCenter(): { u: number; v: number } {
 
 /** Gentle north-to-south slope of the valley floor (the stream flows downhill toward the camera). */
 export function valleyBase(v: number): number {
-  return -v * 0.022;
+  return -v * 0.01;
 }
 
 /** Height of the water surface along the stream, including the waterfall step. */
@@ -236,27 +264,46 @@ export interface UV {
 }
 
 function spawnUV(): UV {
-  const v = -6;
+  const v = SPAWN_V;
   return { u: streamU(v) - streamHalfWidth(v) - 3.2, v };
 }
 
-/** Ford where the trail crosses the stream (stepping stones). */
-export const FORD_V = -14;
+/** Ford where the road east crosses the stream (stepping stones). */
+export const FORD_V = SPAWN_V - 40;
 
 export function trails(): UV[][] {
   const sp = spawnUV();
   const ford = { u: streamU(FORD_V), v: FORD_V };
   return [
     // Spawn clearing → the campsite clearing.
-    [sp, { u: (sp.u + CAMP.u) / 2, v: (sp.v + CAMP.v) / 2 - 1 }, CAMP],
-    // Spawn clearing → ford → east to the pass.
-    [sp, { u: sp.u + 1, v: -11 }, { u: ford.u - 4, v: FORD_V }, ford, { u: ford.u + 5, v: FORD_V - 1 }, { u: 26, v: -16 }, PASS_START, { u: 52, v: -21 }],
+    [sp, { u: (sp.u + CAMP.u) / 2, v: (sp.v + CAMP.v) / 2 - 4 }, CAMP],
+    // The old road: spawn → ford → east through Ashford → Haskel's cart → the pass.
+    [
+      sp,
+      { u: sp.u + 2, v: FORD_V + 12 },
+      { u: ford.u - 8, v: FORD_V },
+      ford,
+      { u: ford.u + 30, v: FORD_V - 20 },
+      { u: 480, v: 420 },
+      { u: VILLAGE.u - 60, v: VILLAGE.v + 40 },
+      { u: VILLAGE.u - 13, v: VILLAGE.v + 0.5 },
+      { u: VILLAGE.u + 13, v: VILLAGE.v - 0.5 },
+      { u: 900, v: 40 },
+      { u: VENDOR.u - 20, v: VENDOR.v + 20 },
+      PASS_START,
+      { u: PASS_END.u - 80, v: PASS_END.v + 16 },
+    ],
     // Spawn → south-west to the ruins.
-    [sp, { u: sp.u - 6, v: 6 }, { u: -16, v: 22 }, { u: RUINS_CENTER.u + 3, v: RUINS_CENTER.v - 10 }],
-    // Off the ruins trail, west along the old road into Ashford.
-    [{ u: sp.u - 6, v: 6 }, { u: -10, v: 10 }, { u: VILLAGE.u + 13, v: VILLAGE.v + 0.5 }, { u: VILLAGE.u + 3, v: VILLAGE.v }],
-    // Ruins → north to the cave alcove (faint).
-    [{ u: RUINS_CENTER.u - 4, v: RUINS_CENTER.v - 9 }, { u: -34, v: 14 }, { u: -34, v: -14 }, CAVE_ALCOVE_START, { u: -35, v: -56 }],
+    [sp, { u: sp.u - 40, v: SPAWN_V + 120 }, { u: -150, v: 950 }, { u: -520, v: 1120 }, { u: RUINS_CENTER.u + 3, v: RUINS_CENTER.v - 10 }],
+    // Ruins → north, the length of the western valley, to the cave alcove (faint).
+    [
+      { u: RUINS_CENTER.u - 4, v: RUINS_CENTER.v - 9 },
+      { u: -1000, v: 800 },
+      { u: -1080, v: 0 },
+      { u: -1000, v: -800 },
+      CAVE_ALCOVE_START,
+      { u: CAVE_MOUTH.u + (CAVE_ALCOVE_START.u - CAVE_MOUTH.u) * 0.15, v: CAVE_MOUTH.v + (CAVE_ALCOVE_START.v - CAVE_MOUTH.v) * 0.15 },
+    ],
   ];
 }
 
@@ -298,8 +345,11 @@ export function terrainHeight(x: number, z: number): number {
   const base = valleyBase(v);
   const wd = distanceToWater(x, z);
 
-  // Valley floor: gentle rolls, flattened near water and walls.
-  let h = base + (valueNoise(SHAPE_SEED + 2, x / 11, z / 11) - 0.5) * 1.4 * smoothstep(1, 9, wd) * smoothstep(-2, 6, sdf);
+  // Valley floor: low hills and gentle rolls, flattened near water and walls.
+  let h =
+    base +
+    (valueNoise(SHAPE_SEED + 2, x / 11, z / 11) - 0.5) * 1.4 * smoothstep(1, 9, wd) * smoothstep(-2, 6, sdf) +
+    (valueNoise(SHAPE_SEED + 8, x / 170, z / 170) - 0.5) * 16 * smoothstep(2, 30, wd) * smoothstep(4, 40, sdf);
   // Ruins sit on a low rise.
   const rc = fromUV(RUINS_CENTER.u, RUINS_CENTER.v);
   h += 0.9 * (1 - smoothstep(10, 17, Math.hypot(x - rc.x, z - rc.z)));
@@ -313,7 +363,7 @@ export function terrainHeight(x: number, z: number): number {
     // Cut a channel where the stream runs through the mountains (waterfall above, gorge below).
     const su = streamU(v);
     const channel = smoothstep(2.5, 11, Math.abs(u - su));
-    if (v < POOL_V || v > 60) {
+    if (v < POOL_V || v > VALLEY_HALF_V - 160) {
       const target = waterSurface(v) - base - 0.3;
       m = target + (m - target) * channel;
     }
@@ -334,7 +384,7 @@ export function terrainHeight(x: number, z: number): number {
 // ---------------------------------------------------------------------------
 
 /** Centre of the cell (world x/z), well outside the valley's map. */
-export const DUNGEON_CELL = { x: 640, z: 40, halfW: 3.2, halfD: 2.6 };
+export const DUNGEON_CELL = { x: 8000, z: 40, halfW: 3.2, halfD: 2.6 };
 
 /** Anywhere in the dungeon's patch of the world. */
 export function inDungeon(x: number, z: number): boolean {
@@ -346,10 +396,18 @@ export function dungeonSdf(x: number, z: number): number {
   return Math.min(DUNGEON_CELL.halfW - Math.abs(x - DUNGEON_CELL.x), DUNGEON_CELL.halfD - Math.abs(z - DUNGEON_CELL.z));
 }
 
+/** A point along the pass corridor at a given u. */
+function alongPass(u: number): UV {
+  const t = (u - PASS_START.u) / (PASS_END.u - PASS_START.u);
+  return { u, v: PASS_START.v + (PASS_END.v - PASS_START.v) * t };
+}
+
+/** The rockslide: where the pass is walled in by rock on both sides. */
+export const PASS_BLOCK = alongPass(intoTheCliffs(PASS_START, PASS_END, 14).u);
 /** Past this point on the road out (u, beyond the rockslide), the King's soldiers are waiting. */
-export const GUARD_TRIGGER_U = 60;
-/** Where the soldiers stand, in the pass beyond the rockslide (u, v offsets along it). */
-export const GUARD_POST = { u: 68, v: -26.5 };
+export const GUARD_TRIGGER_U = PASS_BLOCK.u + 4;
+/** Where the soldiers stand, in the pass beyond the rockslide. */
+export const GUARD_POST = alongPass(PASS_BLOCK.u + 14);
 
 // ---------------------------------------------------------------------------
 // Landmarks & sealed gates
@@ -391,12 +449,6 @@ function caveApproach(dist: number) {
   return fromUV(CAVE_MOUTH.u + (du / l) * dist, CAVE_MOUTH.v + (dv / l) * dist);
 }
 
-const passBlockU = 56;
-const passBlockT = (passBlockU - PASS_START.u) / (PASS_END.u - PASS_START.u);
-export const PASS_BLOCK = {
-  u: passBlockU,
-  v: PASS_START.v + (PASS_END.v - PASS_START.v) * passBlockT,
-};
 
 export function landmarks(): LandmarkDef[] {
   return [
@@ -551,15 +603,15 @@ export interface ShrineDef {
 }
 
 export const SHRINES: readonly ShrineDef[] = [
-  { faith: "solenne", name: "Shrine of the Dawn", u: 38, v: 6, text: "A white stone shrine facing the sunrise, warm to the touch even in shade." },
-  { faith: "valdris", name: "Shrine of the Oathshield", u: 27, v: -28, text: "A shield-shaped stone stands watch over the road to the pass." },
-  { faith: "green_mother", name: "Shrine of the Green Mother", u: 30, v: -52, text: "A mossy stone ringed with wildflowers that bloom out of season." },
-  { faith: "orren", name: "Shrine of the Roads", u: -4, v: -24, text: "A waymarker carved with a hundred little arrows, worn smooth by passing hands." },
-  { faith: "mirevel", name: "Shrine of the Hidden Ledger", u: -36, v: 54, text: "A slate carved with writing no one has ever finished reading." },
-  { faith: "ferryman", name: "Shrine of the Far Shore", u: 0, v: 66, text: "A grey cairn by the water, where the stream leaves the valley." },
-  { faith: "kaelthar", name: "Shrine of the Hunger", u: -42, v: -4, text: "A blackened altar. Old stains darken the stone." },
-  { faith: "veiled_one", name: "Shrine of the Veil", u: -10, v: -66, text: "A shrouded figure in the mist of the waterfall. You can't see its face." },
-  { faith: "rot_below", name: "Shrine of the Deep Rot", u: -20, v: -50, text: "A stump split open by black thorns. Something sweet and rotten breathes from it." },
+  { faith: "solenne", name: "Shrine of the Dawn", u: 980, v: 560, text: "A white stone shrine facing the sunrise, warm to the touch even in shade." },
+  { faith: "valdris", name: "Shrine of the Oathshield", u: 960, v: -220, text: "A shield-shaped stone stands watch over the road to the pass." },
+  { faith: "green_mother", name: "Shrine of the Green Mother", u: -360, v: -120, text: "A mossy stone ringed with wildflowers that bloom out of season." },
+  { faith: "orren", name: "Shrine of the Roads", u: 330, v: 560, text: "A waymarker carved with a hundred little arrows, worn smooth by passing hands." },
+  { faith: "mirevel", name: "Shrine of the Hidden Ledger", u: -640, v: 1060, text: "A slate carved with writing no one has ever finished reading." },
+  { faith: "ferryman", name: "Shrine of the Far Shore", u: 260, v: 1230, text: "A grey cairn by the water, where the stream runs south toward the gorge." },
+  { faith: "kaelthar", name: "Shrine of the Hunger", u: -900, v: 320, text: "A blackened altar. Old stains darken the stone." },
+  { faith: "veiled_one", name: "Shrine of the Veil", u: -260, v: -1960, text: "A shrouded figure in the mist below the waterfall. You can't see its face." },
+  { faith: "rot_below", name: "Shrine of the Deep Rot", u: -420, v: -1180, text: "A stump split open by black thorns. Something sweet and rotten breathes from it." },
 ];
 
 /** Where a shrine actually stands: walked toward the valley centre until it has room. */
@@ -594,19 +646,26 @@ export interface ZoneDef {
   enemies: ReadonlyArray<{ id: string; weight: number }>;
   /** How many creatures live here at full strength. */
   population: number;
+  /** Creatures keep at least this far apart (m), so you can pick your fights. */
+  spacing: number;
+  /** Wildlife spread over the whole valley: no banner, not a hunting ground on the map. */
+  ambient?: boolean;
 }
 
 export const ZONES: readonly ZoneDef[] = [
-  { id: "tusk_meadow", name: "Tusk Meadow", levels: [1, 2], u: 27, v: 14, radius: 17, enemies: [{ id: "boar", weight: 2 }, { id: "hare", weight: 1 }], population: 11 },
-  { id: "greypine_wood", name: "Greypine Wood", levels: [2, 3], u: 14, v: -48, radius: 19, enemies: [{ id: "wolf", weight: 3 }, { id: "hare", weight: 1 }], population: 9 },
-  { id: "ashford", name: "Ashford", levels: [2, 3], u: VILLAGE.u, v: VILLAGE.v, radius: 13, enemies: [{ id: "risen", weight: 11 }, { id: "skeleton", weight: 9 }], population: 10 },
-  { id: "webbed_hollow", name: "Webbed Hollow", levels: [3, 4], u: 6, v: 50, radius: 16, enemies: [{ id: "spider", weight: 1 }], population: 7 },
-  { id: "thornbrake", name: "The Thornbrake", levels: [4, 5], u: -35, v: -40, radius: 13, enemies: [{ id: "thornling", weight: 1 }], population: 7 },
+  { id: "tusk_meadow", name: "Tusk Meadow", levels: [1, 2], u: 560, v: 640, radius: 240, enemies: [{ id: "boar", weight: 3 }, { id: "hare", weight: 1 }], population: 40, spacing: 30 },
+  { id: "greypine_wood", name: "Greypine Wood", levels: [2, 3], u: 120, v: -800, radius: 560, enemies: [{ id: "wolf", weight: 4 }, { id: "hare", weight: 1 }], population: 70, spacing: 40 },
+  { id: "ashford", name: "Ashford", levels: [2, 3], u: VILLAGE.u, v: VILLAGE.v, radius: 26, enemies: [{ id: "risen", weight: 11 }, { id: "skeleton", weight: 9 }], population: 10, spacing: 8 },
+  { id: "webbed_hollow", name: "Webbed Hollow", levels: [3, 4], u: 260, v: 1700, radius: 420, enemies: [{ id: "spider", weight: 1 }], population: 50, spacing: 38 },
+  { id: "thornbrake", name: "The Thornbrake", levels: [4, 5], u: -860, v: -1250, radius: 340, enemies: [{ id: "thornling", weight: 1 }], population: 40, spacing: 34 },
+  // Hares everywhere else.
+  { id: "valley_wilds", name: "The Unknown Forest", levels: [1, 1], u: 0, v: 0, radius: 2600, enemies: [{ id: "hare", weight: 1 }], population: 50, spacing: 60, ambient: true },
 ];
 
+/** The named hunting ground at a point (wildlife-only areas don't count). */
 export function zoneAt(x: number, z: number, margin = 0): ZoneDef | undefined {
   const { u, v } = toUV(x, z);
-  return ZONES.find((zn) => Math.hypot(u - zn.u, v - zn.v) < zn.radius + margin);
+  return ZONES.find((zn) => !zn.ambient && Math.hypot(u - zn.u, v - zn.v) < zn.radius + margin);
 }
 
 export function spawnPoint(): { x: number; z: number } {
