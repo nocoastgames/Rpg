@@ -24,6 +24,7 @@ import type { GameRoom } from "../net.ts";
 import type { AssetLibrary } from "../scene/Assets.ts";
 import { createEnemyAvatar, createPlayerAvatar, type Avatar } from "../scene/Avatars.ts";
 import { CelPost } from "../scene/CelPost.ts";
+import { DEFAULT_HOUR, lightingAt, type LightingPreset } from "../scene/Lighting.ts";
 import { Environment, groundHeight } from "../scene/Environment.ts";
 import { FxSystem } from "../scene/Fx.ts";
 import { IsoCamera } from "../scene/IsoCamera.ts";
@@ -92,8 +93,15 @@ export class GameClient {
   private readonly hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
   private readonly reticle: THREE.Mesh;
   private readonly post: CelPost;
-  /** Warm glow carried by your character so you stay readable in the dark. */
-  private readonly lantern = new THREE.PointLight("#ffb366", 30, 16, 2);
+  /** Warm glow carried by your character; brightness follows the time of day. */
+  private readonly lantern = new THREE.PointLight("#ffb366", 0, 16, 2);
+  /**
+   * Hour of the day (0..24). Fixed for now; a day/night cycle only needs to
+   * advance this (ideally from server time). Preview with ?time=21 in the URL.
+   */
+  private hour = DEFAULT_HOUR;
+  private appliedHour = Number.NaN;
+  private lighting!: LightingPreset;
 
   // Local player prediction
   private readonly pred = new THREE.Vector3();
@@ -126,7 +134,6 @@ export class GameClient {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.0;
     viewport.append(this.renderer.domElement);
     this.post = new CelPost(this.renderer, { msaa: false });
 
@@ -169,6 +176,10 @@ export class GameClient {
     this.mode = matchMedia("(pointer: coarse)").matches ? "touch" : "kbm";
     this.hud.setInputMode(this.mode);
 
+    const timeParam = Number(new URLSearchParams(location.search).get("time"));
+    if (Number.isFinite(timeParam) && new URLSearchParams(location.search).has("time")) this.hour = timeParam;
+    this.updateLighting();
+
     this.bindNetwork();
     // Debug handle for the browser console / automated tests: open with ?debug
     if (import.meta.env.DEV || new URLSearchParams(location.search).has("debug")) {
@@ -177,6 +188,21 @@ export class GameClient {
     window.addEventListener("resize", () => this.resize(viewport));
     window.addEventListener("gamepadconnected", () => this.hud.notice("Controller connected — Xbox layout. Press Menu for controls."));
     this.loop();
+  }
+
+  /** Re-apply time-of-day lighting when the hour changes. */
+  private updateLighting(): void {
+    if (this.hour === this.appliedHour) return;
+    this.appliedHour = this.hour;
+    this.lighting = lightingAt(this.hour);
+    this.env.applyLighting(this.lighting, this.scene);
+    this.post.setGrade(this.lighting);
+    this.landmarks.setGlow(this.lighting.glow);
+  }
+
+  /** Set the hour of the day (0..24). Hook for the future day/night cycle. */
+  setHour(hour: number): void {
+    this.hour = ((hour % 24) + 24) % 24;
   }
 
   private bindNetwork(): void {
@@ -700,7 +726,9 @@ export class GameClient {
     this.iso.follow(focus.x, focus.y, focus.z, dt, time < 0.2);
     this.env.update(dt, time, focus);
     this.lantern.position.set(focus.x + 0.6, focus.y + 3.6, focus.z + 0.6);
-    this.lantern.intensity = 30 + Math.sin(time * 7.3) * 1.5 + Math.sin(time * 3.1) * 1.5;
+    this.updateLighting();
+    const flame = this.lighting.lantern;
+    this.lantern.intensity = flame > 0 ? flame * (1 + Math.sin(time * 7.3) * 0.05 + Math.sin(time * 3.1) * 0.05) : 0;
     this.landmarks.update(time);
     this.fx.update(dt);
     updateOcclusion(this.iso.camera, this.renderer, me ? focus : null);

@@ -64,15 +64,15 @@ export class Minimap {
         const sdf = valleySdf(x, z);
         let r: number, g: number, b: number;
         if (distanceToWater(x, z) < 0.6) {
-          [r, g, b] = [40, 88, 110];
+          [r, g, b] = [70, 130, 160];
         } else if (sdf > 0) {
           const d = forestDensity(this.world.seed, x, z);
-          [r, g, b] = [52 - d * 20, 78 - d * 24, 42 - d * 14];
-          if (distanceToTrail(x, z) < 1.5) [r, g, b] = [112, 94, 66];
+          [r, g, b] = [86 - d * 30, 124 - d * 34, 62 - d * 20];
+          if (distanceToTrail(x, z) < 1.5) [r, g, b] = [150, 128, 90];
         } else {
           const alt = terrainHeight(x, z) - valleyBase(toUV(x, z).v);
           const k = Math.min(1, alt / 28);
-          [r, g, b] = [38 + k * 70, 38 + k * 68, 36 + k * 74];
+          [r, g, b] = [70 + k * 120, 70 + k * 115, 66 + k * 120];
         }
         const i = (py * w + px) * 4;
         img.data[i] = r;

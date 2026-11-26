@@ -45,24 +45,24 @@ export function buildPropGeometry(kind: PropKind): THREE.BufferGeometry {
   switch (kind) {
     case "pine":
       geo = merge([
-        part(new THREE.CylinderGeometry(0.16, 0.24, 1.6, 6), "#3d2a1c", (g) => g.translate(0, 0.8, 0)),
-        part(new THREE.ConeGeometry(1.5, 2.2, 7), "#1d3a28", (g) => g.translate(0, 2.2, 0)),
-        part(new THREE.ConeGeometry(1.15, 1.9, 7), "#22452f", (g) => g.translate(0, 3.2, 0)),
-        part(new THREE.ConeGeometry(0.75, 1.5, 7), "#285036", (g) => g.translate(0, 4.1, 0)),
+        part(new THREE.CylinderGeometry(0.16, 0.24, 1.6, 6), "#5a3d26", (g) => g.translate(0, 0.8, 0)),
+        part(new THREE.ConeGeometry(1.5, 2.2, 7), "#2f5a3a", (g) => g.translate(0, 2.2, 0)),
+        part(new THREE.ConeGeometry(1.15, 1.9, 7), "#356a42", (g) => g.translate(0, 3.2, 0)),
+        part(new THREE.ConeGeometry(0.75, 1.5, 7), "#3d7a4a", (g) => g.translate(0, 4.1, 0)),
       ]);
       break;
     case "oak":
       geo = merge([
-        part(new THREE.CylinderGeometry(0.22, 0.34, 2, 7), "#3f2c1d", (g) => g.translate(0, 1, 0)),
-        part(new THREE.IcosahedronGeometry(1.5, 0), "#2e4d22", (g) => g.translate(0, 2.9, 0)),
-        part(new THREE.IcosahedronGeometry(1.1, 0), "#36582a", (g) => g.translate(0.9, 2.5, 0.4)),
-        part(new THREE.IcosahedronGeometry(1.0, 0), "#273f1c", (g) => g.translate(-0.8, 2.6, -0.5)),
+        part(new THREE.CylinderGeometry(0.22, 0.34, 2, 7), "#5e4129", (g) => g.translate(0, 1, 0)),
+        part(new THREE.IcosahedronGeometry(1.5, 0), "#4a7a30", (g) => g.translate(0, 2.9, 0)),
+        part(new THREE.IcosahedronGeometry(1.1, 0), "#56873a", (g) => g.translate(0.9, 2.5, 0.4)),
+        part(new THREE.IcosahedronGeometry(1.0, 0), "#3f6b2a", (g) => g.translate(-0.8, 2.6, -0.5)),
       ]);
       break;
     case "birch":
       geo = merge([
-        part(new THREE.CylinderGeometry(0.12, 0.16, 2.8, 6), "#b8b3a6", (g) => g.translate(0, 1.4, 0)),
-        part(new THREE.IcosahedronGeometry(0.95, 0), "#566e30", (g) => {
+        part(new THREE.CylinderGeometry(0.12, 0.16, 2.8, 6), "#e8e4d8", (g) => g.translate(0, 1.4, 0)),
+        part(new THREE.IcosahedronGeometry(0.95, 0), "#8fb04a", (g) => {
           g.scale(1, 1.3, 1);
           g.translate(0, 3.2, 0);
         }),
@@ -70,7 +70,7 @@ export function buildPropGeometry(kind: PropKind): THREE.BufferGeometry {
       break;
     case "rock":
       geo = merge([
-        part(new THREE.DodecahedronGeometry(0.6, 0), "#5b5d58", (g) => {
+        part(new THREE.DodecahedronGeometry(0.6, 0), "#7d7f7a", (g) => {
           g.scale(1, 0.6, 0.85);
           g.translate(0, 0.2, 0);
         }),
@@ -78,17 +78,17 @@ export function buildPropGeometry(kind: PropKind): THREE.BufferGeometry {
       break;
     case "bush":
       geo = merge([
-        part(new THREE.IcosahedronGeometry(0.6, 0), "#26431f", (g) => {
+        part(new THREE.IcosahedronGeometry(0.6, 0), "#3f6e2e", (g) => {
           g.scale(1.2, 0.8, 1.2);
           g.translate(0, 0.35, 0);
         }),
-        part(new THREE.IcosahedronGeometry(0.4, 0), "#30512a", (g) => g.translate(0.45, 0.4, 0.2)),
+        part(new THREE.IcosahedronGeometry(0.4, 0), "#4f8236", (g) => g.translate(0.45, 0.4, 0.2)),
       ]);
       break;
     case "stone":
       // Flat stepping stone.
       geo = merge([
-        part(new THREE.DodecahedronGeometry(0.42, 0), "#5f605a", (g) => {
+        part(new THREE.DodecahedronGeometry(0.42, 0), "#8a8b84", (g) => {
           g.scale(1, 0.32, 0.85);
           g.translate(0, 0.02, 0);
         }),
@@ -96,7 +96,7 @@ export function buildPropGeometry(kind: PropKind): THREE.BufferGeometry {
       break;
     case "log":
       geo = merge([
-        part(new THREE.CylinderGeometry(0.3, 0.32, 2.4, 7), "#46301f", (g) => {
+        part(new THREE.CylinderGeometry(0.3, 0.32, 2.4, 7), "#6b4a2f", (g) => {
           g.rotateZ(Math.PI / 2);
           g.translate(0, 0.28, 0);
         }),
@@ -104,10 +104,10 @@ export function buildPropGeometry(kind: PropKind): THREE.BufferGeometry {
       break;
     case "mushroom":
       geo = merge([
-        part(new THREE.CylinderGeometry(0.05, 0.06, 0.22, 5), "#cfc6b2", (g) => g.translate(0, 0.11, 0)),
-        part(new THREE.ConeGeometry(0.16, 0.12, 6), "#8e2620", (g) => g.translate(0, 0.25, 0)),
-        part(new THREE.CylinderGeometry(0.04, 0.05, 0.16, 5), "#cfc6b2", (g) => g.translate(0.15, 0.08, 0.08)),
-        part(new THREE.ConeGeometry(0.11, 0.09, 6), "#9a3222", (g) => g.translate(0.15, 0.18, 0.08)),
+        part(new THREE.CylinderGeometry(0.05, 0.06, 0.22, 5), "#efe6d2", (g) => g.translate(0, 0.11, 0)),
+        part(new THREE.ConeGeometry(0.16, 0.12, 6), "#b8322a", (g) => g.translate(0, 0.25, 0)),
+        part(new THREE.CylinderGeometry(0.04, 0.05, 0.16, 5), "#efe6d2", (g) => g.translate(0.15, 0.08, 0.08)),
+        part(new THREE.ConeGeometry(0.11, 0.09, 6), "#c0462a", (g) => g.translate(0.15, 0.18, 0.08)),
       ]);
       break;
   }

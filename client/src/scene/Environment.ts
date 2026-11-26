@@ -24,6 +24,7 @@ import {
 } from "@rpg/shared";
 import { applyOcclusionCutout } from "./occlusion.ts";
 import { toonMaterial } from "./toon.ts";
+import { sunDirection, type LightingPreset } from "./Lighting.ts";
 import { buildPropGeometry } from "./propGeometry.ts";
 import type { AssetLibrary } from "./Assets.ts";
 
@@ -65,6 +66,10 @@ export interface EnvironmentOptions {
 export class Environment {
   readonly group = new THREE.Group();
   readonly sun: THREE.DirectionalLight;
+  private readonly hemi: THREE.HemisphereLight;
+  private readonly fog: THREE.Fog;
+  private readonly sunOffset = new THREE.Vector3(-30, 45, 30);
+  private fireflies = 0;
   private readonly waterMat: THREE.ShaderMaterial;
   private readonly motes: THREE.Points;
   private readonly mist: THREE.Points;
@@ -76,13 +81,14 @@ export class Environment {
     assets: AssetLibrary,
     opts: EnvironmentOptions,
   ) {
-    const sky = new THREE.Color("#0d1214");
+    // Colours and intensities here are placeholders; applyLighting() sets the real values per time of day.
+    const sky = new THREE.Color("#22302a");
     scene.background = sky;
-    scene.fog = new THREE.Fog(sky, 90, 170);
-
-    // Dusk: a low, warm sun and a cold blue fill. Dark fantasy, not storybook.
-    scene.add(new THREE.HemisphereLight("#7d8fb0", "#232b1e", 1.5));
-    this.sun = new THREE.DirectionalLight("#ffc890", 2.3);
+    this.fog = new THREE.Fog(sky, 120, 210);
+    scene.fog = this.fog;
+    this.hemi = new THREE.HemisphereLight("#d6e6ff", "#3a4a2a", 1.2);
+    scene.add(this.hemi);
+    this.sun = new THREE.DirectionalLight("#fff0d6", 2.5);
     this.sun.castShadow = true;
     const shadowRes = opts.lowPower ? 1024 : 2048;
     this.sun.shadow.mapSize.set(shadowRes, shadowRes);
@@ -110,13 +116,31 @@ export class Environment {
     scene.add(this.group);
   }
 
+  /** Apply a time-of-day preset (see Lighting.ts). Cheap enough to call every frame during a cycle. */
+  applyLighting(p: LightingPreset, scene: THREE.Scene): void {
+    (scene.background as THREE.Color).copy(p.sky);
+    this.fog.color.copy(p.sky);
+    this.fog.near = p.fogNear;
+    this.fog.far = p.fogFar;
+    this.hemi.color.copy(p.hemiSky);
+    this.hemi.groundColor.copy(p.hemiGround);
+    this.hemi.intensity = p.hemiIntensity;
+    this.sun.color.copy(p.sunColor);
+    this.sun.intensity = p.sunIntensity;
+    this.sunOffset.copy(sunDirection(p)).multiplyScalar(60);
+    this.waterMat.uniforms.uLight!.value = p.water;
+    this.fireflies = p.fireflies;
+    // Daytime motes are pale pollen; at night they become green-gold fireflies.
+    (this.motes.material as THREE.PointsMaterial).color.set("#fff3b0").lerp(new THREE.Color("#d8f07a"), p.fireflies);
+  }
+
   /** Keep the shadow frustum centred on the player; animate water and particles. */
   update(_dt: number, time: number, focus: THREE.Vector3): void {
-    this.sun.position.set(focus.x - 26, focus.y + 36, focus.z + 30);
+    this.sun.position.copy(focus).add(this.sunOffset);
     this.sun.target.position.copy(focus);
     this.waterMat.uniforms.uTime!.value = time;
     this.motes.position.set(focus.x, focus.y, focus.z);
-    (this.motes.material as THREE.PointsMaterial).opacity = 0.55 + Math.sin(time * 0.7) * 0.25;
+    (this.motes.material as THREE.PointsMaterial).opacity = (0.35 + this.fireflies * 0.45) + Math.sin(time * 0.7) * 0.2;
 
     const pos = this.mist.geometry.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < pos.count; i++) {
@@ -136,16 +160,16 @@ export class Environment {
     const pos = geo.attributes.position as THREE.BufferAttribute;
     const colors = new Float32Array(pos.count * 3);
     const c = new THREE.Color();
-    const grassA = new THREE.Color("#30492a");
-    const grassB = new THREE.Color("#405a2e");
-    const forestFloor = new THREE.Color("#1f2b1b");
-    const dirt = new THREE.Color("#4f4333");
-    const mud = new THREE.Color("#3d3428");
-    const bed = new THREE.Color("#1d2a2c");
-    const moss = new THREE.Color("#2a3524");
-    const rock = new THREE.Color("#35322f");
-    const darkRock = new THREE.Color("#2e2c2b");
-    const snow = new THREE.Color("#5f6871");
+    const grassA = new THREE.Color("#4f7a35");
+    const grassB = new THREE.Color("#6c8f3d");
+    const forestFloor = new THREE.Color("#3b4f2a");
+    const dirt = new THREE.Color("#7d6a47");
+    const mud = new THREE.Color("#6b5a3c");
+    const bed = new THREE.Color("#4a5a55");
+    const moss = new THREE.Color("#55643f");
+    const rock = new THREE.Color("#5f5a53");
+    const darkRock = new THREE.Color("#4c4843");
+    const snow = new THREE.Color("#b9c2c9");
     const seed = this.world.seed;
 
     for (let i = 0; i < pos.count; i++) {
@@ -195,7 +219,7 @@ export class Environment {
       side: THREE.DoubleSide,
       uniforms: THREE.UniformsUtils.merge([
         THREE.UniformsLib.fog,
-        { uTime: { value: 0 }, uDeep: { value: new THREE.Color("#0c2733") }, uShallow: { value: new THREE.Color("#2a5d6a") } },
+        { uTime: { value: 0 }, uLight: { value: 1 }, uDeep: { value: new THREE.Color("#1f5a73") }, uShallow: { value: new THREE.Color("#5fa7b8") } },
       ]),
       vertexShader: /* glsl */ `
         #include <fog_pars_vertex>
@@ -212,6 +236,7 @@ export class Environment {
       fragmentShader: /* glsl */ `
         #include <fog_pars_fragment>
         uniform float uTime;
+        uniform float uLight;
         uniform vec3 uDeep;
         uniform vec3 uShallow;
         varying vec2 vUv;
@@ -228,7 +253,8 @@ export class Environment {
           // Waterfall: white streaks.
           float streak = smoothstep(0.4, 1.0, sin(flow * 3.0 + vUv.x * 30.0) * 0.5 + 0.5);
           foam = max(foam, vSteep * (0.55 + 0.45 * streak));
-          col = mix(col, vec3(0.62, 0.74, 0.78), clamp(step(0.45, foam) * foam, 0.0, 1.0) * 0.8);
+          col = mix(col, vec3(0.88, 0.94, 0.97), clamp(step(0.45, foam) * foam, 0.0, 1.0) * 0.8);
+          col *= uLight;
           gl_FragColor = vec4(col, mix(0.8, 0.55, edge) + vSteep * 0.15);
           #include <fog_fragment>
         }`,
@@ -343,8 +369,8 @@ export class Environment {
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    // Fireflies: small, bright and additive so they glow in the gloom.
-    const mat = new THREE.PointsMaterial({ color: "#d8f07a", size: 0.16, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending });
+    // Pollen by day, fireflies by night (colour set in applyLighting). Additive so they glow.
+    const mat = new THREE.PointsMaterial({ color: "#fff3b0", size: 0.14, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending });
     return new THREE.Points(geo, mat);
   }
 
@@ -352,7 +378,7 @@ export class Environment {
     const count = 70;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(count * 3), 3));
-    const mat = new THREE.PointsMaterial({ color: "#9fb4bf", size: 0.5, transparent: true, opacity: 0.3, depthWrite: false });
+    const mat = new THREE.PointsMaterial({ color: "#eef6ff", size: 0.5, transparent: true, opacity: 0.35, depthWrite: false });
     const pts = new THREE.Points(geo, mat);
     pts.frustumCulled = false;
     return pts;

@@ -25,9 +25,9 @@ function mat(color: string, emissive?: string): THREE.MeshToonMaterial {
   return m;
 }
 
-const STONE = "#7c776c";
-const STONE_DARK = "#5e5a52";
-const MOSS = "#45502f";
+const STONE = "#a8a294";
+const STONE_DARK = "#8a8478";
+const MOSS = "#6f7d4a";
 
 function mesh(geo: THREE.BufferGeometry, material: THREE.Material, x = 0, y = 0, z = 0): THREE.Mesh {
   const m = new THREE.Mesh(geo, material);
@@ -63,10 +63,18 @@ export class Landmarks {
     }
   }
 
+  private readonly glows: Array<{ light: THREE.PointLight; base: number }> = [];
+
   private glow(parent: THREE.Object3D, color: string, intensity: number, distance: number, y: number): void {
     const light = new THREE.PointLight(color, intensity, distance, 2);
     light.position.y = y;
     parent.add(light);
+    this.glows.push({ light, base: intensity });
+  }
+
+  /** Scale landmark glows with the time of day (stronger at night). */
+  setGlow(multiplier: number): void {
+    for (const g of this.glows) g.light.intensity = g.base * multiplier;
   }
 
   setGateOpen(gate: GateId, open: boolean): void {
@@ -150,7 +158,7 @@ export class Landmarks {
       }
       case "seal": {
         const slab = new THREE.Group();
-        slab.add(mesh(new THREE.BoxGeometry(2.3, 0.22, 3.3), mat("#2c2a33"), 0, 0.72, 0));
+        slab.add(mesh(new THREE.BoxGeometry(2.3, 0.22, 3.3), mat("#3c3a44"), 0, 0.72, 0));
         for (let i = 0; i < 5; i++) {
           const r = mesh(new THREE.BoxGeometry(0.08, 0.03, 0.6 + rng() * 1.6), this.runeMat, -0.8 + i * 0.4, 0.84, (rng() - 0.5) * 0.6);
           r.rotation.y = (rng() - 0.5) * 0.8;
@@ -162,8 +170,8 @@ export class Landmarks {
         break;
       }
       case "obelisk": {
-        g.add(mesh(new THREE.CylinderGeometry(0.35, 0.6, 3.2, 4), mat("#3e3c48"), 0, 1.6, 0));
-        const tip = mesh(new THREE.CylinderGeometry(0.0, 0.36, 1.3, 4), mat("#3e3c48"), 0.5, 0.35, 1.1);
+        g.add(mesh(new THREE.CylinderGeometry(0.35, 0.6, 3.2, 4), mat("#5a5866"), 0, 1.6, 0));
+        const tip = mesh(new THREE.CylinderGeometry(0.0, 0.36, 1.3, 4), mat("#5a5866"), 0.5, 0.35, 1.1);
         tip.rotation.x = Math.PI / 2.2;
         g.add(tip);
         g.add(mesh(new THREE.BoxGeometry(0.05, 1.8, 0.05), this.runeMat, 0, 1.7, 0.42));
@@ -179,7 +187,7 @@ export class Landmarks {
         break;
       }
       case "boulder": {
-        const b = mesh(new THREE.DodecahedronGeometry(1, 0), mat(rng() < 0.3 ? "#46433e" : "#57534c"), 0, 0.45, 0);
+        const b = mesh(new THREE.DodecahedronGeometry(1, 0), mat(rng() < 0.3 ? "#6e6a62" : "#7f7a70"), 0, 0.45, 0);
         b.scale.set(1.1, 0.8, 0.95);
         b.rotation.set(rng(), rng() * 3, rng());
         g.add(b);
@@ -199,7 +207,7 @@ export class Landmarks {
         // Rocky arch around the opening.
         for (let i = 0; i <= 10; i++) {
           const a = (i / 10) * Math.PI;
-          const r = mesh(new THREE.DodecahedronGeometry(1 + rng() * 0.7, 0), mat(rng() < 0.4 ? "#3a3733" : "#47433e"), Math.cos(a) * 3.9, Math.sin(a) * 5.6, back + 0.4 + rng() * 0.6);
+          const r = mesh(new THREE.DodecahedronGeometry(1 + rng() * 0.7, 0), mat(rng() < 0.4 ? "#5f5a54" : "#6f6a62"), Math.cos(a) * 3.9, Math.sin(a) * 5.6, back + 0.4 + rng() * 0.6);
           r.rotation.set(rng() * 3, rng() * 3, rng() * 3);
           g.add(r);
         }

@@ -74,8 +74,17 @@ shared 4-step light ramp (`client/src/scene/toon.ts`); loaded glTF models are
 converted to it automatically. `CelPost` renders the scene to an offscreen
 target with a depth texture and draws ink outlines where the Laplacian of
 linear depth spikes (silhouettes only, never flat or sloped surfaces), then
-grades, vignettes and tone-maps to the screen. The see-through cut-out is
+applies the time-of-day grade, vignette and tone mapping to the screen. The see-through cut-out is
 hard-edged so the ink pass draws a clean rim around it.
+
+**Time-of-day lighting.** Material colours are neutral; mood comes only from
+light and grading. `Lighting.ts` defines night/dawn/day/dusk presets (sun
+colour, direction and strength, sky/fog, hemisphere fill, exposure,
+saturation, shadow tint, vignette, lantern, glows, fireflies, water
+brightness) and `lightingAt(hour)` blends them. `GameClient.updateLighting()`
+applies the result to the environment, the ink/grade pass and landmarks
+whenever the hour changes, so a day/night cycle only needs to call
+`setHour()` over time.
 
 **Art is optional.** See [ASSETS.md](ASSETS.md). Procedural placeholders are
 always available; glTF models are layered on through a manifest.

@@ -10,8 +10,10 @@ export interface CelPostOptions {
  *
  * The scene is rendered into an offscreen target with a depth texture, then a
  * full-screen shader draws dark outlines wherever the depth jumps (object
- * silhouettes, cliff edges, foliage), adds a vignette and a slight grade, and
+ * silhouettes, cliff edges, foliage), applies a colour grade and vignette, and
  * finally applies tone mapping + sRGB output like a normal render would.
+ * The grade (saturation, shadow tint, vignette, exposure) follows the
+ * time-of-day preset via setGrade().
  * Uses the Laplacian of linear depth so flat or sloped surfaces stay clean and
  * only real discontinuities get ink.
  */
@@ -45,6 +47,9 @@ export class CelPost {
         uOrtho: { value: 1 },
         uInk: { value: new THREE.Color("#07090a") },
         uEdge: { value: 0.22 },
+        uSaturation: { value: 1 },
+        uShadowTint: { value: new THREE.Color("#ffffff") },
+        uVignette: { value: 0.18 },
       },
       vertexShader: /* glsl */ `
         varying vec2 vUv;
@@ -62,6 +67,9 @@ export class CelPost {
         uniform float uOrtho;
         uniform vec3 uInk;
         uniform float uEdge;
+        uniform float uSaturation;
+        uniform vec3 uShadowTint;
+        uniform float uVignette;
         varying vec2 vUv;
 
         float linearDepth(vec2 uv) {
@@ -85,14 +93,14 @@ export class CelPost {
           float edge = smoothstep(uEdge, uEdge * 2.5, lap) * nearer;
 
           vec4 col = texture2D(tColor, vUv);
-          // Grade: slightly desaturated, cool shadows.
+          // Grade (driven by the time-of-day preset): saturation and shadow tint.
           float lum = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));
-          col.rgb = mix(vec3(lum), col.rgb, 0.82);
-          col.rgb = mix(col.rgb * vec3(0.86, 0.94, 1.08), col.rgb, smoothstep(0.05, 0.5, lum));
+          col.rgb = mix(vec3(lum), col.rgb, uSaturation);
+          col.rgb = mix(col.rgb * uShadowTint, col.rgb, smoothstep(0.05, 0.5, lum));
           col.rgb = mix(col.rgb, uInk, edge);
           // Vignette.
           float vig = smoothstep(0.35, 0.95, length((vUv - 0.5) * vec2(1.2, 1.0)));
-          col.rgb *= 1.0 - vig * 0.55;
+          col.rgb *= 1.0 - vig * uVignette;
           gl_FragColor = col;
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
@@ -100,6 +108,15 @@ export class CelPost {
     });
     this.quadScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.material));
     this.resize();
+  }
+
+  /** Colour grade from a time-of-day preset. */
+  setGrade(p: { saturation: number; shadowTint: THREE.Color; vignette: number; exposure: number }): void {
+    const u = this.material.uniforms;
+    u.uSaturation!.value = p.saturation;
+    (u.uShadowTint!.value as THREE.Color).copy(p.shadowTint);
+    u.uVignette!.value = p.vignette;
+    this.renderer.toneMappingExposure = p.exposure;
   }
 
   resize(): void {

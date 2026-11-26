@@ -8,7 +8,7 @@ heel of stale bread and an empty waterskin.
 > Status: **groundwork**. The engine, networking, 12 classes, combat loop and
 > starting forest are in place. Story, quests, loot and dungeons come next.
 
-![The waterfall pool at dusk](docs/images/spawn.png)
+![Waking up by the stream](docs/images/spawn.png)
 
 ## Tech stack
 
@@ -122,9 +122,13 @@ screen to run full-screen (it ships a web app manifest).
   Each is a server-side *gate*: sealed for now, with an inspect message, and
   ready for the story to open later (`/open` in dev). Landmarks are announced
   the first time you find them and appear on the minimap.
-- **Dark cel-shaded look**: toon lighting in hard bands, ink outlines from a
-  screen-space depth pass, a dusk palette with a vignette, a lantern glow
-  around your character, and eerie light from the sealed places.
+- **Cel-shaded look**: toon lighting in hard bands and ink outlines from a
+  screen-space depth pass.
+- **Time-of-day lighting, ready for a day/night cycle**: sun, sky, fog, colour
+  grade, your lantern, firefly and landmark glows all come from presets
+  (night, dawn, day, dusk) blended by hour in `client/src/scene/Lighting.ts`.
+  The game is fixed at mid-morning for now; add `?time=21` to the URL to
+  preview night (any hour 0-24 works).
 - **Isometric cut-away**: mountains on the camera side of the valley are kept
   low and anything between the camera and your character fades out, so you are
   never hidden.
@@ -145,7 +149,9 @@ screen to run full-screen (it ships a web app manifest).
 | --- | --- |
 | ![The cave](docs/images/cave.png) | ![The pass](docs/images/pass.png) |
 
-![Valley map](docs/images/map.png)
+| Night preview (`?time=21`) | Valley map |
+| --- | --- |
+| ![Night](docs/images/night.png) | ![Map](docs/images/map.png) |
 
 ![Character creation](docs/images/character-create.png)
 
@@ -170,5 +176,6 @@ Suggested next steps, roughly in order:
 4. **Abilities 2.0**: status effects (slow, stun, DoT), pets/summons (Beastmaster, Bonecaller), forms (Shapeshifter), talent points per level.
 5. **Dungeons**: instanced rooms generated from KayKit dungeon tiles; parties enter together.
 6. **Story & quests**: the amnesia hook, NPCs, the first settlement.
-7. **Audio**: ambience (stream, birds), combat SFX, music.
-8. **Ops**: Redis presence for multiple server processes, deployment pipeline.
+7. **Day/night cycle**: advance the hour from server time (`GameClient.setHour`); night spawns, light radius gameplay.
+8. **Audio**: ambience (stream, birds), combat SFX, music.
+9. **Ops**: Redis presence for multiple server processes, deployment pipeline.
