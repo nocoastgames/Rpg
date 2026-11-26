@@ -108,7 +108,9 @@ export class ForestRoom extends Room<{ state: WorldState }> {
       this.game.setLevel(client.sessionId, Number(arg));
       client.send(S2C.notice, `[dev] level set to ${arg}`);
     } else if (cmd === "quest" && arg) {
-      const ids = arg === "all" ? Object.values(GATE_QUESTS).map((q) => q!.id) : [arg];
+      // "favor" = your own god's epic quest.
+      const own = getFaith(this.state.players.get(client.sessionId)?.faith ?? "")?.favorQuest?.id;
+      const ids = arg === "all" ? Object.values(GATE_QUESTS).map((q) => q!.id) : arg === "favor" && own ? [own] : [arg];
       for (const q of ids) this.game.completeQuest(client.sessionId, q);
       client.send(S2C.notice, `[dev] completed ${ids.join(", ")}`);
     } else if (cmd === "class" && arg && getClassNode(arg)) {

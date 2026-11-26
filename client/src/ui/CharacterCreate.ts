@@ -372,7 +372,7 @@ export function showCharacterCreate(root: HTMLElement, error?: string): Promise<
       h(
         "p.cc-desc",
         null,
-        "When you woke, a prayer was already on your lips. Which god did it call to? Each god quietly blesses followers whose path matches theirs: good, neutral or evil. Every calling starts neutral; your path decides later.",
+        "When you woke, a prayer was already on your lips. Which god did it call to? Each god quietly blesses followers whose path matches theirs: good, neutral or evil. A path one step away can win the blessing with the god's epic quest, but good and evil never bless each other. Every calling starts neutral; your path decides later.",
       ),
       h(
         "div.cc-faiths",
@@ -393,7 +393,11 @@ export function showCharacterCreate(root: HTMLElement, error?: string): Promise<
             h("div.cc-faith-domain", null, f.domain, h("span.tag", null, f.leaning)),
             h("div.cc-faith-desc", null, f.description),
             f.blessing
-              ? h("div.cc-faith-blessing", null, `Blessing for ${f.leaning.toLowerCase()} paths: ${f.blessingText}.`)
+              ? h(
+                  "div.cc-faith-blessing",
+                  null,
+                  `Blessing for ${f.leaning.toLowerCase()} paths: ${f.blessingText}. ${f.leaning === "Neutral" ? "Good or evil paths" : "Neutral paths"} can earn it through ${f.favorQuest?.name}.`,
+                )
               : h("div.cc-faith-blessing", null, "No blessing."),
           ),
         ),

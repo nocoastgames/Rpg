@@ -62,7 +62,7 @@ When the server is not running with `NODE_ENV=production`, these chat commands h
 | `/tp <place>` | Teleport to `spawn`, `pool`, `ruins_seal`, `cave_thorns`, `valley_exit` or `signpost` |
 | `/open <gate>` / `/close <gate>` | Open or seal `valley_exit`, `ruins_seal` or `cave_thorns` for everyone |
 | `/level <n>` | Set your level |
-| `/quest <id\|all>` | Complete a gate trial (`trial_of_paths`, `trial_of_mastery`) |
+| `/quest <id\|all\|favor>` | Complete a gate trial (`trial_of_paths`, `trial_of_mastery`), or `favor` for your god's epic quest |
 | `/class <id>` | Jump down your tree to a class (sets level 50, completes trials), e.g. `/class dragon_knight` |
 
 ### Other scripts

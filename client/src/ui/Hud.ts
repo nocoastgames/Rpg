@@ -10,7 +10,7 @@ import {
   getItem,
   getBackground,
   getFaith,
-  blessingActive,
+  blessingStatus,
   classAlignment,
   memoriesAt,
   backgroundRevealed,
@@ -455,7 +455,7 @@ export class Hud {
 
   /** Faith and the half-remembered past: memories recovered so far; the background is named once fully remembered. */
   private renderPast(p: PlayerView): void {
-    const key = `${p.faith}|${p.background}|${p.memories}|${p.level}|${p.classId}`;
+    const key = `${p.faith}|${p.background}|${p.memories}|${p.level}|${p.classId}|${p.quests.length}`;
     if (key === this.pastKey) return;
     this.pastKey = key;
     const faith = getFaith(p.faith);
@@ -470,15 +470,7 @@ export class Hud {
         h("span.past-label", null, "Faith "),
         faith ? h("span", { style: `color:${faith.color}` }, `${faith.name}${faith.title ? " " + faith.title : ""}`) : "—",
       ),
-      faith?.blessing
-        ? h(
-            `div.past-blessing${blessingActive(p.faith, p.classId) ? ".active" : ""}` as "div",
-            null,
-            blessingActive(p.faith, p.classId)
-              ? `Blessing: ${faith.blessingText}.`
-              : `Blessing inactive: ${faith.name} favours ${faith.leaning.toLowerCase()} paths, and yours is ${classAlignment(p.classId)}.`,
-          )
-        : null,
+      faith?.blessing ? this.blessingLine(p, faith) : null,
       h("div.past-row", null, h("span.past-label", null, "Who you were "), revealed && bg ? h("b", null, bg.name) : h("i", null, "You don't remember yet.")),
       revealed && bg ? h("div.past-passive", null, bg.passiveText) : null,
       h(
@@ -490,6 +482,18 @@ export class Hud {
       ),
     ];
     this.pastEl.replaceChildren(...parts.filter((n): n is Node => !!n));
+  }
+
+  private blessingLine(p: PlayerView, faith: NonNullable<ReturnType<typeof getFaith>>): HTMLElement {
+    const status = blessingStatus(p.faith, p.classId, p.quests);
+    const path = classAlignment(p.classId);
+    const text =
+      status === "active"
+        ? `Blessing: ${faith.blessingText}.`
+        : status === "needsQuest"
+          ? `Blessing not yet earned: ${faith.name} favours ${faith.leaning.toLowerCase()} paths and yours is ${path}. Complete the epic quest ${faith.favorQuest?.name} to win their favour.`
+          : `No blessing: ${faith.name} will never bless a ${path} path.`;
+    return h(`div.past-blessing${status === "active" ? ".active" : ""}` as "div", null, text);
   }
 
   /** Path breadcrumb, companion, and the next advancement choice. */

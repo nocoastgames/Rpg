@@ -572,8 +572,8 @@ export class GameClient {
         if (b.stat === "speed" && b.expiresAt > serverTime) speedBuff += b.amount;
       });
       // Mirror the server's speed rules (buffs, background) so prediction rarely needs correcting.
-      const speed = BASE_MOVE_SPEED * (1 + speedBuff + passiveBonus(me.background, me.faith, me.classId, "moveSpeed"));
-      const water = WATER_SPEED_MULTIPLIER + (1 - WATER_SPEED_MULTIPLIER) * passiveBonus(me.background, me.faith, me.classId, "waterSlow");
+      const speed = BASE_MOVE_SPEED * (1 + speedBuff + passiveBonus(me.background, me.faith, me.classId, "moveSpeed", me.quests));
+      const water = WATER_SPEED_MULTIPLIER + (1 - WATER_SPEED_MULTIPLIER) * passiveBonus(me.background, me.faith, me.classId, "waterSlow", me.quests);
       const r = stepMovement(this.world, this.pred.x, this.pred.z, intent, speed, dt, undefined, water);
       this.pred.x = r.x;
       this.pred.z = r.z;

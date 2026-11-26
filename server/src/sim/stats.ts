@@ -19,7 +19,7 @@ import type { Player } from "../schema/WorldState.ts";
 
 /** Background passive + faith blessing (when the class's alignment matches the god). */
 export function bonus(p: Player, type: Passive["type"]): number {
-  return passiveBonus(p.background, p.faith, p.classId, type);
+  return passiveBonus(p.background, p.faith, p.classId, type, p.quests);
 }
 
 export interface ResolvedCharacter {

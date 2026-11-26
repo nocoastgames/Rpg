@@ -45,25 +45,39 @@ character panel.
 ## Faiths and blessings
 
 Faith never restricts your class. Each god (except for the Faithless) grants
-a **minor but noticeable blessing** while your class's alignment matches its
-leaning: good with good, evil with evil, neutral with neutral. Every calling
-starts neutral, and alignment comes from your path (for example Knight and
-Paladin are good; Marauder, Dark Knight and Lich are evil; Archmage is
-neutral), so a blessing can switch on or off when you advance. You are told
-when it does, and the Past section of the character panel shows its status.
+a **minor but noticeable blessing**. Every calling starts neutral, and
+alignment comes from your path (for example Knight and Paladin are good;
+Marauder, Dark Knight and Lich are evil; Archmage is neutral), so a
+blessing can change when you advance.
 
-| Faith | Domain | Leaning | Blessing |
-| --- | --- | --- | --- |
-| Solenne, the Dawn Mother | Light, mercy and healing | Good | +8% healing received |
-| Valdris, the Oathshield | Law, duty and protection | Good | +4% armour |
-| The Green Mother | Nature, growth and renewal | Good | Natural health regeneration 60% faster |
-| Orren, Keeper of Roads | Travel, luck and trade | Neutral | +4% movement speed |
-| Mirevel of the Hidden Ledger | Knowledge and secrets | Neutral | +8% maximum resource |
-| The Grey Ferryman | Death and balance | Neutral | Return from death 2 seconds sooner |
-| Kaelthar, the Hunger | Blood, war and conquest | Evil | Heal for 3% of the damage you deal |
-| The Veiled One | Shadow, deceit and poison | Evil | +3% critical hit chance |
-| The Rot Below | Decay, plague and thorns | Evil | +6% damage with area abilities |
-| Faithless | No god | None | None |
+| Your path vs. your god | Blessing |
+| --- | --- |
+| Same (good/good, neutral/neutral, evil/evil) | Automatic |
+| One step apart (good/neutral or neutral/evil) | Earned by completing the god's **epic quest** |
+| Opposite (good/evil) | Never |
+
+So no one is left out except by their own choices: a neutral Archmage of
+Solenne can win the Dawn Mother's favour through *The Long Dawn*, but a
+Lich never can. A favour, once won, stays while the path remains within
+one step. You are told when a blessing turns on or off, and the Past
+section of the character panel shows its status and what to do.
+
+| Faith | Domain | Leaning | Blessing | Epic quest |
+| --- | --- | --- | --- | --- |
+| Solenne, the Dawn Mother | Light, mercy and healing | Good | +8% healing received | The Long Dawn |
+| Valdris, the Oathshield | Law, duty and protection | Good | +4% armour | The Unbroken Oath |
+| The Green Mother | Nature, growth and renewal | Good | Natural health regeneration 60% faster | Roots of the World |
+| Orren, Keeper of Roads | Travel, luck and trade | Neutral | +4% movement speed | The Endless Road |
+| Mirevel of the Hidden Ledger | Knowledge and secrets | Neutral | +8% maximum resource | The Unwritten Page |
+| The Grey Ferryman | Death and balance | Neutral | Return from death 2 seconds sooner | The Far Shore |
+| Kaelthar, the Hunger | Blood, war and conquest | Evil | Heal for 3% of the damage you deal | The Red Tithe |
+| The Veiled One | Shadow, deceit and poison | Evil | +3% critical hit chance | Behind the Veil |
+| The Rot Below | Decay, plague and thorns | Evil | +6% damage with area abilities | The Deep Rot |
+| Faithless | No god | None | None | — |
+
+The epic quests themselves aren't built yet; their ids (`favor_<faith>`)
+already gate the blessing, and `/quest favor` completes your god's quest in
+dev mode.
 
 Blessings stack with your background's passive. All of this is data in
 `shared/src/character.ts` and validated on the server (`validateCreation`).

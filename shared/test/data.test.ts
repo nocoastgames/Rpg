@@ -152,3 +152,24 @@ test("faith blessings apply only when the class's alignment matches the god", ()
   // Every pet class's alignment matches its good/evil tag.
   for (const n of CLASS_NODES.filter((n) => n.pet)) assert.equal(classAlignment(n.id), n.pet, n.id);
 });
+
+import { blessingStatus } from "../src/character.ts";
+
+test("adjacent paths can earn a blessing by epic quest; opposites never can", () => {
+  // good god
+  assert.equal(blessingStatus("solenne", "paladin"), "active");
+  assert.equal(blessingStatus("solenne", "fighter"), "needsQuest", "neutral path, good god");
+  assert.equal(blessingStatus("solenne", "fighter", ["favor_solenne"]), "active");
+  assert.equal(blessingStatus("solenne", "lich", ["favor_solenne"]), "opposed", "evil can never get good");
+  // evil god
+  assert.equal(blessingStatus("kaelthar", "lich"), "active");
+  assert.equal(blessingStatus("kaelthar", "warlord", ["favor_kaelthar"]), "active", "neutral path, evil god, quest done");
+  assert.equal(blessingStatus("kaelthar", "paladin", ["favor_kaelthar"]), "opposed", "good can never get evil");
+  // neutral god accepts either side with the quest
+  assert.equal(blessingStatus("orren", "paladin"), "needsQuest");
+  assert.equal(blessingStatus("orren", "lich", ["favor_orren"]), "active");
+  // faithless
+  assert.equal(blessingStatus("faithless", "fighter", ["favor_solenne"]), "none");
+  // another god's quest doesn't count
+  assert.equal(blessingStatus("valdris", "fighter", ["favor_solenne"]), "needsQuest");
+});
