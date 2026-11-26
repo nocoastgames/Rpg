@@ -10,9 +10,9 @@ import {
   getItem,
   getBackground,
   getFaith,
+  availableFavorQuests,
   blessingInfo,
   classAlignment,
-  neutralGods,
   memoriesAt,
   backgroundRevealed,
   resolveKit,
@@ -488,17 +488,15 @@ export class Hud {
   private blessingLine(p: PlayerView, faith: NonNullable<ReturnType<typeof getFaith>>): HTMLElement {
     const info = blessingInfo(p.faith, p.classId, p.quests);
     const path = classAlignment(p.classId);
-    const neutral = neutralGods()
+    const options = availableFavorQuests(p.faith, p.classId)
       .map((g) => `${g.favorQuest?.name} (${g.name})`)
       .join(", ");
     const text =
       info.status === "active"
         ? `Blessing: ${faith.blessingText}.`
-        : info.status === "patron"
-          ? `${faith.name} will not bless a ${path} path, but ${info.blessedBy!.name} does: ${info.blessedBy!.blessingText}.`
-          : info.status === "needsQuest"
-            ? `Blessing not yet earned: ${faith.name} favours ${faith.leaning.toLowerCase()} paths and yours is ${path}. Complete the epic quest ${faith.favorQuest?.name} to win their favour.`
-            : `${faith.name} will never bless a ${path} path. A neutral god's epic quest can earn you their blessing instead: ${neutral}.`;
+        : info.status === "needsQuest"
+          ? `Blessing not yet earned: ${faith.name} favours ${faith.leaning.toLowerCase()} paths and yours is ${path}. Complete the epic quest ${faith.favorQuest?.name} to win their favour.`
+          : `${faith.name} will never bless a ${path} path. A neutral god's epic quest would make them your god: ${options}.`;
     return h(`div.past-blessing${info.blessedBy ? ".active" : ""}` as "div", null, text);
   }
 

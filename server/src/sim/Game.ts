@@ -35,6 +35,7 @@ import {
   STAT_IDS,
   FAITHS,
   blessingInfo,
+  favorQuestOutcome,
   getFaith,
   getBackground,
   memoriesAt,
@@ -342,9 +343,8 @@ export class Game {
     const faith = getFaith(p.faith);
     if (faith && info.blessedBy?.id !== blessedBefore) {
       if (info.status === "active") this.events.notice(id, `${faith.name}'s blessing settles on you: ${faith.blessingText}.`);
-      else if (info.status === "patron") this.events.notice(id, `${faith.name} turns away from your path, but ${info.blessedBy!.name} still watches over you: ${info.blessedBy!.blessingText}.`);
       else if (info.status === "needsQuest") this.events.notice(id, `${faith.name}'s favour fades from your new path. Complete ${faith.favorQuest?.name ?? "an epic quest"} to win it back.`);
-      else this.events.notice(id, `${faith.name} will never bless a path like yours. A neutral god's epic quest could still earn you their blessing.`);
+      else this.events.notice(id, `${faith.name} will never bless a path like yours. A neutral god's epic quest could still take you in.`);
     }
     this.syncCompanion(id);
     const c = companionFor(classId);
@@ -367,21 +367,26 @@ export class Game {
     const p = this.state.players.get(id);
     if (!p) return false;
     if (p.quests.includes(questId)) return true;
-    const before = blessingInfo(p.faith, p.classId, p.quests).blessedBy?.id;
-    p.quests.push(questId);
-    const after = blessingInfo(p.faith, p.classId, p.quests);
-    const questGod = FAITHS.find((f) => f.favorQuest?.id === questId);
-    if (questGod) {
-      if (after.blessedBy && after.blessedBy.id !== before) {
-        this.events.notice(
-          id,
-          after.status === "patron"
-            ? `${after.blessedBy.name} takes you under their protection. Blessing: ${after.blessedBy.blessingText}.`
-            : `${after.blessedBy.name} accepts your devotion. Blessing: ${after.blessedBy.blessingText}.`,
-        );
-      } else if (!after.blessedBy) {
-        this.events.notice(id, `${questGod.name} acknowledges your deeds, but grants no blessing to a path like yours.`);
+    // Epic quests of the gods: completing one makes that god your god.
+    if (FAITHS.some((f) => f.favorQuest?.id === questId)) {
+      const outcome = favorQuestOutcome(p.faith, p.classId, questId);
+      if (!outcome.ok) {
+        this.events.notice(id, outcome.reason);
+        return false;
       }
+      const previous = getFaith(p.faith);
+      p.faith = outcome.newFaith.id;
+      p.quests.push(questId);
+      const god = outcome.newFaith;
+      this.events.notice(
+        id,
+        previous && previous.id !== god.id
+          ? `You turn from ${previous.name} to ${god.name}. Blessing: ${god.blessingText}.`
+          : `${god.name} accepts your devotion. Blessing: ${god.blessingText}.`,
+      );
+      if (previous && previous.id !== god.id) this.events.announce(`${p.name} now follows ${god.name}.`);
+    } else {
+      p.quests.push(questId);
     }
     const rt = this.players.get(id);
     if (rt) applyDerived(p, rt.ch); // max resource etc. may change with a blessing

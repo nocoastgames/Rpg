@@ -54,15 +54,27 @@ blessing can change when you advance.
 | --- | --- |
 | Same (good/good, neutral/neutral, evil/evil) | Automatic |
 | One step apart (good/neutral or neutral/evil) | Earned by completing the god's **epic quest** |
-| Opposite (good/evil) | Never from your own god, but a **neutral** god's epic quest (*The Endless Road*, *The Unwritten Page* or *The Far Shore*) earns that neutral god's blessing instead |
+| Opposite (good/evil) | Never from your own god. A **neutral** god's epic quest (*The Endless Road*, *The Unwritten Page* or *The Far Shore*) is open to you instead |
 
-So no one is left out: a neutral Archmage of Solenne can win the Dawn
-Mother's favour through *The Long Dawn*; a Lich of Solenne never can, but
-can earn Orren's, Mirevel's or the Ferryman's blessing as a patron. You
-only ever have one blessing: your own god's when it applies, otherwise the
-first neutral patron you earned. Favour, once won, is kept and applies
-again whenever the path makes it possible. You are told when a blessing turns on or off, and the Past
-section of the character panel shows its status and what to do.
+**Completing a god's epic quest makes that god your god.** Your faith
+changes to them and their blessing applies from then on. Which epic quests
+you can take:
+
+- **Your god is one step from your path:** your own god's quest. A neutral
+  Archmage of Solenne wins the Dawn Mother's favour through *The Long Dawn*.
+- **Your god opposes your path:** any neutral god's quest. A Lich of Solenne
+  can never be blessed by her, but completing *The Far Shore* makes the
+  Grey Ferryman their god.
+- **Faithless:** the quest of any god whose leaning isn't opposed to your
+  path. Completing it ends your faithlessness.
+- **Your god already blesses you:** none needed.
+
+Good can never take an evil god's quest and evil can never take a good
+god's, so good and evil never bless each other. Favour stays with the god:
+if your path later drifts one step away from them, the favour you won still
+counts. You are told when a blessing turns on or off or your god changes,
+and the Past section of the character panel shows the status and the quests
+open to you.
 
 | Faith | Domain | Leaning | Blessing | Epic quest |
 | --- | --- | --- | --- | --- |
@@ -78,8 +90,9 @@ section of the character panel shows its status and what to do.
 | Faithless | No god | None | None | — |
 
 The epic quests themselves aren't built yet; their ids (`favor_<faith>`)
-already gate the blessing. In dev mode `/quest favor` completes your own
-god's quest and `/quest favor_orren` (etc.) any other.
+already drive the conversion. In dev mode `/quest favor` completes your own
+god's quest and `/quest favor_orren` (etc.) another god's; the server
+refuses a quest that isn't open to you.
 
 Blessings stack with your background's passive. All of this is data in
 `shared/src/character.ts` and validated on the server (`validateCreation`).

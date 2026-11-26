@@ -174,21 +174,23 @@ test("adjacent paths can earn a blessing by epic quest; opposites never can", ()
   assert.equal(blessingStatus("valdris", "fighter", ["favor_solenne"]), "needsQuest");
 });
 
-import { blessingInfo } from "../src/character.ts";
+import { availableFavorQuests, blessingInfo, favorQuestOutcome } from "../src/character.ts";
 
-test("opposed followers can earn a neutral god's blessing instead; never their own", () => {
-  // Paladin (good) following Kaelthar (evil): opposed.
-  assert.equal(blessingInfo("kaelthar", "paladin").status, "opposed");
-  assert.equal(blessingInfo("kaelthar", "paladin", ["favor_kaelthar"]).status, "opposed", "own god's quest never helps");
-  assert.equal(blessingInfo("kaelthar", "paladin", ["favor_solenne"]).status, "opposed", "a good god's quest doesn't help either");
-  const withOrren = blessingInfo("kaelthar", "paladin", ["favor_orren"]);
-  assert.equal(withOrren.status, "patron");
-  assert.equal(withOrren.blessedBy?.id, "orren");
-  // First neutral favour earned is the patron.
-  assert.equal(blessingInfo("solenne", "lich", ["favor_ferryman", "favor_orren"]).blessedBy?.id, "ferryman");
-  // Own god takes over again when the path comes back within reach.
-  assert.equal(blessingInfo("kaelthar", "warlord", ["favor_orren", "favor_kaelthar"]).blessedBy?.id, "kaelthar");
-  // Patron only applies when opposed: a neutral path with a good god still needs that god's quest.
-  assert.equal(blessingInfo("solenne", "fighter", ["favor_orren"]).status, "needsQuest");
-  assert.equal(passiveBonus("soldier", "kaelthar", "paladin", "moveSpeed", ["favor_orren"]), 0.04);
+test("completing a god's epic quest makes them your god; which quests are offered", () => {
+  // Adjacent: only your own god's quest.
+  assert.deepEqual(availableFavorQuests("solenne", "fighter").map((g) => g.id), ["solenne"]);
+  // Matching: nothing needed.
+  assert.deepEqual(availableFavorQuests("solenne", "paladin"), []);
+  // Opposed: the neutral gods.
+  assert.deepEqual(availableFavorQuests("kaelthar", "paladin").map((g) => g.id).sort(), ["ferryman", "mirevel", "orren"]);
+  const conv = favorQuestOutcome("kaelthar", "paladin", "favor_orren");
+  assert.ok(conv.ok && conv.newFaith.id === "orren");
+  assert.equal(blessingInfo("orren", "paladin", ["favor_orren"]).status, "active", "the new god blesses you");
+  // Evil can't get good, good can't get evil, even by quest.
+  assert.equal(favorQuestOutcome("kaelthar", "paladin", "favor_kaelthar").ok, false);
+  assert.equal(favorQuestOutcome("kaelthar", "paladin", "favor_solenne").ok, false);
+  assert.equal(favorQuestOutcome("orren", "lich", "favor_solenne").ok, false);
+  // Faithless can seek any god not opposed to their path.
+  assert.ok(availableFavorQuests("faithless", "lich").every((g) => g.leaning !== "Good"));
+  assert.ok(availableFavorQuests("faithless", "fighter").length === 9);
 });
