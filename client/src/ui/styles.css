@@ -1875,3 +1875,18 @@ body[data-input="gamepad"] .interact-hint {
     padding-bottom: 56px;
   }
 }
+
+.cc-faith-blessing {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: #cfe8b0;
+}
+.past-blessing {
+  font-size: 0.8rem;
+  color: #8a8070;
+  font-style: italic;
+}
+.past-blessing.active {
+  color: #cfe8b0;
+  font-style: normal;
+}

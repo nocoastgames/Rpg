@@ -76,6 +76,13 @@ export type CompanionPower = "familiar" | "pet" | "empowered";
 
 export type Alignment = "good" | "evil";
 
+/**
+ * Moral leaning of a class. Set on the classes where a path turns toward the
+ * light or the dark (and back); a character's alignment is the deepest one set
+ * on their path, neutral otherwise. Used for faith blessings.
+ */
+export type ClassAlignment = "good" | "neutral" | "evil";
+
 export interface BaseClassDef {
   id: BaseClassId;
   resource: ResourceType;
@@ -107,6 +114,8 @@ export interface ClassNode {
   hybrid?: BaseClassId;
   /** Tier 3 only: brings a young companion at level 25 and leads to a pet class. */
   petLine?: boolean;
+  /** Where this class turns the path's alignment (inherited by everything below it). */
+  alignment?: ClassAlignment;
   /** Tier 4 only: a pet class, and whether it is the base's good or evil one. */
   pet?: Alignment;
   /** Tier 3 pet lines: the young companion. Tier 4: the familiar, or the pet class's empowered companion. */
@@ -218,6 +227,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
   });
   const knight = node(B, 3, warrior, {
     id: "knight",
+    alignment: "good",
     name: "Knight",
     role: "Tank",
     tagline: "Shield and oath",
@@ -228,6 +238,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
   });
   node(B, 4, knight, {
     id: "paladin",
+    alignment: "good",
     name: "Paladin",
     role: "Tank",
     tagline: "Holy steel",
@@ -240,6 +251,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
   });
   node(B, 4, knight, {
     id: "juggernaut",
+    alignment: "good",
     name: "Juggernaut",
     role: "Tank",
     tagline: "Nothing stops me",
@@ -264,6 +276,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
   });
   node(B, 4, woodsman, {
     id: "beastlord",
+    alignment: "good",
     name: "Beastlord",
     role: "Summoner",
     tagline: "Guardian of the wild",
@@ -289,6 +302,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
 
   const marauder = node(B, 2, root, {
     id: "marauder",
+    alignment: "evil",
     name: "Marauder",
     role: "Melee DPS",
     tagline: "Take what you can",
@@ -299,6 +313,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
   });
   const berserker = node(B, 3, marauder, {
     id: "berserker",
+    alignment: "neutral",
     name: "Berserker",
     role: "Melee DPS",
     tagline: "Fury unchained",
@@ -309,6 +324,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
   });
   node(B, 4, berserker, {
     id: "warlord",
+    alignment: "neutral",
     name: "Warlord",
     role: "Melee DPS",
     tagline: "Where I stand, the line holds",
@@ -320,6 +336,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
   });
   node(B, 4, berserker, {
     id: "bloodreaver",
+    alignment: "evil",
     name: "Bloodreaver",
     role: "Melee DPS",
     tagline: "Every wound feeds me",
@@ -331,6 +348,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
   });
   const darkKnight = node(B, 3, marauder, {
     id: "dark_knight",
+    alignment: "evil",
     name: "Dark Knight",
     role: "Tank",
     tagline: "An oath to darker things",
@@ -343,6 +361,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
   });
   node(B, 4, darkKnight, {
     id: "death_knight",
+    alignment: "evil",
     name: "Death Knight",
     role: "Summoner",
     tagline: "Death rides with me",
@@ -355,6 +374,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
   });
   node(B, 4, darkKnight, {
     id: "shadow_knight",
+    alignment: "evil",
     name: "Shadow Knight",
     role: "Tank",
     tagline: "Steel and sorcery",
@@ -431,6 +451,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
   });
   const conjurer = node(B, 3, arcanist, {
     id: "conjurer",
+    alignment: "good",
     name: "Conjurer",
     role: "Summoner",
     tagline: "Something answers",
@@ -443,6 +464,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
   });
   node(B, 4, conjurer, {
     id: "phoenix_caller",
+    alignment: "good",
     name: "Phoenix Caller",
     role: "Summoner",
     tagline: "From the ashes",
@@ -455,6 +477,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
   });
   node(B, 4, conjurer, {
     id: "illusionist",
+    alignment: "neutral",
     name: "Illusionist",
     role: "Caster",
     tagline: "You never saw me",
@@ -468,6 +491,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
 
   const occultist = node(B, 2, root, {
     id: "occultist",
+    alignment: "evil",
     name: "Occultist",
     role: "Caster",
     tagline: "What others fear to learn",
@@ -502,6 +526,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
   });
   node(B, 4, necromancer, {
     id: "deathspeaker",
+    alignment: "neutral",
     name: "Deathspeaker",
     role: "Healer",
     tagline: "The dead and the divine",
@@ -566,6 +591,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
 
   const cleric = node(B, 2, root, {
     id: "cleric",
+    alignment: "good",
     name: "Cleric",
     role: "Healer",
     tagline: "Servant of the light",
@@ -608,6 +634,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
   });
   const monk = node(B, 3, cleric, {
     id: "monk",
+    alignment: "neutral",
     name: "Monk",
     role: "Melee DPS",
     tagline: "The body is the temple",
@@ -654,6 +681,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
   });
   const wildcaller = node(B, 3, druid, {
     id: "wildcaller",
+    alignment: "good",
     name: "Wildcaller",
     role: "Healer",
     tagline: "The forest provides",
@@ -678,6 +706,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
   });
   node(B, 4, wildcaller, {
     id: "primalist",
+    alignment: "neutral",
     name: "Primalist",
     role: "Tank",
     tagline: "Claw and fang",
@@ -701,6 +730,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
   });
   node(B, 4, shaman, {
     id: "witch_doctor",
+    alignment: "evil",
     name: "Witch Doctor",
     role: "Summoner",
     tagline: "The spirits demand payment",
@@ -755,6 +785,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
   });
   const assassin = node(B, 3, rogue, {
     id: "assassin",
+    alignment: "evil",
     name: "Assassin",
     role: "Melee DPS",
     tagline: "Death, delivered",
@@ -790,6 +821,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
   });
   const shadowdancer = node(B, 3, rogue, {
     id: "shadowdancer",
+    alignment: "neutral",
     name: "Shadowdancer",
     role: "Melee DPS",
     tagline: "Never where you strike",
@@ -849,6 +881,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
   });
   node(B, 4, scout, {
     id: "falconer",
+    alignment: "good",
     name: "Falconer",
     role: "Summoner",
     tagline: "Death from above",
@@ -884,6 +917,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
   });
   node(B, 4, bard, {
     id: "troubadour",
+    alignment: "good",
     name: "Troubadour",
     role: "Healer",
     tagline: "A hymn for the road",
@@ -991,6 +1025,13 @@ export function advancementOptions(classId: string): { tier: Tier; level: number
   return { tier, level: TIER_LEVELS[tier], quest: GATE_QUESTS[tier], options: childrenOf(classId) };
 }
 
+/** Alignment of a character on this class: the deepest alignment set along the path. */
+export function classAlignment(classId: string): ClassAlignment {
+  let a: ClassAlignment = "neutral";
+  for (const n of classPath(classId)) if (n.alignment) a = n.alignment;
+  return a;
+}
+
 /** Labels for UI, e.g. "Hybrid · Fighter + Priest", "Pet class · Good", "Pet at 25". */
 export function classTags(n: ClassNode): string[] {
   const tags: string[] = [];
@@ -999,5 +1040,7 @@ export function classTags(n: ClassNode): string[] {
   else if (n.tier === 4) tags.push("Pure");
   if (n.pet) tags.push(`Pet class · ${n.pet === "good" ? "Good" : "Evil"}`);
   if (n.petLine) tags.push("Pet at 25");
+  const a = classAlignment(n.id);
+  if (n.tier > 1 && a !== "neutral" && !n.pet) tags.push(a === "good" ? "Good" : "Evil");
   return tags;
 }

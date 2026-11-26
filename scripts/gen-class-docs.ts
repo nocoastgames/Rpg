@@ -3,7 +3,7 @@
  * Run: npm run docs:classes
  */
 import { writeFileSync } from "node:fs";
-import { BASE_CLASSES, BASE_CLASS_IDS, GATE_QUESTS, childrenOf, classTags, companionFor, getClassNode, type ClassNode } from "../shared/src/classes.ts";
+import { BASE_CLASSES, BASE_CLASS_IDS, GATE_QUESTS, childrenOf, classAlignment, classTags, companionFor, getClassNode, type ClassNode } from "../shared/src/classes.ts";
 import { RESOURCES, STAT_LABELS } from "../shared/src/stats.ts";
 import type { AbilityDef } from "../shared/src/abilities.ts";
 
@@ -63,6 +63,8 @@ let md = `# Classes
 - **Each base has 5 pure and 3 hybrid end classes.** A hybrid blends in a second base (one hybrid with each other base). Every pair of bases has exactly two hybrids, one reached from each side.
 - **Companions.** Each base has two *pet classes* on separate lines with different creatures: one traditionally good, one evil. Their level-25 specialisation (a *pet line*) brings a young companion at 25; at 50 the pet class grows it into something several times stronger (about 4x a familiar's health and damage), while the line's other end class takes a familiar instead. Every other end class gains a lesser *familiar* at 50.
 
+- **Alignment.** Every class starts neutral; some paths turn good or evil (shown per end class below). A character whose alignment matches their god's leaning gets that faith's minor blessing (see docs/CHARACTER_CREATION.md).
+
 ## Pet classes
 
 | Base | Good | Evil |
@@ -90,11 +92,11 @@ for (const b of BASE_CLASS_IDS) {
   md += `\n## ${root.name}\n\n_${root.description}_\n\n`;
   md += `- **Resource:** ${RESOURCES[def.resource].label} · **Primary stat:** ${STAT_LABELS[def.primaryStat]} · **Basic attack:** ${def.basicAttack.kind}, ${def.basicAttack.range}m\n`;
   md += `- **Starting ability:** ${root.ability.name}: ${effect(root.ability)}\n\n`;
-  md += `| Lv 10 | Lv 25 | Lv 50 | Tags | Ability (learned) | Companion at 50 |\n|---|---|---|---|---|---|\n`;
+  md += `| Lv 10 | Lv 25 | Lv 50 | Alignment | Tags | Ability (learned) | Companion at 50 |\n|---|---|---|---|---|---|---|\n`;
   for (const t2 of childrenOf(b)) {
     for (const t3 of childrenOf(t2.id)) {
       for (const t4 of childrenOf(t3.id)) {
-        md += `| ${t2.name} | ${t3.name}${t3.petLine ? ` (pet line: ${companion(t3)} at 25)` : ""} | **${t4.name}** | ${tags(t4)} | ${t4.ability.name}: ${effect(t4.ability)} | ${companion(t4)} |\n`;
+        md += `| ${t2.name} | ${t3.name}${t3.petLine ? ` (pet line: ${companion(t3)} at 25)` : ""} | **${t4.name}** | ${cap(classAlignment(t4.id))} | ${tags(t4)} | ${t4.ability.name}: ${effect(t4.ability)} | ${companion(t4)} |\n`;
       }
     }
   }

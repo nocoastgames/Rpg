@@ -270,9 +270,9 @@ export function showCharacterCreate(root: HTMLElement, error?: string): Promise<
             .filter((t) => t !== "Pure")
             .map((t) =>
               h(
-                `span.tree-tag${n.pet === "evil" && t.startsWith("Pet") ? ".evil" : n.pet && t.startsWith("Pet") ? ".good" : ""}` as "span",
+                `span.tree-tag${n.pet === "evil" && t.startsWith("Pet") ? ".evil" : n.pet && t.startsWith("Pet") ? ".good" : t === "Good" ? ".good" : t === "Evil" ? ".evil" : ""}` as "span",
                 null,
-                t.startsWith("Hybrid") ? `+${t.split(" + ")[1]}` : t.replace("Pet class · ", "") + " pet",
+                t.startsWith("Hybrid") ? `+${t.split(" + ")[1]}` : t.startsWith("Pet class") ? t.replace("Pet class · ", "") + " pet" : t,
               ),
             ),
         );
@@ -369,7 +369,11 @@ export function showCharacterCreate(root: HTMLElement, error?: string): Promise<
 
     const stepFaith = () => [
       h("h2", null, "A prayer on your lips"),
-      h("p.cc-desc", null, "When you woke, a prayer was already on your lips. Which god did it call to?"),
+      h(
+        "p.cc-desc",
+        null,
+        "When you woke, a prayer was already on your lips. Which god did it call to? Each god quietly blesses followers whose path matches theirs: good, neutral or evil. Every calling starts neutral; your path decides later.",
+      ),
       h(
         "div.cc-faiths",
         null,
@@ -388,6 +392,9 @@ export function showCharacterCreate(root: HTMLElement, error?: string): Promise<
             h("div.cc-faith-name", null, f.name, f.title ? h("span.cc-faith-title", null, ` ${f.title}`) : null),
             h("div.cc-faith-domain", null, f.domain, h("span.tag", null, f.leaning)),
             h("div.cc-faith-desc", null, f.description),
+            f.blessing
+              ? h("div.cc-faith-blessing", null, `Blessing for ${f.leaning.toLowerCase()} paths: ${f.blessingText}.`)
+              : h("div.cc-faith-blessing", null, "No blessing."),
           ),
         ),
       ),

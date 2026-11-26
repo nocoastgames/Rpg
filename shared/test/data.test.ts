@@ -133,3 +133,22 @@ test("backgrounds: 3 memories each, name revealed only by the last; faiths exist
   }
   assert.ok(FAITHS.length >= 8);
 });
+
+import { blessingActive, passiveBonus } from "../src/character.ts";
+import { classAlignment } from "../src/classes.ts";
+
+test("faith blessings apply only when the class's alignment matches the god", () => {
+  assert.equal(classAlignment("fighter"), "neutral");
+  assert.equal(classAlignment("paladin"), "good");
+  assert.equal(classAlignment("lich"), "evil");
+  assert.equal(classAlignment("deathspeaker"), "neutral", "a deeper node can turn the path back");
+  assert.equal(blessingActive("solenne", "paladin"), true);
+  assert.equal(blessingActive("solenne", "lich"), false);
+  assert.equal(blessingActive("kaelthar", "death_knight"), true);
+  assert.equal(blessingActive("orren", "fighter"), true, "neutral gods bless neutral paths");
+  assert.equal(blessingActive("faithless", "fighter"), false);
+  assert.equal(passiveBonus("urchin", "orren", "fighter", "moveSpeed"), 0.05 + 0.04, "background + blessing stack");
+  assert.equal(passiveBonus("urchin", "orren", "paladin", "moveSpeed"), 0.05, "blessing off on a good path");
+  // Every pet class's alignment matches its good/evil tag.
+  for (const n of CLASS_NODES.filter((n) => n.pet)) assert.equal(classAlignment(n.id), n.pet, n.id);
+});

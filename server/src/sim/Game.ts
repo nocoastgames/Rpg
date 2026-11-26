@@ -33,7 +33,8 @@ import {
   toUV,
   randRange,
   STAT_IDS,
-  backgroundBonus,
+  blessingActive,
+  getFaith,
   getBackground,
   memoriesAt,
   backgroundRevealed,
@@ -55,6 +56,7 @@ import {
   applyDerived,
   armorFraction,
   averageHit,
+  bonus,
   critChance,
   damageMultiplier,
   moveSpeed,
@@ -263,7 +265,7 @@ export class Game {
       return;
     }
     if (def.use.type === "heal") {
-      const amount = Math.round(p.maxHp * def.use.fraction * (1 + backgroundBonus(p.background, "foodHealing")));
+      const amount = Math.round(p.maxHp * def.use.fraction * (1 + bonus(p, "foodHealing")));
       p.hp = Math.min(p.maxHp, p.hp + amount);
       this.events.hit({ targetId: id, sourceId: id, amount, heal: true });
     } else if (def.use.type === "restoreResource") {
@@ -327,6 +329,7 @@ export class Game {
       this.events.notice(id, `Complete the ${next.quest.name} to advance.`);
       return;
     }
+    const blessedBefore = blessingActive(p.faith, p.classId);
     p.classId = classId;
     rt.ch = resolveCharacter(p);
     applyDerived(p, rt.ch);
@@ -334,6 +337,11 @@ export class Game {
     this.events.fx({ kind: "levelup", sourceId: id, fromX: p.x, fromZ: p.z, toX: p.x, toZ: p.z, color: choice.color });
     this.events.announce(`${p.name} has become ${article(choice.name)} ${choice.name}!`);
     this.events.notice(id, `You learned ${choice.ability.name}.`);
+    const blessedNow = blessingActive(p.faith, classId);
+    const faith = getFaith(p.faith);
+    if (faith && blessedNow !== blessedBefore) {
+      this.events.notice(id, blessedNow ? `${faith.name}'s blessing settles on you: ${faith.blessingText}.` : `You feel ${faith.name}'s favour fade. Your path has turned away.`);
+    }
     this.syncCompanion(id);
     const c = companionFor(classId);
     if (c) this.events.notice(id, c.power === "familiar" ? `${capitalize(article(c.def.name))} ${c.def.name} has chosen you as its companion.` : `Your ${c.def.name} answers your call.`);
@@ -589,7 +597,7 @@ export class Game {
     // Resource regen/decay, slow natural HP regen.
     const res = RESOURCES[rt.ch.kit.base.resource];
     p.resource = Math.max(0, Math.min(p.maxResource, p.resource + res.regenPerSecond * dt));
-    p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.005 * dt);
+    p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.005 * (1 + bonus(p, "hpRegen")) * dt);
 
     // Chase-and-attack takes priority over plain movement.
     let intent = rt.intent;
@@ -686,7 +694,8 @@ export class Game {
         let dealt = 0;
         for (const [eid, e] of targets) {
           const r = roll();
-          const amount = Math.round(baseDamage * eff.multiplier * r.mult);
+          const area = eff.radius > 0 ? 1 + bonus(p, "areaDamage") : 1;
+          const amount = Math.round(baseDamage * eff.multiplier * r.mult * area);
           dealt += amount;
           this.damageEnemy(eid, e, amount, id, r.crit);
         }
@@ -695,9 +704,10 @@ export class Game {
       }
       case "nova": {
         this.events.fx({ kind: "nova", sourceId: id, fromX: p.x, fromZ: p.z, toX: p.x, toZ: p.z, radius: eff.radius, variant: ability.id, color });
+        const area = 1 + bonus(p, "areaDamage");
         for (const [eid, e] of this.enemiesInRadius(p.x, p.z, eff.radius)) {
           const r = roll();
-          this.damageEnemy(eid, e, Math.round(baseDamage * eff.multiplier * r.mult), id, r.crit);
+          this.damageEnemy(eid, e, Math.round(baseDamage * eff.multiplier * r.mult * area), id, r.crit);
         }
         return true;
       }
@@ -757,7 +767,10 @@ export class Game {
     if (e.hp <= 0) return;
     // Trappers know where beasts are soft.
     const src = this.state.players.get(sourceId);
-    if (src && BEASTS.has(e.kind)) amount = Math.round(amount * (1 + backgroundBonus(src.background, "beastDamage")));
+    if (src && BEASTS.has(e.kind)) amount = Math.round(amount * (1 + bonus(src, "beastDamage")));
+    // Kaelthar's blessing: a little of every wound flows back to you.
+    const leech = src ? bonus(src, "lifesteal") : 0;
+    if (src && leech > 0 && src.anim !== "dead") src.hp = Math.min(src.maxHp, src.hp + amount * leech);
     e.hp = Math.max(0, e.hp - amount);
     this.events.hit({ targetId: enemyId, sourceId, amount, crit });
     const ert = this.enemies.get(enemyId);
@@ -786,7 +799,7 @@ export class Game {
     if (res.gainOnHurt) p.resource = Math.min(p.maxResource, p.resource + res.gainOnHurt);
     if (p.hp <= 0) {
       p.anim = "dead";
-      rt.respawnAt = this.now + RESPAWN_SECONDS * 1000;
+      rt.respawnAt = this.now + Math.max(1, RESPAWN_SECONDS - bonus(p, "respawnFaster")) * 1000;
       rt.attackTargetId = null;
       rt.intent = { dirX: 0, dirZ: 0, target: null };
       this.events.fx({ kind: "death", sourceId: id, fromX: p.x, fromZ: p.z, toX: p.x, toZ: p.z });
@@ -798,14 +811,14 @@ export class Game {
   private healPlayer(id: string, p: Player, amount: number, sourceId: string): void {
     if (p.anim === "dead") return;
     const before = p.hp;
-    p.hp = Math.min(p.maxHp, p.hp + amount * (1 + backgroundBonus(p.background, "healingReceived")));
+    p.hp = Math.min(p.maxHp, p.hp + amount * (1 + bonus(p, "healingReceived")));
     const healed = Math.round(p.hp - before);
     if (healed > 0) this.events.hit({ targetId: id, sourceId, amount: healed, heal: true });
   }
 
   private grantXp(id: string, p: Player, amount: number): void {
     if (p.anim === "dead" || p.level >= MAX_LEVEL) return;
-    p.xp += Math.round(amount * (1 + backgroundBonus(p.background, "xp")));
+    p.xp += Math.round(amount * (1 + bonus(p, "xp")));
     while (p.xp >= p.xpNext && p.level < MAX_LEVEL) {
       p.xp -= p.xpNext;
       p.level += 1;

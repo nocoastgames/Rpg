@@ -10,6 +10,8 @@ import {
   getItem,
   getBackground,
   getFaith,
+  blessingActive,
+  classAlignment,
   memoriesAt,
   backgroundRevealed,
   resolveKit,
@@ -453,7 +455,7 @@ export class Hud {
 
   /** Faith and the half-remembered past: memories recovered so far; the background is named once fully remembered. */
   private renderPast(p: PlayerView): void {
-    const key = `${p.faith}|${p.background}|${p.memories}|${p.level}`;
+    const key = `${p.faith}|${p.background}|${p.memories}|${p.level}|${p.classId}`;
     if (key === this.pastKey) return;
     this.pastKey = key;
     const faith = getFaith(p.faith);
@@ -468,6 +470,15 @@ export class Hud {
         h("span.past-label", null, "Faith "),
         faith ? h("span", { style: `color:${faith.color}` }, `${faith.name}${faith.title ? " " + faith.title : ""}`) : "—",
       ),
+      faith?.blessing
+        ? h(
+            `div.past-blessing${blessingActive(p.faith, p.classId) ? ".active" : ""}` as "div",
+            null,
+            blessingActive(p.faith, p.classId)
+              ? `Blessing: ${faith.blessingText}.`
+              : `Blessing inactive: ${faith.name} favours ${faith.leaning.toLowerCase()} paths, and yours is ${classAlignment(p.classId)}.`,
+          )
+        : null,
       h("div.past-row", null, h("span.past-label", null, "Who you were "), revealed && bg ? h("b", null, bg.name) : h("i", null, "You don't remember yet.")),
       revealed && bg ? h("div.past-passive", null, bg.passiveText) : null,
       h(

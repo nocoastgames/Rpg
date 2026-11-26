@@ -16,6 +16,8 @@ import {
   getClassNode,
   validateCreation,
   getBackground,
+  getFaith,
+  blessingActive,
   type MemoryEvent,
   type AbilityMsg,
   type AdvanceMsg,
@@ -137,6 +139,8 @@ export class ForestRoom extends Room<{ state: WorldState }> {
     // The one thing you remember as you open your eyes.
     const bg = getBackground(result.value.backgroundId);
     if (bg) client.send(S2C.memory, { text: bg.impression } satisfies MemoryEvent);
+    const faith = getFaith(result.value.faithId);
+    if (faith && blessingActive(faith.id, result.value.classId)) client.send(S2C.notice, `${faith.name}'s blessing is with you: ${faith.blessingText}.`);
     this.broadcast(S2C.chat, { from: "", text: `${player.name} wakes up by the stream.`, system: true } satisfies ChatEvent);
   }
 

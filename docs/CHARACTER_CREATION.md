@@ -42,23 +42,28 @@ character panel.
 | A face on a wanted poster… | Outlaw | +2 Agi, +1 Mig | Wanted Poster | +3% crit chance |
 | Silk sheets, a long table… | Noble | +1 Int, +1 Spi, +1 Vit | Signet Ring | +10% maximum resource |
 
-## Faiths (flavour)
+## Faiths and blessings
 
-No class restrictions and no mechanical effect yet; shrines, prayers and story
-come later.
+Faith never restricts your class. Each god (except for the Faithless) grants
+a **minor but noticeable blessing** while your class's alignment matches its
+leaning: good with good, evil with evil, neutral with neutral. Every calling
+starts neutral, and alignment comes from your path (for example Knight and
+Paladin are good; Marauder, Dark Knight and Lich are evil; Archmage is
+neutral), so a blessing can switch on or off when you advance. You are told
+when it does, and the Past section of the character panel shows its status.
 
-| Faith | Domain | Leaning |
-| --- | --- | --- |
-| Solenne, the Dawn Mother | Light, mercy and healing | Good |
-| Valdris, the Oathshield | Law, duty and protection | Good |
-| The Green Mother | Nature, growth and renewal | Good |
-| Orren, Keeper of Roads | Travel, luck and trade | Neutral |
-| Mirevel of the Hidden Ledger | Knowledge and secrets | Neutral |
-| The Grey Ferryman | Death and balance | Neutral |
-| Kaelthar, the Hunger | Blood, war and conquest | Evil |
-| The Veiled One | Shadow, deceit and poison | Evil |
-| The Rot Below | Decay, plague and thorns | Evil |
-| Faithless | No god | None |
+| Faith | Domain | Leaning | Blessing |
+| --- | --- | --- | --- |
+| Solenne, the Dawn Mother | Light, mercy and healing | Good | +8% healing received |
+| Valdris, the Oathshield | Law, duty and protection | Good | +4% armour |
+| The Green Mother | Nature, growth and renewal | Good | Natural health regeneration 60% faster |
+| Orren, Keeper of Roads | Travel, luck and trade | Neutral | +4% movement speed |
+| Mirevel of the Hidden Ledger | Knowledge and secrets | Neutral | +8% maximum resource |
+| The Grey Ferryman | Death and balance | Neutral | Return from death 2 seconds sooner |
+| Kaelthar, the Hunger | Blood, war and conquest | Evil | Heal for 3% of the damage you deal |
+| The Veiled One | Shadow, deceit and poison | Evil | +3% critical hit chance |
+| The Rot Below | Decay, plague and thorns | Evil | +6% damage with area abilities |
+| Faithless | No god | None | None |
 
-All of this is data in `shared/src/character.ts` and validated on the server
-(`validateCreation`).
+Blessings stack with your background's passive. All of this is data in
+`shared/src/character.ts` and validated on the server (`validateCreation`).

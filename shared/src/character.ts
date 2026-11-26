@@ -3,7 +3,7 @@
  * memories), faiths (flavour), and point-buy stats. Shared so the client can
  * preview exactly what the server will accept.
  */
-import { BASE_CLASSES, isBaseClass, type BaseClassId } from "./classes.ts";
+import { BASE_CLASSES, classAlignment, isBaseClass, type BaseClassId } from "./classes.ts";
 import { NAME_MAX_LENGTH } from "./constants.ts";
 import { STAT_IDS, addStats, type StatId, type Stats } from "./stats.ts";
 
@@ -64,7 +64,8 @@ function optionCount(key: keyof Appearance): number {
 // the name and story come back as you level.
 // ---------------------------------------------------------------------------
 
-export type BackgroundPassive =
+/** Small always-on bonuses from a background or a faith blessing. */
+export type Passive =
   | { type: "armor"; amount: number }
   | { type: "foodHealing"; amount: number }
   | { type: "beastDamage"; amount: number }
@@ -74,7 +75,14 @@ export type BackgroundPassive =
   | { type: "weaponDamage"; amount: number }
   | { type: "waterSlow"; amount: number }
   | { type: "crit"; amount: number }
-  | { type: "maxResource"; amount: number };
+  | { type: "maxResource"; amount: number }
+  | { type: "hpRegen"; amount: number }
+  | { type: "respawnFaster"; amount: number }
+  | { type: "lifesteal"; amount: number }
+  | { type: "areaDamage"; amount: number };
+
+/** @deprecated use Passive */
+export type BackgroundPassive = Passive;
 
 export interface BackgroundDef {
   id: string;
@@ -85,7 +93,7 @@ export interface BackgroundDef {
   statBonus: Partial<Stats>;
   /** Extra starting item (a clue). */
   item: string;
-  passive: BackgroundPassive;
+  passive: Passive;
   /** How the passive reads once remembered. */
   passiveText: string;
   /** Memory fragments, revealed at the given levels. The last one names the background. */
@@ -260,14 +268,16 @@ export function backgroundRevealed(backgroundId: string, level: number): boolean
   return !!bg && level >= bg.memories[bg.memories.length - 1]!.level;
 }
 
-/** Sum of a background passive of a given type (0 if it has a different one). */
-export function backgroundBonus(backgroundId: string, type: BackgroundPassive["type"]): number {
+/** A background's passive amount of a given type (0 if it has a different one). */
+export function backgroundBonus(backgroundId: string, type: Passive["type"]): number {
   const p = getBackground(backgroundId)?.passive;
   return p && p.type === type ? p.amount : 0;
 }
 
 // ---------------------------------------------------------------------------
-// Faiths: flavour only (shrines, prayers and story come later)
+// Faiths. Mostly flavour; a minor blessing applies while your class's
+// alignment matches your god's leaning (good with good, evil with evil,
+// neutral with neutral). The Faithless get no blessing.
 // ---------------------------------------------------------------------------
 
 export interface FaithDef {
@@ -278,18 +288,20 @@ export interface FaithDef {
   leaning: "Good" | "Neutral" | "Evil" | "None";
   description: string;
   color: string;
+  blessing?: Passive;
+  blessingText?: string;
 }
 
 export const FAITHS: readonly FaithDef[] = [
-  { id: "solenne", name: "Solenne", title: "the Dawn Mother", domain: "Light, mercy and healing", leaning: "Good", color: "#f0d080", description: "She who rises each morning so that no night lasts forever." },
-  { id: "valdris", name: "Valdris", title: "the Oathshield", domain: "Law, duty and protection", leaning: "Good", color: "#a8b8d0", description: "Guardian of sworn words. Oathbreakers find no shelter under his shield." },
-  { id: "green_mother", name: "The Green Mother", title: "", domain: "Nature, growth and renewal", leaning: "Good", color: "#7aa85a", description: "Older than any temple. Her shrines are groves, springs and standing stones." },
-  { id: "orren", name: "Orren", title: "Keeper of Roads", domain: "Travel, luck and trade", leaning: "Neutral", color: "#c8a060", description: "Patron of wanderers and merchants. Every crossroads is his altar." },
-  { id: "mirevel", name: "Mirevel", title: "of the Hidden Ledger", domain: "Knowledge and secrets", leaning: "Neutral", color: "#8a7ac8", description: "Keeps a ledger of every secret ever spoken. Scholars and spies alike pray to her." },
-  { id: "ferryman", name: "The Grey Ferryman", title: "", domain: "Death and balance", leaning: "Neutral", color: "#9aa4a8", description: "Neither cruel nor kind. Takes every soul across in its time, no sooner and no later." },
-  { id: "kaelthar", name: "Kaelthar", title: "the Hunger", domain: "Blood, war and conquest", leaning: "Evil", color: "#b0302a", description: "The god of the strong. His priests teach that mercy is only weakness that hasn't been punished yet." },
-  { id: "veiled_one", name: "The Veiled One", title: "", domain: "Shadow, deceit and poison", leaning: "Evil", color: "#5a4a7a", description: "No face, no name, no temple. Whispers in the dark that something will always listen." },
-  { id: "rot_below", name: "The Rot Below", title: "", domain: "Decay, plague and thorns", leaning: "Evil", color: "#5a6a2a", description: "What grows in the dark beneath the roots. Some say its thorns have already reached this valley." },
+  { id: "solenne", name: "Solenne", title: "the Dawn Mother", domain: "Light, mercy and healing", leaning: "Good", color: "#f0d080", description: "She who rises each morning so that no night lasts forever." , blessing: { type: "healingReceived", amount: 0.08 }, blessingText: "+8% healing received" },
+  { id: "valdris", name: "Valdris", title: "the Oathshield", domain: "Law, duty and protection", leaning: "Good", color: "#a8b8d0", description: "Guardian of sworn words. Oathbreakers find no shelter under his shield." , blessing: { type: "armor", amount: 0.04 }, blessingText: "+4% armour" },
+  { id: "green_mother", name: "The Green Mother", title: "", domain: "Nature, growth and renewal", leaning: "Good", color: "#7aa85a", description: "Older than any temple. Her shrines are groves, springs and standing stones." , blessing: { type: "hpRegen", amount: 0.6 }, blessingText: "Natural health regeneration 60% faster" },
+  { id: "orren", name: "Orren", title: "Keeper of Roads", domain: "Travel, luck and trade", leaning: "Neutral", color: "#c8a060", description: "Patron of wanderers and merchants. Every crossroads is his altar." , blessing: { type: "moveSpeed", amount: 0.04 }, blessingText: "+4% movement speed" },
+  { id: "mirevel", name: "Mirevel", title: "of the Hidden Ledger", domain: "Knowledge and secrets", leaning: "Neutral", color: "#8a7ac8", description: "Keeps a ledger of every secret ever spoken. Scholars and spies alike pray to her." , blessing: { type: "maxResource", amount: 0.08 }, blessingText: "+8% maximum resource" },
+  { id: "ferryman", name: "The Grey Ferryman", title: "", domain: "Death and balance", leaning: "Neutral", color: "#9aa4a8", description: "Neither cruel nor kind. Takes every soul across in its time, no sooner and no later." , blessing: { type: "respawnFaster", amount: 2 }, blessingText: "Return from death 2 seconds sooner" },
+  { id: "kaelthar", name: "Kaelthar", title: "the Hunger", domain: "Blood, war and conquest", leaning: "Evil", color: "#b0302a", description: "The god of the strong. His priests teach that mercy is only weakness that hasn't been punished yet." , blessing: { type: "lifesteal", amount: 0.03 }, blessingText: "Heal for 3% of the damage you deal" },
+  { id: "veiled_one", name: "The Veiled One", title: "", domain: "Shadow, deceit and poison", leaning: "Evil", color: "#5a4a7a", description: "No face, no name, no temple. Whispers in the dark that something will always listen." , blessing: { type: "crit", amount: 0.03 }, blessingText: "+3% critical hit chance" },
+  { id: "rot_below", name: "The Rot Below", title: "", domain: "Decay, plague and thorns", leaning: "Evil", color: "#5a6a2a", description: "What grows in the dark beneath the roots. Some say its thorns have already reached this valley." , blessing: { type: "areaDamage", amount: 0.06 }, blessingText: "+6% damage with area abilities" },
   { id: "faithless", name: "Faithless", title: "", domain: "No god", leaning: "None", color: "#8a8478", description: "You remember no prayers, and no god has come looking for you. Yet." },
 ];
 
@@ -297,6 +309,21 @@ const FAITH_MAP = new Map(FAITHS.map((f) => [f.id, f]));
 
 export function getFaith(id: string): FaithDef | undefined {
   return FAITH_MAP.get(id);
+}
+
+/** True while a faith's blessing applies: the class's alignment matches the god's leaning. */
+export function blessingActive(faithId: string, classId: string): boolean {
+  const f = getFaith(faithId);
+  if (!f?.blessing || f.leaning === "None") return false;
+  return f.leaning.toLowerCase() === classAlignment(classId);
+}
+
+/** Total of a passive type from background + (active) faith blessing. */
+export function passiveBonus(backgroundId: string, faithId: string, classId: string, type: Passive["type"]): number {
+  let total = backgroundBonus(backgroundId, type);
+  const f = getFaith(faithId);
+  if (f?.blessing?.type === type && blessingActive(faithId, classId)) total += f.blessing.amount;
+  return total;
 }
 
 // ---------------------------------------------------------------------------

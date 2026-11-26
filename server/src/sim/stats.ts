@@ -3,7 +3,7 @@ import {
   STAT_IDS,
   WATER_SPEED_MULTIPLIER,
   addStats,
-  backgroundBonus,
+  passiveBonus,
   critChanceFor,
   deriveMaxHp,
   deriveMaxResource,
@@ -11,10 +11,16 @@ import {
   getItem,
   primaryDamageMultiplier,
   resolveKit,
+  type Passive,
   type ResolvedKit,
   type Stats,
 } from "@rpg/shared";
 import type { Player } from "../schema/WorldState.ts";
+
+/** Background passive + faith blessing (when the class's alignment matches the god). */
+export function bonus(p: Player, type: Passive["type"]): number {
+  return passiveBonus(p.background, p.faith, p.classId, type);
+}
 
 export interface ResolvedCharacter {
   kit: ResolvedKit;
@@ -37,7 +43,7 @@ export function resolveCharacter(p: Player): ResolvedCharacter {
 /** Recompute max HP/resource after level or class changes. Keeps current values proportionally. */
 export function applyDerived(p: Player, ch: ResolvedCharacter): void {
   const maxHp = deriveMaxHp(ch.stats, p.level);
-  const maxRes = Math.round(deriveMaxResource(ch.kit.base.resource, ch.stats, p.level) * (1 + backgroundBonus(p.background, "maxResource")));
+  const maxRes = Math.round(deriveMaxResource(ch.kit.base.resource, ch.stats, p.level) * (1 + bonus(p, "maxResource")));
   const hpRatio = p.maxHp > 0 ? p.hp / p.maxHp : 1;
   p.maxHp = maxHp;
   p.hp = Math.min(maxHp, Math.max(1, Math.round(maxHp * hpRatio)));
@@ -56,20 +62,20 @@ export function damageMultiplier(p: Player, ch: ResolvedCharacter, now: number):
 }
 
 export function critChance(p: Player, ch: ResolvedCharacter): number {
-  return critChanceFor(ch.stats.agility, backgroundBonus(p.background, "crit"));
+  return critChanceFor(ch.stats.agility, bonus(p, "crit"));
 }
 
 export function armorFraction(p: Player, now: number): number {
   const gear = getItem(p.armor)?.armor ?? 0;
-  return Math.min(0.75, gear + backgroundBonus(p.background, "armor") + buffTotal(p, "armor", now));
+  return Math.min(0.75, gear + bonus(p, "armor") + buffTotal(p, "armor", now));
 }
 
 export function moveSpeed(p: Player, now: number): number {
-  return BASE_MOVE_SPEED * (1 + buffTotal(p, "speed", now) + backgroundBonus(p.background, "moveSpeed"));
+  return BASE_MOVE_SPEED * (1 + buffTotal(p, "speed", now) + bonus(p, "moveSpeed"));
 }
 
 export function weaponBonus(p: Player): number {
-  return (getItem(p.weapon)?.damageBonus ?? 0) + backgroundBonus(p.background, "weaponDamage");
+  return (getItem(p.weapon)?.damageBonus ?? 0) + bonus(p, "weaponDamage");
 }
 
 /** Average damage of one basic attack, before crits. Used for abilities and companions. */
@@ -80,5 +86,5 @@ export function averageHit(p: Player, ch: ResolvedCharacter, now: number): numbe
 
 /** Speed multiplier while wading; Sailors barely notice the water. */
 export function waterMultiplier(p: Player): number {
-  return WATER_SPEED_MULTIPLIER + (1 - WATER_SPEED_MULTIPLIER) * backgroundBonus(p.background, "waterSlow");
+  return WATER_SPEED_MULTIPLIER + (1 - WATER_SPEED_MULTIPLIER) * bonus(p, "waterSlow");
 }

@@ -17,7 +17,7 @@ import {
   type HitEvent,
   type MemoryEvent,
   WATER_SPEED_MULTIPLIER,
-  backgroundBonus,
+  passiveBonus,
   type MoveIntent,
   type World,
 } from "@rpg/shared";
@@ -572,8 +572,8 @@ export class GameClient {
         if (b.stat === "speed" && b.expiresAt > serverTime) speedBuff += b.amount;
       });
       // Mirror the server's speed rules (buffs, background) so prediction rarely needs correcting.
-      const speed = BASE_MOVE_SPEED * (1 + speedBuff + backgroundBonus(me.background, "moveSpeed"));
-      const water = WATER_SPEED_MULTIPLIER + (1 - WATER_SPEED_MULTIPLIER) * backgroundBonus(me.background, "waterSlow");
+      const speed = BASE_MOVE_SPEED * (1 + speedBuff + passiveBonus(me.background, me.faith, me.classId, "moveSpeed"));
+      const water = WATER_SPEED_MULTIPLIER + (1 - WATER_SPEED_MULTIPLIER) * passiveBonus(me.background, me.faith, me.classId, "waterSlow");
       const r = stepMovement(this.world, this.pred.x, this.pred.z, intent, speed, dt, undefined, water);
       this.pred.x = r.x;
       this.pred.z = r.z;
