@@ -12,7 +12,7 @@ export const STAT_LABELS: Record<StatId, string> = {
   spirit: "Spirit",
 };
 
-export type ResourceType = "mana" | "rage" | "energy" | "focus";
+export type ResourceType = "mana" | "rage" | "energy" | "focus" | "faith";
 
 export interface ResourceRules {
   label: string;
@@ -32,6 +32,7 @@ export const RESOURCES: Record<ResourceType, ResourceRules> = {
   rage: { label: "Rage", color: "#c0392b", regenPerSecond: -1.5, gainOnHit: 8, gainOnHurt: 4, startsFull: false },
   energy: { label: "Energy", color: "#e1c340", regenPerSecond: 12, gainOnHit: 0, gainOnHurt: 0, startsFull: true },
   focus: { label: "Focus", color: "#3fa66b", regenPerSecond: 5, gainOnHit: 2, gainOnHurt: 0, startsFull: true },
+  faith: { label: "Faith", color: "#e8c45a", regenPerSecond: 2.5, gainOnHit: 1, gainOnHurt: 1, startsFull: true },
 };
 
 export function addStats(a: Stats, b: Partial<Stats>, scale = 1): Stats {

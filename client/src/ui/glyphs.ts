@@ -2,18 +2,20 @@ import { h } from "./dom.ts";
 
 export type InputMode = "kbm" | "gamepad" | "touch";
 
-export type GameAction = "attack" | "ability0" | "ability1" | "interact" | "bag" | "map" | "help" | "zoom" | "quickHeal" | "quickResource";
+export type GameAction = "attack" | "ability0" | "ability1" | "ability2" | "ability3" | "interact" | "bag" | "map" | "help" | "zoom" | "quickHeal" | "quickResource";
 
 /** Xbox layout is the default controller glyph set. */
 const PAD_GLYPHS: Record<GameAction, string> = {
   attack: "A",
   ability0: "X",
   ability1: "Y",
+  ability2: "RB",
+  ability3: "RT",
   interact: "B",
   bag: "View",
   map: "RS",
   help: "Menu",
-  zoom: "LB/RB",
+  zoom: "D←/→",
   quickHeal: "D↑",
   quickResource: "D↓",
 };
@@ -22,13 +24,15 @@ const KEY_GLYPHS: Record<GameAction, string> = {
   attack: "LMB",
   ability0: "1",
   ability1: "2",
+  ability2: "3",
+  ability3: "4",
   interact: "F",
   bag: "I",
   map: "M",
   help: "H",
   zoom: "Wheel",
-  quickHeal: "3",
-  quickResource: "4",
+  quickHeal: "5",
+  quickResource: "6",
 };
 
 /** A small element showing the button for an action in the current input mode. */

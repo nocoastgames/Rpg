@@ -28,7 +28,7 @@ Manifest keys:
 
 | Section      | Key format                                         | Example                       |
 | ------------ | -------------------------------------------------- | ----------------------------- |
-| `characters` | `"<class>.<subclass>"`, `"<class>"` or `"default"` | `"warrior.berserker"`         |
+| `characters` | a class id from the tree, a base class, or `"default"` | `"berserker"`, `"fighter"`   |
 | `enemies`    | enemy id from `shared/src/enemies.ts`              | `"wolf"`                      |
 | `props`      | prop kind from `shared/src/world.ts`               | `"pine"`, `"rock"`, `"bush"`  |
 

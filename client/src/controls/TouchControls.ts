@@ -3,7 +3,7 @@ import { h } from "../ui/dom.ts";
 export type TouchAction = "attack" | "interact" | "bag" | "map" | "chat" | "help" | "fullscreen";
 
 export interface AbilityRelease {
-  slot: 0 | 1;
+  slot: number;
   /** Screen-space aim direction (y up) with magnitude 0..1, or null for a quick tap (auto-target). */
   aim: { x: number; y: number; mag: number } | null;
 }
@@ -47,14 +47,13 @@ export class TouchControls {
       if (down) this.actions.push("attack");
     });
 
-    const mkAbility = (slot: 0 | 1) => {
+    const mkAbility = (slot: number) => {
       const b = h(`button.t-btn.t-ability.t-ab${slot}`, { type: "button" }, h("span.t-label"), h("span.t-cd")) as HTMLButtonElement;
       this.bindAbility(b, slot);
       this.abilityButtons.push(b);
       return b;
     };
-    const ab0 = mkAbility(0);
-    const ab1 = mkAbility(1);
+    const abilityButtons = [0, 1, 2, 3].map(mkAbility);
 
     this.interactButton = h("button.t-btn.t-interact.hidden", { type: "button", "aria-label": "Interact" }, "✋") as HTMLButtonElement;
     this.bindTap(this.interactButton, "interact");
@@ -74,16 +73,20 @@ export class TouchControls {
       document.fullscreenEnabled ? small("⛶", "fullscreen", "Fullscreen") : null,
     );
 
-    this.el = h("div.touch-ui", null, this.stick, h("div.touch-actions", null, attack, ab0, ab1, this.interactButton), top);
+    this.el = h("div.touch-ui", null, this.stick, h("div.touch-actions", null, attack, ...abilityButtons, this.interactButton), top);
     this.bindSurface();
   }
 
-  setAbilityLabels(a0: string, a1: string): void {
-    (this.abilityButtons[0]!.querySelector(".t-label") as HTMLElement).textContent = a0;
-    (this.abilityButtons[1]!.querySelector(".t-label") as HTMLElement).textContent = a1;
+  /** Labels per slot; an empty label hides the button (ability not learned yet). */
+  setAbilityLabels(labels: string[]): void {
+    this.abilityButtons.forEach((b, i) => {
+      const label = labels[i] ?? "";
+      (b.querySelector(".t-label") as HTMLElement).textContent = label;
+      b.classList.toggle("hidden", !label);
+    });
   }
 
-  setCooldown(slot: 0 | 1, frac: number, text: string, noResource: boolean): void {
+  setCooldown(slot: number, frac: number, text: string, noResource: boolean): void {
     const b = this.abilityButtons[slot]!;
     (b.querySelector(".t-cd") as HTMLElement).style.setProperty("--cd", String(frac));
     (b.querySelector(".t-cd") as HTMLElement).textContent = text;
@@ -139,7 +142,7 @@ export class TouchControls {
   }
 
   /** Tap = auto-target; drag = aim in the drag direction (like twin-stick MOBA controls). */
-  private bindAbility(el: HTMLElement, slot: 0 | 1): void {
+  private bindAbility(el: HTMLElement, slot: number): void {
     let start: { x: number; y: number } | null = null;
     let aim: AbilityRelease["aim"] = null;
     el.addEventListener("pointerdown", (e) => {

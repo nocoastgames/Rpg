@@ -43,7 +43,7 @@ export class Overlay {
   }
 
   /** Draw/refresh a nameplate. `hpFrac` null = no bar. */
-  plate(id: string, pos: THREE.Vector3, label: string, hpFrac: number | null, kind: "self" | "player" | "enemy"): void {
+  plate(id: string, pos: THREE.Vector3, label: string, hpFrac: number | null, kind: "self" | "player" | "enemy" | "pet"): void {
     let p = this.plates.get(id);
     if (!p) {
       const fill = hpFrac !== null ? h("div.plate-fill") : null;

@@ -61,6 +61,9 @@ When the server is not running with `NODE_ENV=production`, these chat commands h
 | --- | --- |
 | `/tp <place>` | Teleport to `spawn`, `pool`, `ruins_seal`, `cave_thorns`, `valley_exit` or `signpost` |
 | `/open <gate>` / `/close <gate>` | Open or seal `valley_exit`, `ruins_seal` or `cave_thorns` for everyone |
+| `/level <n>` | Set your level |
+| `/quest <id\|all>` | Complete a gate trial (`trial_of_paths`, `trial_of_mastery`) |
+| `/class <id>` | Jump down your tree to a class (sets level 50, completes trials), e.g. `/class dragon_knight` |
 
 ### Other scripts
 
@@ -80,13 +83,12 @@ are all supported. The on-screen prompts switch to whatever you last used.
 | --- | --- | --- | --- |
 | Move | Left click (hold) / `W A S D` | Left stick (analog: push lightly to walk) | Drag on the left half of the screen |
 | Attack | Left click an enemy | `A` (auto-targets, hold to keep fighting) | ⚔ button, or tap an enemy |
-| Class ability | Right click / `1` | `X` (aim with right stick, else auto-aim) | Ability button (tap to auto-aim, drag to aim) |
-| Subclass ability | `2` | `Y` | Second ability button |
+| Abilities 1-4 | Right click or `1`, then `2` `3` `4` | `X` `Y` `RB` `RT` (aim with right stick, else auto-aim) | Ability buttons (tap to auto-aim, drag to aim) |
 | Interact / inspect | `F` | `B` | ✋ button (appears when something is near) |
-| Quick-use food / water | `3` / `4` | D-pad ↑ / ↓ | via the pack |
-| Character & pack | `I` | View | 🎒 |
+| Quick-use food / water | `5` / `6` | D-pad ↑ / ↓ | via the pack |
+| Character, path & pack (advance here) | `I` | View | 🎒 |
 | Map | `M` | Right stick click | 🗺 |
-| Zoom | Mouse wheel | `LB` / `RB` | Pinch |
+| Zoom | Mouse wheel | D-pad ← / → | Pinch |
 | Help | `H` | Menu | ? |
 
 Menus (character creation, pack) are navigable with the D-pad / stick and `A`;
@@ -100,17 +102,18 @@ screen to run full-screen (it ships a web app manifest).
 
 ## What's in the groundwork
 
-- **12 classes × 2 subclasses** with their own resource (mana, rage, energy, focus),
-  stats, basic attack, class ability and subclass ability. All data-driven:
-  [docs/CLASSES.md](docs/CLASSES.md).
-
-  | | | | |
-  |---|---|---|---|
-  | Warrior (Berserker / Guardian) | Paladin (Crusader / Lightwarden) | Ranger (Beastmaster / Sharpshooter) | Rogue (Assassin / Shadowdancer) |
-  | Wizard (Pyromancer / Cryomancer) | Cleric (Lifebinder / Inquisitor) | Necromancer (Bonecaller / Plaguebringer) | Druid (Shapeshifter / Grovekeeper) |
-  | Monk (Iron Fist / Windwalker) | Bard (Skald / Trickster) | Warlock (Hexblade / Voidcaller) | Shaman (Stormcaller / Spiritwalker) |
-
-- **Character creation** with name, class and path (subclass).
+- **Class progression: 4 → 8 → 16 → 32.** Start as a Fighter, Mage, Priest or
+  Thief, then choose one of two paths at levels 10, 25 and 50 (25 and 50 need a
+  gate trial; choices are permanent). Each base has 5 pure and 3 hybrid end
+  classes (hybrids blend a second base; every pair of bases has two). Each
+  class teaches one ability, so a level-50 character has four plus a basic
+  attack. Full tree: [docs/CLASSES.md](docs/CLASSES.md).
+- **Pets and familiars.** One specialisation per base is a pet line
+  (Beastmaster, Necromancer, Wildcaller, Trapper) that brings a pet at 25; its
+  end classes get a much stronger companion at 50 (drake, dire bear, skeletal
+  champion, war falcon…). Every other end class gains a lesser familiar at 50.
+  Companions follow you, fight your target, defend you and return if downed.
+- **Character creation** with name and base class, previewing the whole tree.
 - **The starting valley**: a small forested valley (~100 m × 160 m) walled in by
   mountains. A waterfall in the north cliffs feeds a pool and a winding stream
   (wading slows you down) that leaves through a gorge in the south. Worn trails
@@ -155,6 +158,10 @@ screen to run full-screen (it ships a web app manifest).
 
 ![Character creation](docs/images/character-create.png)
 
+| Choosing a path (Character panel) | Companions: familiar wisp, war falcon, skeletal champion, ancestor spirit |
+| --- | --- |
+| ![Path](docs/images/path.png) | ![Companions](docs/images/companions.png) |
+
 ## Project layout
 
 ```
@@ -173,9 +180,10 @@ Suggested next steps, roughly in order:
 1. **Art pass**: drop in KayKit/Quaternius CC0 packs via the model manifest (manual download for now; see [docs/ASSETS.md](docs/ASSETS.md)).
 2. **Persistence**: accounts and saved characters (Colyseus auth + a database such as SQLite/Postgres).
 3. **Loot & inventory**: drops, equipment slots, item rarity, vendor.
-4. **Abilities 2.0**: status effects (slow, stun, DoT), pets/summons (Beastmaster, Bonecaller), forms (Shapeshifter), talent points per level.
-5. **Dungeons**: instanced rooms generated from KayKit dungeon tiles; parties enter together.
-6. **Story & quests**: the amnesia hook, NPCs, the first settlement.
-7. **Day/night cycle**: advance the hour from server time (`GameClient.setHour`); night spawns, light radius gameplay.
-8. **Audio**: ambience (stream, birds), combat SFX, music.
-9. **Ops**: Redis presence for multiple server processes, deployment pipeline.
+4. **Abilities 2.0**: status effects (slow, stun, DoT), forms (Primalist), taunts; companion commands and abilities.
+5. **Gate quests**: the Trial of Paths (25) and Trial of Mastery (50); the lineage system for changing paths.
+6. **Dungeons**: instanced rooms generated from KayKit dungeon tiles; parties enter together.
+7. **Story & quests**: the amnesia hook, NPCs, the first settlement.
+8. **Day/night cycle**: advance the hour from server time (`GameClient.setHour`); night spawns, light radius gameplay.
+9. **Audio**: ambience (stream, birds), combat SFX, music.
+10. **Ops**: Redis presence for multiple server processes, deployment pipeline.

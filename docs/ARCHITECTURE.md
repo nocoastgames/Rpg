@@ -58,11 +58,20 @@ truth and on the client to move your own character instantly. The client then
 eases toward the server's position, so corrections are rare and smooth. Other
 players and enemies are smoothed toward their latest server position.
 
-**Data-driven classes and abilities.** All 12 classes, 24 subclasses and 36
-abilities are plain data in `shared/src/classes.ts`. The server executes a
-small set of generic effect types (`strike`, `nova`, `heal`, `dash`, `buff` in
-`server/src/sim/Game.ts`). New abilities are usually just data; a genuinely new
-mechanic adds one effect type.
+**Data-driven class tree.** All 60 classes (4 base → 8 → 16 → 32 end
+classes) are plain data in `shared/src/classes.ts`. A player's `classId` is
+their current node; `resolveKit()` walks the path to the base class to get
+stats, the basic attack and one ability per tier, and `companionFor()` decides
+the pet or familiar. Advancement (`advance` message) is validated on the
+server: child of the current class, level 10/25/50, and the gate quest for 25
+and 50. The server executes abilities through a few generic effect types
+(`strike`, `nova`, `heal`, `dash`, `buff` in `server/src/sim/Game.ts`).
+
+**Companions.** Pets and familiars are server entities in
+`state.companions` (keyed `c:<owner>`). They follow their owner, attack the
+owner's target or anything attacking the owner, can be targeted by enemies,
+and return after being downed. Strength scales with the owner and with power:
+familiar < pet (pet lines at 25) < empowered (pet classes at 50).
 
 **Simulation separate from networking.** `Game` has no Colyseus dependency
 beyond the schema objects it mutates. `ForestRoom` is a thin adapter. This
@@ -98,7 +107,8 @@ Defined in `shared/src/protocol.ts`.
 | C→S | `moveDir` | `{x, z}` world direction, length 0..1 (analog; 0,0 = stop) |
 | C→S | `moveTo` | `{x, z}` destination |
 | C→S | `attack` | `{targetId}` enemy to chase and auto-attack |
-| C→S | `ability` | `{slot: 0 \| 1, x, z}` cast at point |
+| C→S | `ability` | `{slot: 0-3, x, z}` cast at point |
+| C→S | `advance` | `{classId}` permanently advance to a child class |
 | C→S | `useItem` | `{slot}` inventory index |
 | C→S | `interact` | – (inspect a landmark, fill waterskin, drink) |
 | C→S | `chat` | `{text}` |

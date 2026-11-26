@@ -7,8 +7,8 @@
 /** Options sent when joining a room. */
 export interface JoinOptions {
   name: string;
+  /** One of the four base classes: fighter, mage, priest, thief. */
   classId: string;
-  subclassId: string;
 }
 
 // ---- Client -> Server -----------------------------------------------------
@@ -30,14 +30,19 @@ export interface AttackMsg {
 }
 
 export interface AbilityMsg {
-  /** 0 = class ability, 1 = subclass ability. */
-  slot: 0 | 1;
+  /** Ability slot 0..3 (= tier of the class that taught it, minus one). */
+  slot: number;
   x: number;
   z: number;
 }
 
 export interface UseItemMsg {
   slot: number;
+}
+
+export interface AdvanceMsg {
+  /** Class to advance into; must be a child of the current class. */
+  classId: string;
 }
 
 export interface ChatMsg {
@@ -51,8 +56,12 @@ export const C2S = {
   ability: "ability",
   useItem: "useItem",
   interact: "interact",
+  advance: "advance",
   chat: "chat",
 } as const;
+
+/** Number of ability slots (one per tier). */
+export const ABILITY_SLOTS = 4;
 
 // ---- Server -> Client -----------------------------------------------------
 

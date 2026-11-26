@@ -1,4 +1,16 @@
-import { RESOURCES, getClass, getItem, getSubclass, INVENTORY_SLOTS, type ClassDef, type SubclassDef } from "@rpg/shared";
+import {
+  ABILITY_SLOTS,
+  INVENTORY_SLOTS,
+  RESOURCES,
+  advancementOptions,
+  classPath,
+  classTags,
+  companionFor,
+  getClassNode,
+  getItem,
+  resolveKit,
+  type ResolvedKit,
+} from "@rpg/shared";
 import type { PlayerView } from "../types.ts";
 import { h } from "./dom.ts";
 import { glyph, type GameAction, type InputMode } from "./glyphs.ts";
@@ -7,8 +19,10 @@ export interface HudCallbacks {
   onUseItem(slot: number): void;
   onChat(text: string): void;
   onTypingChange(typing: boolean): void;
-  onAbility(slot: 0 | 1): void;
+  onAbility(slot: number): void;
   onInteract(): void;
+  /** Permanently advance into a class (child of the current class). */
+  onAdvance(classId: string): void;
 }
 
 interface Slot {
@@ -45,6 +59,9 @@ export class Hud {
   private readonly bagGrid: HTMLElement;
   private readonly equip: HTMLElement;
   private readonly charInfo: HTMLElement;
+  private readonly pathEl: HTMLElement;
+  private pathKey = "";
+  private pendingChoice: string | null = null;
   private readonly notices: HTMLElement;
   private readonly target: HTMLElement;
   private readonly targetName: HTMLElement;
@@ -58,8 +75,8 @@ export class Hud {
   private bagKey = "";
   private partyKey = "";
   private hintKey = "";
-  private cls: ClassDef | null = null;
-  private sub: SubclassDef | null = null;
+  private kit: ResolvedKit | null = null;
+  private kitFor = "";
   private mode: InputMode = "kbm";
 
   constructor(
@@ -87,8 +104,7 @@ export class Hud {
       this.slots.push({ el, key, cd, action });
     };
     mkSlot("attack", "Attack");
-    mkSlot("ability0", "", () => cb.onAbility(0));
-    mkSlot("ability1", "", () => cb.onAbility(1));
+    for (let i = 0; i < ABILITY_SLOTS; i++) mkSlot(`ability${i}` as GameAction, "", () => cb.onAbility(i));
     mkSlot("interact", "Interact", () => cb.onInteract());
     mkSlot("bag", "Bag", () => this.toggleBag());
 
@@ -123,12 +139,14 @@ export class Hud {
 
     this.equip = h("div.equip");
     this.charInfo = h("div.char-info");
+    this.pathEl = h("div.path");
     this.bagGrid = h("div.bag-grid");
     this.bag = h(
       "div.panel.bag.hidden",
       { onpointerdown: stop },
       h("div.panel-title", null, "Character", h("button.panel-close", { type: "button", onclick: () => this.toggleBag() }, "×")),
       this.charInfo,
+      this.pathEl,
       this.equip,
       h("div.panel-sub", null, "Pack"),
       this.bagGrid,
@@ -178,11 +196,11 @@ export class Hud {
         ["Left click ground", "Move (hold to keep walking)"],
         ["Left click enemy", "Attack"],
         ["W A S D", "Move"],
-        ["Right click / 1", "Class ability at cursor"],
-        ["2", "Subclass ability at cursor"],
+        ["Right click / 1", "First ability at cursor"],
+        ["2 / 3 / 4", "Abilities learned at levels 10, 25, 50"],
         ["F", "Interact / inspect"],
-        ["3 / 4", "Quick-use food / water"],
-        ["I", "Character & pack"],
+        ["5 / 6", "Quick-use food / water"],
+        ["I", "Character, path & pack"],
         ["M", "Map"],
         ["Enter", "Chat"],
         ["Mouse wheel", "Zoom"],
@@ -192,12 +210,11 @@ export class Hud {
         ["Left stick", "Move (push lightly to walk)"],
         ["Right stick", "Aim abilities"],
         ["A", "Attack nearest enemy (hold to keep fighting)"],
-        ["X", "Class ability"],
-        ["Y", "Subclass ability"],
+        ["X / Y / RB / RT", "Abilities 1-4"],
         ["B", "Interact / inspect · close menus"],
         ["D-pad ↑ / ↓", "Quick-use food / water"],
-        ["LB / RB", "Zoom out / in"],
-        ["View", "Character & pack"],
+        ["D-pad ← / →", "Zoom out / in"],
+        ["View", "Character, path & pack"],
         ["Right stick click", "Map"],
         ["Menu", "Toggle this help"],
       ]),
@@ -205,7 +222,7 @@ export class Hud {
         ["Left side", "Drag to move"],
         ["Tap ground / enemy", "Walk there / attack"],
         ["⚔", "Attack nearest enemy (hold)"],
-        ["Ability buttons", "Tap to auto-aim, drag to aim"],
+        ["Ability buttons", "Tap to auto-aim, drag to aim (up to 4)"],
         ["✋", "Interact (appears when something is near)"],
         ["Pinch", "Zoom"],
         ["🎒 🗺 💬", "Pack, map, chat"],
@@ -293,9 +310,9 @@ export class Hud {
     this.targetFill.style.width = `${Math.max(0, (hp / maxHp) * 100)}%`;
   }
 
-  /** Ability info for touch buttons and the hotbar: [fraction, text, noResource]. */
-  abilityState(p: PlayerView, serverTime: number, slot: 0 | 1): { frac: number; text: string; noRes: boolean } {
-    const ability = slot === 0 ? this.cls?.ability : this.sub?.ability;
+  /** Ability info for touch buttons and the hotbar. */
+  abilityState(p: PlayerView, serverTime: number, slot: number): { frac: number; text: string; noRes: boolean } {
+    const ability = this.kit?.abilities[slot];
     const remaining = Math.max(0, (p.cooldowns[slot] ?? 0) - serverTime) / 1000;
     return {
       frac: ability ? Math.min(1, remaining / ability.cooldown) : 0,
@@ -304,23 +321,28 @@ export class Hud {
     };
   }
 
-  get abilityNames(): [string, string] {
-    return [this.cls?.ability.name ?? "", this.sub?.ability.name ?? ""];
+  /** Learned ability names by slot ("" where not learned yet). */
+  get abilityNames(): string[] {
+    return Array.from({ length: ABILITY_SLOTS }, (_, i) => this.kit?.abilities[i]?.name ?? "");
   }
 
   update(p: PlayerView, serverTime: number, others: PartyMember[]): void {
-    if (!this.cls || this.cls.id !== p.classId || this.sub?.id !== p.subclassId) {
-      this.cls = getClass(p.classId) ?? null;
-      this.sub = getSubclass(p.classId, p.subclassId) ?? null;
-      if (this.cls && this.sub) {
-        const res = RESOURCES[this.cls.resource];
+    if (this.kitFor !== p.classId) {
+      this.kitFor = p.classId;
+      this.kit = resolveKit(p.classId) ?? null;
+      if (this.kit) {
+        const res = RESOURCES[this.kit.base.resource];
         this.resOrb.style.setProperty("--orb-color", res.color);
         this.resOrb.title = res.label;
-        this.slots[1]!.el.querySelector(".slot-label")!.textContent = this.cls.ability.name;
-        this.slots[2]!.el.querySelector(".slot-label")!.textContent = this.sub.ability.name;
-        this.slots[1]!.el.title = `${this.cls.ability.name} — ${this.cls.ability.description} (${this.cls.ability.cost} ${res.label})`;
-        this.slots[2]!.el.title = `${this.sub.ability.name} — ${this.sub.ability.description} (${this.sub.ability.cost} ${res.label})`;
-        this.slots[0]!.el.title = `${this.cls.basicAttack.kind === "melee" ? "Melee" : "Ranged"} attack`;
+        for (let i = 0; i < ABILITY_SLOTS; i++) {
+          const slot = this.slots[i + 1]!;
+          const a = this.kit.abilities[i];
+          const unlockLevel = [1, 10, 25, 50][i];
+          slot.el.querySelector(".slot-label")!.textContent = a ? a.name : `Lv ${unlockLevel}`;
+          slot.el.classList.toggle("locked", !a);
+          slot.el.title = a ? `${a.name} — ${a.description} (${a.cost} ${res.label}, ${a.cooldown}s)` : `Learned when you advance at level ${unlockLevel}`;
+        }
+        this.slots[0]!.el.title = `${this.kit.basicAttack.kind === "melee" ? "Melee" : "Ranged"} attack`;
       }
     }
 
@@ -332,7 +354,7 @@ export class Hud {
     this.levelBadge.textContent = String(p.level);
     this.levelBadge.title = `Level ${p.level} — ${p.xp} / ${p.xpNext} XP`;
 
-    for (const slot of [0, 1] as const) {
+    for (let slot = 0; slot < ABILITY_SLOTS; slot++) {
       const st = this.abilityState(p, serverTime, slot);
       const s = this.slots[slot + 1]!;
       s.cd.style.setProperty("--cd", String(st.frac));
@@ -348,6 +370,10 @@ export class Hud {
     this.buffs.replaceChildren(...buffNodes);
 
     this.death.classList.toggle("hidden", p.anim !== "dead");
+    const next = advancementOptions(p.classId);
+    const ready = !!next && p.level >= next.level && (!next.quest || p.quests.includes(next.quest.id));
+    this.slots[this.slots.length - 1]!.el.classList.toggle("ready", ready);
+    this.renderPath(p);
     this.renderBag(p);
     this.renderParty(others);
   }
@@ -359,9 +385,10 @@ export class Hud {
     if (key === this.bagKey) return;
     this.bagKey = key;
 
+    const node = getClassNode(p.classId);
     this.charInfo.replaceChildren(
       h("div.char-name", null, p.name),
-      h("div.char-class", { style: `color:${this.cls?.color}` }, `Level ${p.level} ${this.sub?.name ?? ""} ${this.cls?.name ?? ""}`),
+      h("div.char-class", { style: `color:${node?.color}` }, `Level ${p.level} ${node?.name ?? ""}`),
     );
 
     const itemCell = (itemId: string, qty: number, onClick?: () => void) => {
@@ -385,6 +412,68 @@ export class Hud {
     this.bagGrid.replaceChildren(...cells);
   }
 
+  /** Path breadcrumb, companion, and the next advancement choice. */
+  private renderPath(p: PlayerView): void {
+    const next = advancementOptions(p.classId);
+    const hasQuest = next?.quest ? p.quests.includes(next.quest.id) : true;
+    const key = `${p.classId}|${p.level}|${hasQuest}|${this.pendingChoice}`;
+    if (key === this.pathKey) return;
+    this.pathKey = key;
+
+    const path = classPath(p.classId);
+    const crumbs = h("div.path-crumbs", null, ...path.flatMap((n, i) => [i > 0 ? h("span.path-sep", null, "›") : "", h("span", { style: `color:${n.color}` }, n.name)]));
+    const comp = companionFor(p.classId);
+    const compLine = comp
+      ? h("div.path-companion", null, `Companion: ${comp.def.name} `, h("span.tag", null, comp.power === "familiar" ? "Familiar" : comp.power === "pet" ? "Pet" : "Bonded pet"))
+      : null;
+
+    const children: Array<HTMLElement | null> = [h("div.panel-sub", null, "Path"), crumbs, compLine];
+    if (next) {
+      const levelOk = p.level >= next.level;
+      const status = !levelOk
+        ? `Reach level ${next.level} to choose your next path.`
+        : !hasQuest
+          ? `Complete the ${next.quest!.name} to choose your next path.`
+          : this.pendingChoice
+            ? "This choice is permanent. Select again to confirm."
+            : "Choose your next path:";
+      children.push(h("div.path-status", null, status));
+      const cards = next.options.map((o) => {
+        const c = companionFor(o.id);
+        const picked = this.pendingChoice === o.id;
+        return h(
+          "button.path-option",
+          {
+            type: "button",
+            style: `--class-color:${o.color}`,
+            disabled: !levelOk || !hasQuest,
+            "aria-pressed": picked ? "true" : "false",
+            onclick: () => {
+              if (this.pendingChoice === o.id) {
+                this.pendingChoice = null;
+                this.cb.onAdvance(o.id);
+              } else {
+                this.pendingChoice = o.id;
+              }
+              this.pathKey = "";
+            },
+          },
+          h("div.path-name", null, o.name),
+          h("div.path-tagline", null, o.tagline),
+          h("div.path-tags", null, h("span.tag", null, o.role), ...classTags(o).map((t) => h("span.tag", null, t))),
+          h("div.path-desc", null, o.description),
+          h("div.path-ability", null, h("b", null, o.ability.name), ` — ${o.ability.description}`),
+          c ? h("div.path-pet", null, `${c.power === "familiar" ? "Familiar" : "Pet"}: ${c.def.name}`) : null,
+          picked ? h("div.path-confirm", null, "Select again to confirm") : null,
+        );
+      });
+      children.push(h("div.path-options", null, ...cards));
+    } else {
+      children.push(h("div.path-status", null, "You have mastered your path."));
+    }
+    this.pathEl.replaceChildren(...children.filter((c): c is HTMLElement => !!c));
+  }
+
   private renderParty(others: PartyMember[]): void {
     const key = others.map((o) => `${o.name}${o.level}${Math.round((o.hp / o.maxHp) * 20)}`).join("|");
     if (key === this.partyKey) return;
@@ -393,7 +482,7 @@ export class Hud {
       ...others.slice(0, 8).map((o) =>
         h(
           "div.party-member",
-          { style: `--class-color:${getClass(o.classId)?.color ?? "#888"}` },
+          { style: `--class-color:${getClassNode(o.classId)?.color ?? "#888"}` },
           h("div.party-name", null, `${o.name} · ${o.level}`),
           h("div.party-bar", null, h("div.party-fill", { style: `width:${Math.max(0, (o.hp / o.maxHp) * 100)}%` })),
         ),

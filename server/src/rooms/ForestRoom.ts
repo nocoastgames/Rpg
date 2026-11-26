@@ -12,8 +12,12 @@ import {
   NAME_MAX_LENGTH,
   S2C,
   TICK_MS,
-  isValidClassChoice,
+  ABILITY_SLOTS,
+  GATE_QUESTS,
+  getClassNode,
+  isBaseClass,
   type AbilityMsg,
+  type AdvanceMsg,
   type AttackMsg,
   type ChatEvent,
   type ChatMsg,
@@ -28,7 +32,7 @@ import { Game } from "../sim/Game.ts";
 
 const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
 
-/** Dev-only chat commands (/open, /close, /tp). Disabled when NODE_ENV=production. */
+/** Dev-only chat commands (/open, /close, /tp, /level, /quest, /class). Disabled when NODE_ENV=production. */
 const DEV_COMMANDS = process.env.NODE_ENV !== "production";
 
 function sanitizeName(raw: unknown): string {
@@ -62,7 +66,7 @@ export class ForestRoom extends Room<{ state: WorldState }> {
       if (typeof m?.targetId === "string") this.game.setAttackTarget(client.sessionId, m.targetId);
     });
     this.onMessage(C2S.ability, (client, m: AbilityMsg) => {
-      if ((m?.slot === 0 || m?.slot === 1) && finite(m.x) && finite(m.z)) {
+      if (Number.isInteger(m?.slot) && m.slot >= 0 && m.slot < ABILITY_SLOTS && finite(m.x) && finite(m.z)) {
         this.game.castAbility(client.sessionId, m.slot, m.x, m.z);
       }
     });
@@ -70,6 +74,9 @@ export class ForestRoom extends Room<{ state: WorldState }> {
       if (Number.isInteger(m?.slot)) this.game.useItem(client.sessionId, m.slot);
     });
     this.onMessage(C2S.interact, (client) => this.game.interact(client.sessionId));
+    this.onMessage(C2S.advance, (client, m: AdvanceMsg) => {
+      if (typeof m?.classId === "string") this.game.advance(client.sessionId, m.classId);
+    });
     this.onMessage(C2S.chat, (client, m: ChatMsg) => {
       const text = typeof m?.text === "string" ? m.text.trim().slice(0, CHAT_MAX_LENGTH) : "";
       const player = this.state.players.get(client.sessionId);
@@ -94,22 +101,41 @@ export class ForestRoom extends Room<{ state: WorldState }> {
     if ((cmd === "open" || cmd === "close") && arg) {
       const ok = this.game.setGate(arg as GateId, cmd === "open");
       client.send(S2C.notice, ok ? `[dev] ${arg} ${cmd === "open" ? "opened" : "sealed"}.` : `[dev] unknown gate "${arg}" (valley_exit, ruins_seal, cave_thorns)`);
+    } else if (cmd === "level" && arg && Number.isFinite(Number(arg))) {
+      this.game.setLevel(client.sessionId, Number(arg));
+      client.send(S2C.notice, `[dev] level set to ${arg}`);
+    } else if (cmd === "quest" && arg) {
+      const ids = arg === "all" ? Object.values(GATE_QUESTS).map((q) => q!.id) : [arg];
+      for (const q of ids) this.game.completeQuest(client.sessionId, q);
+      client.send(S2C.notice, `[dev] completed ${ids.join(", ")}`);
+    } else if (cmd === "class" && arg && getClassNode(arg)) {
+      // Walk straight to a class for testing: max level, all quests, every step of the path.
+      this.game.setLevel(client.sessionId, 50);
+      for (const q of Object.values(GATE_QUESTS)) this.game.completeQuest(client.sessionId, q!.id);
+      const path: string[] = [];
+      for (let n = getClassNode(arg); n; n = n.parent ? getClassNode(n.parent) : undefined) path.unshift(n.id);
+      const current = this.state.players.get(client.sessionId)?.classId ?? "";
+      const start = path.indexOf(current);
+      if (start === -1) {
+        client.send(S2C.notice, `[dev] ${arg} isn't on your current path; start a new ${path[0]} character.`);
+        return;
+      }
+      for (const id of path.slice(start + 1)) this.game.advance(client.sessionId, id);
     } else if (cmd === "tp" && arg) {
       const ok = this.game.teleportToLandmark(client.sessionId, arg);
       client.send(S2C.notice, ok ? `[dev] teleported to ${arg}` : `[dev] unknown landmark "${arg}"`);
     } else {
-      client.send(S2C.notice, "[dev] commands: /open <gate>, /close <gate>, /tp <landmark>");
+      client.send(S2C.notice, "[dev] commands: /open|/close <gate>, /tp <place>, /level <n>, /quest <id|all>, /class <id>");
     }
   }
 
   onJoin(client: Client, options: JoinOptions): void {
-    if (!isValidClassChoice(options?.classId, options?.subclassId)) {
-      throw new Error("Invalid class or subclass.");
+    if (!isBaseClass(options?.classId)) {
+      throw new Error("Choose one of the four base classes.");
     }
     const player = this.game.addPlayer(client.sessionId, {
       name: sanitizeName(options.name),
       classId: options.classId,
-      subclassId: options.subclassId,
     });
     this.broadcast(S2C.chat, { from: "", text: `${player.name} wakes up by the stream.`, system: true } satisfies ChatEvent);
   }

@@ -1,11 +1,15 @@
 import {
-  CLASSES,
+  BASE_CLASSES,
+  BASE_CLASS_IDS,
   NAME_MAX_LENGTH,
   RESOURCES,
   STAT_IDS,
   STAT_LABELS,
-  type AbilityDef,
-  type ClassDef,
+  childrenOf,
+  classTags,
+  getClassNode,
+  type BaseClassId,
+  type ClassNode,
   type JoinOptions,
 } from "@rpg/shared";
 import { PAD, GamepadInput } from "../controls/Gamepad.ts";
@@ -14,7 +18,7 @@ import { h, safeStorageGet, safeStorageSet } from "./dom.ts";
 
 const STORAGE_KEY = "rpg.lastCharacter";
 
-/** Character creation: pick a name, one of 12 classes, and one of its 2 subclasses. */
+/** Character creation: a name and one of the four base classes, with a preview of where each can lead. */
 export function showCharacterCreate(root: HTMLElement, error?: string): Promise<JoinOptions> {
   let saved: Partial<JoinOptions> = {};
   try {
@@ -22,9 +26,7 @@ export function showCharacterCreate(root: HTMLElement, error?: string): Promise<
   } catch {
     saved = {};
   }
-
-  let cls: ClassDef = CLASSES.find((c) => c.id === saved.classId) ?? CLASSES[0]!;
-  let subId = cls.subclasses.some((s) => s.id === saved.subclassId) ? saved.subclassId! : cls.subclasses[0].id;
+  let base: BaseClassId = (BASE_CLASS_IDS as readonly string[]).includes(saved.classId ?? "") ? (saved.classId as BaseClassId) : "fighter";
 
   return new Promise((resolve) => {
     const nameInput = h("input.cc-name", {
@@ -35,45 +37,76 @@ export function showCharacterCreate(root: HTMLElement, error?: string): Promise<
       autocomplete: "off",
       spellcheck: "false",
     });
-    const grid = h("div.cc-grid");
+    const grid = h("div.cc-grid.cc-grid-base");
     const detail = h("div.cc-detail");
     const submit = h("button.btn.btn-primary", { type: "submit" }, "Wake Up");
 
-    const abilityLine = (a: AbilityDef) =>
-      h(
-        "div.cc-ability",
-        null,
-        h("span.cc-ability-name", null, a.name),
-        h("span.cc-ability-meta", null, `${a.cost} cost · ${a.cooldown}s`),
-        h("div.cc-ability-desc", null, a.description),
-      );
-
     const renderGrid = () => {
       grid.replaceChildren(
-        ...CLASSES.map((c) =>
-          h(
+        ...BASE_CLASS_IDS.map((id) => {
+          const n = getClassNode(id)!;
+          return h(
             "button.cc-class",
             {
               type: "button",
-              style: `--class-color:${c.color}`,
-              "aria-pressed": c.id === cls.id ? "true" : "false",
+              style: `--class-color:${n.color}`,
+              "aria-pressed": id === base ? "true" : "false",
               onclick: () => {
-                cls = c;
-                subId = c.subclasses[0].id;
+                base = id;
                 renderGrid();
                 renderDetail();
               },
             },
             h("span.cc-class-swatch"),
-            h("span.cc-class-name", null, c.name),
-            h("span.cc-class-role", null, c.role),
+            h("span.cc-class-name", null, n.name),
+            h("span.cc-class-role", null, n.tagline),
+          );
+        }),
+      );
+    };
+
+    /** Compact tree: level-10 paths → level-25 specialisations → level-50 end classes. */
+    const renderTree = (rootId: string) => {
+      const leaf = (n: ClassNode) =>
+        h(
+          "div.tree-leaf",
+          { style: `--class-color:${n.color}`, title: `${n.description} — ${n.ability.name}: ${n.ability.description}` },
+          h("span.tree-name", null, n.name),
+          ...classTags(n)
+            .filter((t) => t !== "Pure")
+            .map((t) => h("span.tree-tag", null, t.replace("Hybrid · ", "+").replace(/^\+\w+ \+ /, "+"))),
+        );
+      return h(
+        "div.tree",
+        null,
+        ...childrenOf(rootId).map((t2) =>
+          h(
+            "div.tree-branch",
+            null,
+            h("div.tree-node.tier2", { style: `--class-color:${t2.color}`, title: t2.description }, h("small", null, "Lv 10"), t2.name),
+            ...childrenOf(t2.id).map((t3) =>
+              h(
+                "div.tree-sub",
+                null,
+                h(
+                  "div.tree-node.tier3",
+                  { style: `--class-color:${t3.color}`, title: t3.description },
+                  h("small", null, "Lv 25"),
+                  t3.name,
+                  t3.petLine ? h("span.tree-tag", null, "Pet") : null,
+                ),
+                h("div.tree-leaves", null, h("small", null, "Lv 50"), ...childrenOf(t3.id).map(leaf)),
+              ),
+            ),
           ),
         ),
       );
     };
 
     const renderDetail = () => {
-      const res = RESOURCES[cls.resource];
+      const n = getClassNode(base)!;
+      const def = BASE_CLASSES[base];
+      const res = RESOURCES[def.resource];
       const stats = h(
         "div.cc-stats",
         null,
@@ -82,47 +115,37 @@ export function showCharacterCreate(root: HTMLElement, error?: string): Promise<
             "div.cc-stat",
             null,
             h("span", null, STAT_LABELS[id]),
-            h("span.cc-stat-bar", { style: `--v:${Math.min(1, cls.baseStats[id] / 18)}` }),
-            h("b", null, String(cls.baseStats[id])),
+            h("span.cc-stat-bar", { style: `--v:${Math.min(1, def.baseStats[id] / 18)}` }),
+            h("b", null, String(def.baseStats[id])),
           ),
         ),
       );
       detail.replaceChildren(
-        h("h2", { style: `color:${cls.color}` }, cls.name),
-        h("p.cc-desc", null, cls.description),
+        h("h2", { style: `color:${n.color}` }, n.name),
+        h("p.cc-desc", null, n.description),
         h(
           "div.cc-tags",
           null,
-          h("span.tag", null, cls.role),
+          h("span.tag", null, n.role),
           h("span.tag", { style: `border-color:${res.color};color:${res.color}` }, res.label),
-          h("span.tag", null, cls.basicAttack.kind === "melee" ? "Melee" : "Ranged"),
+          h("span.tag", null, def.basicAttack.kind === "melee" ? "Melee" : "Ranged"),
         ),
         stats,
-        h("h3", null, "Class ability"),
-        abilityLine(cls.ability),
-        h("h3", null, "Choose a path"),
+        h("h3", null, "Starting ability"),
         h(
-          "div.cc-subs",
+          "div.cc-ability",
           null,
-          ...cls.subclasses.map((s) =>
-            h(
-              "button.cc-sub",
-              {
-                type: "button",
-                "aria-pressed": s.id === subId ? "true" : "false",
-                style: `--class-color:${cls.color}`,
-                onclick: () => {
-                  subId = s.id;
-                  renderDetail();
-                },
-              },
-              h("div.cc-sub-name", null, s.name),
-              h("div.cc-sub-tag", null, s.tagline),
-              h("div.cc-sub-desc", null, s.description),
-              abilityLine(s.ability),
-            ),
-          ),
+          h("span.cc-ability-name", null, n.ability.name),
+          h("span.cc-ability-meta", null, `${n.ability.cost} ${res.label} · ${n.ability.cooldown}s`),
+          h("div.cc-ability-desc", null, n.ability.description),
         ),
+        h("h3", null, "Where this path can lead"),
+        h(
+          "p.cc-hint",
+          null,
+          "Choose a new path at levels 10, 25 and 50 (25 and 50 need a trial). Choices are permanent. Every class gains a companion at 50; pet classes get theirs at 25, and much stronger.",
+        ),
+        renderTree(base),
       );
     };
 
@@ -132,7 +155,7 @@ export function showCharacterCreate(root: HTMLElement, error?: string): Promise<
         onsubmit: (e: Event) => {
           e.preventDefault();
           const name = nameInput.value.trim() || "Wanderer";
-          const opts: JoinOptions = { name, classId: cls.id, subclassId: subId };
+          const opts: JoinOptions = { name, classId: base };
           safeStorageSet(STORAGE_KEY, JSON.stringify(opts));
           submit.disabled = true;
           submit.textContent = "Waking…";
@@ -176,7 +199,6 @@ export function showCharacterCreate(root: HTMLElement, error?: string): Promise<
         nav.activate();
         // Re-rendering replaces buttons; keep the highlight on the same item.
         if (focused?.classList.contains("cc-class")) nav.focus(grid.querySelector<HTMLElement>('[aria-pressed="true"]'));
-        else if (focused?.classList.contains("cc-sub")) nav.focus(detail.querySelector<HTMLElement>('.cc-sub[aria-pressed="true"]'));
       }
       if (pad.pressed(PAD.MENU)) form.requestSubmit();
     };

@@ -18,8 +18,10 @@ export interface BuffView {
 
 export interface PlayerView {
   name: string;
+  /** Current class in the progression tree. */
   classId: string;
-  subclassId: string;
+  /** Completed gate quests. */
+  quests: ArrayLike<string> & { includes(id: string): boolean };
   x: number;
   z: number;
   facing: number;
@@ -50,6 +52,22 @@ export interface EnemyView {
   maxHp: number;
 }
 
+export interface CompanionView {
+  owner: string;
+  kind: string;
+  name: string;
+  color: string;
+  scale: number;
+  power: string;
+  x: number;
+  z: number;
+  facing: number;
+  anim: string;
+  actionSeq: number;
+  hp: number;
+  maxHp: number;
+}
+
 export interface MapView<T> {
   readonly size: number;
   get(key: string): T | undefined;
@@ -62,6 +80,7 @@ export interface WorldStateView {
   serverTime: number;
   players: MapView<PlayerView>;
   enemies: MapView<EnemyView>;
+  companions: MapView<CompanionView>;
   /** Gate id -> open. Sealed gates block movement. */
   gates: MapView<boolean>;
 }

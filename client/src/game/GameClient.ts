@@ -5,9 +5,10 @@ import {
   S2C,
   findInteractable,
   generateWorld,
-  getClass,
+  ABILITY_SLOTS,
   getEnemy,
   getItem,
+  resolveKit,
   stepMovement,
   type AbilityDef,
   type ChatEvent,
@@ -22,7 +23,7 @@ import { MenuNav } from "../controls/MenuNav.ts";
 import { TouchControls } from "../controls/TouchControls.ts";
 import type { GameRoom } from "../net.ts";
 import type { AssetLibrary } from "../scene/Assets.ts";
-import { createEnemyAvatar, createPlayerAvatar, type Avatar } from "../scene/Avatars.ts";
+import { createCompanionAvatar, createEnemyAvatar, createPlayerAvatar, type Avatar } from "../scene/Avatars.ts";
 import { CelPost } from "../scene/CelPost.ts";
 import { DEFAULT_HOUR, lightingAt, type LightingPreset } from "../scene/Lighting.ts";
 import { Environment, groundHeight } from "../scene/Environment.ts";
@@ -87,6 +88,7 @@ export class GameClient {
   private readonly groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private readonly players = new Map<string, Entity>();
   private readonly enemies = new Map<string, Entity>();
+  private readonly companionEnts = new Map<string, Entity>();
   private readonly selfRingMat = new THREE.MeshBasicMaterial({ color: "#ffd54a", transparent: true, opacity: 0.8, depthWrite: false });
   private readonly enemyRingMat = new THREE.MeshBasicMaterial({ color: "#ff4a3a", transparent: true, opacity: 0.9, depthWrite: false });
   private readonly ringGeo = new THREE.RingGeometry(0.55, 0.68, 32).rotateX(-Math.PI / 2);
@@ -168,6 +170,7 @@ export class GameClient {
         },
         onAbility: (slot) => this.castAbility(slot, null),
         onInteract: () => room.send(C2S.interact),
+        onAdvance: (classId) => room.send(C2S.advance, { classId }),
       },
       this.minimap.el,
       this.touch.el,
@@ -220,7 +223,7 @@ export class GameClient {
   }
 
   private onHit(e: HitEvent): void {
-    const ent = this.players.get(e.targetId) ?? this.enemies.get(e.targetId);
+    const ent = this.players.get(e.targetId) ?? this.enemies.get(e.targetId) ?? this.companionEnts.get(e.targetId);
     if (!ent) return;
     const at = ent.pos.clone().setY(ent.pos.y + ent.avatar.height);
     const isMe = e.targetId === this.room.sessionId;
@@ -294,7 +297,7 @@ export class GameClient {
   private attackNearest(silent: boolean, prefer?: { x: number; z: number }): void {
     const me = this.me;
     if (!me || me.anim === "dead") return;
-    const atk = getClass(me.classId)?.basicAttack;
+    const atk = resolveKit(me.classId)?.basicAttack;
     const reach = atk?.kind === "ranged" ? atk.range + 3 : 9;
     const id = this.pickTarget(reach, prefer);
     if (id) {
@@ -306,14 +309,13 @@ export class GameClient {
     }
   }
 
-  private abilityDef(slot: 0 | 1): AbilityDef | undefined {
+  private abilityDef(slot: number): AbilityDef | undefined {
     const me = this.me;
-    const cls = me ? getClass(me.classId) : undefined;
-    return slot === 0 ? cls?.ability : cls?.subclasses.find((s) => s.id === me?.subclassId)?.ability;
+    return me ? resolveKit(me.classId)?.abilities[slot] : undefined;
   }
 
   /** World point an ability would be cast at for the given screen-space aim (or auto-aim when null). */
-  private abilityPoint(slot: 0 | 1, aim: ScreenAim | null): { x: number; z: number } {
+  private abilityPoint(slot: number, aim: ScreenAim | null): { x: number; z: number } {
     const ability = this.abilityDef(slot);
     const range = ability?.range ?? 0;
     const selfCentred = !ability || range === 0 || ["nova", "heal", "buff"].includes(ability.effect.type);
@@ -333,7 +335,12 @@ export class GameClient {
   }
 
   /** Cast at the mouse cursor (kbm) or with stick/touch aim / auto-aim. */
-  private castAbility(slot: 0 | 1, aim: ScreenAim | null): void {
+  private castAbility(slot: number, aim: ScreenAim | null): void {
+    if (!this.abilityDef(slot)) {
+      const level = [1, 10, 25, 50][slot];
+      this.hud.notice(`You learn this ability when you advance at level ${level}.`);
+      return;
+    }
     const p = this.mode === "kbm" ? { x: this.cursor.x, z: this.cursor.z } : this.abilityPoint(slot, aim);
     this.room.send(C2S.ability, { slot, x: p.x, z: p.z });
   }
@@ -406,10 +413,11 @@ export class GameClient {
       else if (k === "h" || k === "?") this.hud.toggleHelp();
       else if (k === "m") this.minimap.toggle();
       else if (k === "escape") this.hud.closePanels();
-      else if (k === "1" || k === "q") this.castAbility(0, null);
-      else if (k === "2" || k === "e") this.castAbility(1, null);
-      else if (k === "3") this.quickUse("heal");
-      else if (k === "4") this.quickUse("restoreResource");
+      else if (k >= "1" && k <= "4" && k.length === 1) this.castAbility(Number(k) - 1, null);
+      else if (k === "q") this.castAbility(0, null);
+      else if (k === "e") this.castAbility(1, null);
+      else if (k === "5") this.quickUse("heal");
+      else if (k === "6") this.quickUse("restoreResource");
       else if (k === "f") this.room.send(C2S.interact);
     }
 
@@ -425,11 +433,13 @@ export class GameClient {
       }
       if (pad.pressed(PAD.X)) this.castAbility(0, aim);
       if (pad.pressed(PAD.Y)) this.castAbility(1, aim);
+      if (pad.pressed(PAD.RB)) this.castAbility(2, aim);
+      if (pad.pressed(PAD.RT)) this.castAbility(3, aim);
       if (pad.pressed(PAD.B)) this.room.send(C2S.interact);
       if (pad.pressed(PAD.UP)) this.quickUse("heal");
       if (pad.pressed(PAD.DOWN)) this.quickUse("restoreResource");
-      if (pad.pressed(PAD.LB)) this.iso.zoom(120, inp.width / inp.height);
-      if (pad.pressed(PAD.RB)) this.iso.zoom(-120, inp.width / inp.height);
+      if (pad.pressed(PAD.LEFT)) this.iso.zoom(120, inp.width / inp.height);
+      if (pad.pressed(PAD.RIGHT)) this.iso.zoom(-120, inp.width / inp.height);
       if (pad.pressed(PAD.VIEW)) this.hud.toggleBag();
       if (pad.pressed(PAD.MENU)) this.hud.toggleHelp();
       if (pad.pressed(PAD.RS)) this.minimap.toggle();
@@ -548,7 +558,7 @@ export class GameClient {
         if (!target) {
           this.attackTarget = null;
         } else {
-          const reach = (getClass(me.classId)?.basicAttack.range ?? 2) + (getEnemy(target.kind)?.radius ?? 0.5);
+          const reach = (resolveKit(me.classId)?.basicAttack.range ?? 2) + (getEnemy(target.kind)?.radius ?? 0.5);
           const inReach = Math.hypot(target.x - this.pred.x, target.z - this.pred.z) <= reach;
           intent = { dirX: 0, dirZ: 0, target: inReach ? null : { x: target.x, z: target.z } };
         }
@@ -612,14 +622,14 @@ export class GameClient {
     const seenP = new Set<string>();
     state.players.forEach((p, id) => {
       seenP.add(id);
-      const look = `${p.classId}.${p.subclassId}.${p.weapon}`;
+      const look = `${p.classId}.${p.weapon}`;
       let ent = this.players.get(id);
       if (ent && ent.look !== look) {
         this.removeEntity(ent);
         ent = undefined;
       }
       if (!ent) {
-        ent = this.makeEntity(createPlayerAvatar(this.assets, p.classId, p.subclassId, p.weapon), p.x, p.z, look);
+        ent = this.makeEntity(createPlayerAvatar(this.assets, p.classId, p.weapon), p.x, p.z, look);
         if (id === this.room.sessionId) {
           ent.ring = new THREE.Mesh(this.ringGeo, this.selfRingMat);
           this.scene.add(ent.ring);
@@ -672,7 +682,32 @@ export class GameClient {
       }
     }
 
-    for (const ent of [...this.players.values(), ...this.enemies.values()]) {
+    // Pets and familiars.
+    const seenC = new Set<string>();
+    state.companions?.forEach((c, id) => {
+      seenC.add(id);
+      const look = `${c.kind}.${c.color}.${c.scale}`;
+      let ent = this.companionEnts.get(id);
+      if (ent && ent.look !== look) {
+        this.removeEntity(ent);
+        ent = undefined;
+      }
+      if (!ent) {
+        ent = this.makeEntity(createCompanionAvatar(c.kind, c.color, c.scale), c.x, c.z, look);
+        this.companionEnts.set(id, ent);
+      }
+      this.moveEntity(ent, c.x, c.z, smooth, dt);
+      ent.facing = lerpAngle(ent.facing, c.facing, smooth);
+      ent.avatar.setAnim(c.anim, c.actionSeq);
+    });
+    for (const [id, ent] of this.companionEnts) {
+      if (!seenC.has(id)) {
+        this.removeEntity(ent);
+        this.companionEnts.delete(id);
+      }
+    }
+
+    for (const ent of [...this.players.values(), ...this.enemies.values(), ...this.companionEnts.values()]) {
       ent.avatar.root.position.copy(ent.pos);
       ent.avatar.root.rotation.y = ent.facing;
       ent.avatar.update(dt, ent.speed);
@@ -746,6 +781,12 @@ export class GameClient {
       const show = e.hp < e.maxHp || id === this.hovered || id === this.attackTarget;
       if (show) this.overlay.plate(id, ent.pos.clone().setY(ent.pos.y + ent.avatar.height + 0.1), "", e.hp / Math.max(1, e.maxHp), "enemy");
     });
+    state.companions?.forEach((c, id) => {
+      const ent = this.companionEnts.get(id);
+      if (!ent || c.anim === "dead") return;
+      const mine = c.owner === this.room.sessionId;
+      if (mine || c.hp < c.maxHp) this.overlay.plate(id, ent.pos.clone().setY(ent.pos.y + ent.avatar.height * Math.max(0.6, c.scale) * 0.9), mine ? c.name : "", c.hp / Math.max(1, c.maxHp), "pet");
+    });
     this.overlay.endFrame();
     this.overlay.update(dt);
 
@@ -784,9 +825,8 @@ export class GameClient {
             : "Drink from the stream";
       this.hud.setInteractHint(hint);
       this.touch.setInteract(!!hint);
-      const names = this.hud.abilityNames;
-      this.touch.setAbilityLabels(names[0], names[1]);
-      for (const slot of [0, 1] as const) {
+      this.touch.setAbilityLabels(this.hud.abilityNames);
+      for (let slot = 0; slot < ABILITY_SLOTS; slot++) {
         const st = this.hud.abilityState(me, state.serverTime, slot);
         this.touch.setCooldown(slot, st.frac, st.text, st.noRes);
       }

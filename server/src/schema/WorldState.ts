@@ -32,8 +32,10 @@ export type Buff = SchemaType<typeof Buff>;
 export const Player = schema(
   {
     name: t.string().default(""),
+    /** Current class in the progression tree (starts as a base class). */
     classId: t.string().default(""),
-    subclassId: t.string().default(""),
+    /** Completed gate quests (e.g. trial_of_paths). */
+    quests: t.array("string"),
 
     x: t.float32().default(0),
     z: t.float32().default(0),
@@ -78,6 +80,28 @@ export const Enemy = schema(
 );
 export type Enemy = SchemaType<typeof Enemy>;
 
+/** A pet or familiar fighting for a player. Keyed by "c:<ownerSessionId>". */
+export const Companion = schema(
+  {
+    owner: t.string().default(""),
+    kind: t.string().default(""),
+    name: t.string().default(""),
+    color: t.string().default("#ffffff"),
+    scale: t.float32().default(1),
+    /** familiar | pet | empowered */
+    power: t.string().default("familiar"),
+    x: t.float32().default(0),
+    z: t.float32().default(0),
+    facing: t.float32().default(0),
+    anim: t.string().default("idle"),
+    actionSeq: t.uint16().default(0),
+    hp: t.float32().default(0),
+    maxHp: t.uint16().default(0),
+  },
+  "Companion",
+);
+export type Companion = SchemaType<typeof Companion>;
+
 export const WorldState = schema(
   {
     seed: t.uint32().default(0),
@@ -85,6 +109,7 @@ export const WorldState = schema(
     serverTime: t.float64().default(0),
     players: t.map(Player),
     enemies: t.map(Enemy),
+    companions: t.map(Companion),
     /** Gate id -> open? (valley_exit, ruins_seal, cave_thorns). Sealed by default. */
     gates: t.map("boolean"),
   },

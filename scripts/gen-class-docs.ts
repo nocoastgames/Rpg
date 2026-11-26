@@ -1,48 +1,86 @@
 /**
- * Regenerates docs/CLASSES.md from the class data in shared/src/classes.ts.
+ * Regenerates docs/CLASSES.md from the progression tree in shared/src/classes.ts.
  * Run: npm run docs:classes
  */
 import { writeFileSync } from "node:fs";
-import { CLASSES } from "../shared/src/classes.ts";
-import { RESOURCES, STAT_IDS, STAT_LABELS } from "../shared/src/stats.ts";
-import { getItem } from "../shared/src/items.ts";
+import { BASE_CLASSES, BASE_CLASS_IDS, GATE_QUESTS, childrenOf, classTags, companionFor, getClassNode, type ClassNode } from "../shared/src/classes.ts";
+import { RESOURCES, STAT_LABELS } from "../shared/src/stats.ts";
 import type { AbilityDef } from "../shared/src/abilities.ts";
 
 const effect = (a: AbilityDef): string => {
   const e = a.effect;
   switch (e.type) {
     case "strike":
-      return `${e.multiplier}x damage${e.radius ? `, ${e.radius}m radius` : ", single target"}${e.lifesteal ? `, ${e.lifesteal * 100}% lifesteal` : ""}`;
+      return `${e.multiplier}x damage${e.radius ? `, ${e.radius}m area` : ", single target"}${e.lifesteal ? `, ${Math.round(e.lifesteal * 100)}% lifesteal` : ""}`;
     case "nova":
       return `${e.multiplier}x damage around you, ${e.radius}m`;
     case "heal":
-      return `heal ${e.fraction * 100}% max HP${e.radius ? `, allies within ${e.radius}m` : ""}`;
+      return `heal ${Math.round(e.fraction * 100)}% max HP${e.radius ? `, allies within ${e.radius}m` : ""}`;
     case "dash":
       return `dash ${e.distance}m${e.multiplier ? `, ${e.multiplier}x damage on landing` : ""}`;
     case "buff":
-      return `+${e.amount * 100}% ${e.stat} for ${e.duration}s${e.radius ? `, allies within ${e.radius}m` : ""}`;
+      return `+${Math.round(e.amount * 100)}% ${e.stat} for ${e.duration}s${e.radius ? `, allies within ${e.radius}m` : ""}`;
   }
 };
 
-const row = (a: AbilityDef, tag: string) => `| ${a.name} _(${tag})_ | ${a.cost} | ${a.cooldown}s | ${a.range || "self"} | ${effect(a)} |`;
+const cap = (s: string) => s[0]!.toUpperCase() + s.slice(1);
+const tags = (n: ClassNode) => classTags(n).join(", ");
+const companion = (n: ClassNode) => {
+  const c = companionFor(n.id);
+  return c ? `${c.def.name} (${c.power === "familiar" ? "familiar" : c.power === "pet" ? "pet" : "empowered pet"})` : "";
+};
 
-let md = `# Classes\n\n> Generated from \`shared/src/classes.ts\` by \`npm run docs:classes\`. Edit the data, not this file.\n\n`;
-md += `12 classes, each with 2 subclasses. Every character has a basic attack, one class ability and one subclass ability.\n\n`;
-md += `| Class | Role | Resource | Attack | Subclasses |\n|---|---|---|---|---|\n`;
-for (const c of CLASSES) {
-  md += `| **${c.name}** | ${c.role} | ${RESOURCES[c.resource].label} | ${c.basicAttack.kind} (${c.basicAttack.range}m) | ${c.subclasses.map((s) => s.name).join(", ")} |\n`;
+let md = `# Classes
+
+> Generated from \`shared/src/classes.ts\` by \`npm run docs:classes\`. Edit the data, not this file.
+
+## How progression works
+
+| Level | Choice | Requirement |
+|---|---|---|
+| 1 | One of 4 base classes | Character creation |
+| 10 | 1 of 2 paths | Reach level 10 |
+| 25 | 1 of 2 specialisations | Reach level 25 and complete the **${GATE_QUESTS[3]!.name}** |
+| 50 | 1 of 2 end classes | Reach level 50 and complete the **${GATE_QUESTS[4]!.name}** |
+
+- **4 → 8 → 16 → 32.** Every class branches in two. Choices are permanent (a lineage system will allow changes later).
+- **Each class teaches one ability**, and you keep every ability on your path: 4 abilities plus a basic attack at level 50.
+- **Each base has 5 pure and 3 hybrid end classes.** A hybrid blends in a second base (one hybrid with each other base). Every pair of bases has exactly two hybrids, one reached from each side.
+- **Companions.** One level-25 specialisation per base is a *pet line* and brings a pet at 25; its two end classes are *pet classes* whose companion is far stronger at 50 (about 4x a familiar's health and damage). Every other end class gains a lesser *familiar* at 50.
+
+## Hybrids
+
+| Pair | From one side | From the other |
+|---|---|---|
+`;
+const pairs = new Map<string, ClassNode[]>();
+for (const b of BASE_CLASS_IDS) {
+  for (const t2 of childrenOf(b)) for (const t3 of childrenOf(t2.id)) for (const t4 of childrenOf(t3.id)) {
+    if (!t4.hybrid) continue;
+    const key = [t4.base, t4.hybrid].sort().map(cap).join(" + ");
+    pairs.set(key, [...(pairs.get(key) ?? []), t4]);
+  }
 }
-for (const c of CLASSES) {
-  md += `\n## ${c.name}\n\n_${c.description}_\n\n`;
-  md += `- **Role:** ${c.role} · **Resource:** ${RESOURCES[c.resource].label} · **Primary stat:** ${STAT_LABELS[c.primaryStat]}\n`;
-  md += `- **Base stats:** ${STAT_IDS.map((s) => `${STAT_LABELS[s]} ${c.baseStats[s]}`).join(", ")}\n`;
-  md += `- **Basic attack:** ${c.basicAttack.kind}, ${c.basicAttack.range}m, ${c.basicAttack.damage[0]}-${c.basicAttack.damage[1]} dmg every ${c.basicAttack.cooldown}s\n`;
-  md += `- **Wakes up with:** ${getItem(c.starterWeapon)?.name}\n\n`;
-  md += `| Ability | Cost | Cooldown | Range | Effect |\n|---|---|---|---|---|\n${row(c.ability, "class")}\n`;
-  for (const s of c.subclasses) md += `${row(s.ability, s.name)}\n`;
-  for (const s of c.subclasses) {
-    const bonus = Object.entries(s.statBonus).map(([k, v]) => `+${v} ${STAT_LABELS[k as keyof typeof STAT_LABELS]}`).join(", ");
-    md += `\n**${s.name}** — _${s.tagline}._ ${s.description} (${bonus})\n`;
+for (const [key, list] of pairs) md += `| ${key} | ${list.map((n) => `**${n.name}** (${cap(n.base)})`).join(" | ")} |\n`;
+
+for (const b of BASE_CLASS_IDS) {
+  const root = getClassNode(b)!;
+  const def = BASE_CLASSES[b];
+  md += `\n## ${root.name}\n\n_${root.description}_\n\n`;
+  md += `- **Resource:** ${RESOURCES[def.resource].label} · **Primary stat:** ${STAT_LABELS[def.primaryStat]} · **Basic attack:** ${def.basicAttack.kind}, ${def.basicAttack.range}m\n`;
+  md += `- **Starting ability:** ${root.ability.name}: ${effect(root.ability)}\n\n`;
+  md += `| Lv 10 | Lv 25 | Lv 50 | Tags | Ability (learned) | Companion at 50 |\n|---|---|---|---|---|---|\n`;
+  for (const t2 of childrenOf(b)) {
+    for (const t3 of childrenOf(t2.id)) {
+      for (const t4 of childrenOf(t3.id)) {
+        md += `| ${t2.name} | ${t3.name}${t3.petLine ? ` (pet line: ${companion(t3)} at 25)` : ""} | **${t4.name}** | ${tags(t4)} | ${t4.ability.name}: ${effect(t4.ability)} | ${companion(t4)} |\n`;
+      }
+    }
+  }
+  md += `\n**Abilities learned on the way:**\n\n`;
+  for (const t2 of childrenOf(b)) {
+    md += `- ${t2.name} (Lv 10): ${t2.ability.name}: ${effect(t2.ability)}\n`;
+    for (const t3 of childrenOf(t2.id)) md += `  - ${t3.name} (Lv 25): ${t3.ability.name}: ${effect(t3.ability)}\n`;
   }
 }
 writeFileSync(new URL("../docs/CLASSES.md", import.meta.url), md);

@@ -12,7 +12,10 @@ import {
   RESPAWN_SECONDS,
   STARTING_ARMOR,
   STARTING_INVENTORY,
-  SUBCLASS_UNLOCK_LEVEL,
+  ABILITY_SLOTS,
+  advancementOptions,
+  companionFor,
+  getClassNode,
   INVENTORY_SLOTS,
   MAX_LEVEL,
   MOVE_DEADZONE,
@@ -32,6 +35,7 @@ import {
   stepMovement,
   xpForNextLevel,
   type AbilityDef,
+  type CompanionPower,
   type EnemyDef,
   type FxEvent,
   type GateId,
@@ -40,10 +44,11 @@ import {
   type MoveIntent,
   type World,
 } from "@rpg/shared";
-import { Buff, Enemy, InventorySlot, Player, WorldState } from "../schema/WorldState.ts";
+import { Buff, Companion, Enemy, InventorySlot, Player, WorldState } from "../schema/WorldState.ts";
 import {
   applyDerived,
   armorFraction,
+  averageHit,
   critChance,
   damageMultiplier,
   moveSpeed,
@@ -81,7 +86,29 @@ interface EnemyRuntime {
   returning: boolean;
 }
 
+interface CompanionRuntime {
+  ownerId: string;
+  power: CompanionPower;
+  ranged: boolean;
+  nextAttackAt: number;
+  targetId: string | null;
+  respawnAt: number;
+}
+
+/** Companion strength relative to its owner, by power. Pet classes' companions are far stronger at 50. */
+const COMPANION_POWER: Record<CompanionPower, { hp: number; damage: number; cooldown: number }> = {
+  familiar: { hp: 0.3, damage: 0.3, cooldown: 1.4 },
+  pet: { hp: 0.6, damage: 0.55, cooldown: 1.1 },
+  empowered: { hp: 1.3, damage: 1.15, cooldown: 0.85 },
+};
+const FLYING_KINDS = new Set(["hawk", "raven", "owl", "dove", "crane", "parrot", "songbird", "wisp"]);
+const COMPANION_SPEED = 6.5;
+const COMPANION_RESPAWN_MS = 12_000;
+
 const ENEMY_POPULATION = 18;
+
+const article = (word: string) => (/^[aeiou]/i.test(word) ? "an" : "a");
+const capitalize = (w: string) => w[0]!.toUpperCase() + w.slice(1);
 const ENEMY_RESPAWN_MS = 20_000;
 const SAFE_RADIUS = 24;
 const XP_SHARE_RADIUS = 20;
@@ -91,6 +118,7 @@ export class Game {
   readonly world: World;
   private readonly players = new Map<string, PlayerRuntime>();
   private readonly enemies = new Map<string, EnemyRuntime>();
+  private readonly companions = new Map<string, CompanionRuntime>();
   private readonly rng: () => number;
   private nextEnemyId = 1;
   private pendingSpawns: number[] = [];
@@ -116,19 +144,18 @@ export class Game {
     const p = new Player();
     p.name = opts.name;
     p.classId = opts.classId;
-    p.subclassId = opts.subclassId;
     p.level = 1;
     p.xpNext = xpForNextLevel(1);
-    p.cooldowns.push(0, 0);
+    for (let i = 0; i < ABILITY_SLOTS; i++) p.cooldowns.push(0);
 
     const ch = resolveCharacter(p);
-    p.weapon = ch.cls.starterWeapon;
+    p.weapon = ch.kit.base.starterWeapon;
     p.armor = STARTING_ARMOR;
     for (const s of STARTING_INVENTORY) this.giveItem(p, s.id, s.qty);
 
     applyDerived(p, ch);
     p.hp = p.maxHp;
-    p.resource = RESOURCES[ch.cls.resource].startsFull ? p.maxResource : 0;
+    p.resource = RESOURCES[ch.kit.base.resource].startsFull ? p.maxResource : 0;
 
     // Wake up somewhere on the bank near the spawn point, facing the water.
     const spot = this.findFreeSpotNear(this.world.spawn.x, this.world.spawn.z, 3);
@@ -149,6 +176,7 @@ export class Game {
   }
 
   removePlayer(id: string): void {
+    this.removeCompanion(id);
     this.state.players.delete(id);
     this.players.delete(id);
     for (const e of this.enemies.values()) if (e.targetId === id) e.targetId = null;
@@ -183,18 +211,18 @@ export class Game {
     rt.intent.target = null;
   }
 
-  castAbility(id: string, slot: 0 | 1, x: number, z: number): void {
+  castAbility(id: string, slot: number, x: number, z: number): void {
     const p = this.state.players.get(id);
     const rt = this.players.get(id);
     if (!p || !rt || p.anim === "dead") return;
-    if (slot === 1 && p.level < SUBCLASS_UNLOCK_LEVEL) {
-      this.events.notice(id, `Subclass abilities unlock at level ${SUBCLASS_UNLOCK_LEVEL}.`);
+    const ability = rt.ch.kit.abilities[slot];
+    if (!ability) {
+      this.events.notice(id, "You haven't learned that ability yet.");
       return;
     }
-    const ability = slot === 0 ? rt.ch.cls.ability : rt.ch.sub.ability;
     if ((p.cooldowns[slot] ?? 0) > this.now) return;
     if (p.resource < ability.cost) {
-      this.events.notice(id, `Not enough ${RESOURCES[rt.ch.cls.resource].label.toLowerCase()}.`);
+      this.events.notice(id, `Not enough ${RESOURCES[rt.ch.kit.base.resource].label.toLowerCase()}.`);
       return;
     }
     if (!this.executeAbility(id, p, rt, ability, x, z)) return;
@@ -257,6 +285,223 @@ export class Game {
     this.events.notice(id, "You cup your hands and drink from the stream. Refreshing.");
   }
 
+  // -------------------------------------------------------------------------
+  // Class advancement
+  // -------------------------------------------------------------------------
+
+  /** Advance to a child class. Permanent; checks level and gate quests. */
+  advance(id: string, classId: string): void {
+    const p = this.state.players.get(id);
+    const rt = this.players.get(id);
+    if (!p || !rt) return;
+    const next = advancementOptions(p.classId);
+    const choice = getClassNode(classId);
+    if (!next || !choice || !next.options.some((o) => o.id === classId)) {
+      this.events.notice(id, "That path isn't open to you.");
+      return;
+    }
+    if (p.level < next.level) {
+      this.events.notice(id, `You must reach level ${next.level} to become ${article(choice.name)} ${choice.name}.`);
+      return;
+    }
+    if (next.quest && !p.quests.includes(next.quest.id)) {
+      this.events.notice(id, `Complete the ${next.quest.name} to advance.`);
+      return;
+    }
+    p.classId = classId;
+    rt.ch = resolveCharacter(p);
+    applyDerived(p, rt.ch);
+    p.hp = p.maxHp;
+    this.events.fx({ kind: "levelup", sourceId: id, fromX: p.x, fromZ: p.z, toX: p.x, toZ: p.z, color: choice.color });
+    this.events.announce(`${p.name} has become ${article(choice.name)} ${choice.name}!`);
+    this.events.notice(id, `You learned ${choice.ability.name}.`);
+    this.syncCompanion(id);
+    const c = companionFor(classId);
+    if (c) this.events.notice(id, c.power === "familiar" ? `${capitalize(article(c.def.name))} ${c.def.name} has chosen you as its companion.` : `Your ${c.def.name} answers your call.`);
+  }
+
+  completeQuest(id: string, questId: string): boolean {
+    const p = this.state.players.get(id);
+    if (!p) return false;
+    if (!p.quests.includes(questId)) p.quests.push(questId);
+    return true;
+  }
+
+  /** Dev helper: jump to a level. */
+  setLevel(id: string, level: number): void {
+    const p = this.state.players.get(id);
+    const rt = this.players.get(id);
+    if (!p || !rt) return;
+    p.level = Math.max(1, Math.min(MAX_LEVEL, Math.round(level)));
+    p.xp = 0;
+    p.xpNext = xpForNextLevel(p.level);
+    rt.ch = resolveCharacter(p);
+    applyDerived(p, rt.ch);
+    p.hp = p.maxHp;
+    this.syncCompanion(id);
+  }
+
+  // -------------------------------------------------------------------------
+  // Companions (pets and familiars)
+  // -------------------------------------------------------------------------
+
+  /** Make the player's companion match their class: spawn, upgrade or remove it. */
+  private syncCompanion(ownerId: string): void {
+    const p = this.state.players.get(ownerId);
+    if (!p) return;
+    const want = companionFor(p.classId);
+    const cid = `c:${ownerId}`;
+    const existing = this.state.companions.get(cid);
+    if (!want) {
+      this.removeCompanion(ownerId);
+      return;
+    }
+    if (existing && existing.kind === want.def.kind && existing.power === want.power && existing.name === want.def.name) return;
+    const c = existing ?? new Companion();
+    c.owner = ownerId;
+    c.kind = want.def.kind;
+    c.name = want.def.name;
+    c.color = want.def.color;
+    c.scale = want.def.scale ?? 1;
+    c.power = want.power;
+    c.maxHp = Math.round(p.maxHp * COMPANION_POWER[want.power].hp);
+    c.hp = c.maxHp;
+    c.anim = "idle";
+    if (!existing) {
+      const spot = this.findFreeSpotNear(p.x, p.z, 1.5);
+      c.x = spot.x;
+      c.z = spot.z;
+      this.state.companions.set(cid, c);
+    }
+    this.companions.set(cid, {
+      ownerId,
+      power: want.power,
+      ranged: FLYING_KINDS.has(want.def.kind),
+      nextAttackAt: 0,
+      targetId: null,
+      respawnAt: 0,
+    });
+    this.events.fx({ kind: "heal", sourceId: cid, fromX: c.x, fromZ: c.z, toX: c.x, toZ: c.z, radius: 1.2, color: c.color });
+  }
+
+  private removeCompanion(ownerId: string): void {
+    const cid = `c:${ownerId}`;
+    this.state.companions.delete(cid);
+    this.companions.delete(cid);
+    for (const e of this.enemies.values()) if (e.targetId === cid) e.targetId = null;
+  }
+
+  private updateCompanion(cid: string, c: Companion, dt: number): void {
+    const rt = this.companions.get(cid);
+    const owner = rt ? this.state.players.get(rt.ownerId) : undefined;
+    const ort = rt ? this.players.get(rt.ownerId) : undefined;
+    if (!rt || !owner || !ort) return;
+    const power = COMPANION_POWER[rt.power];
+    c.maxHp = Math.round(owner.maxHp * power.hp);
+
+    if (c.anim === "dead") {
+      if (this.now >= rt.respawnAt) {
+        const spot = this.findFreeSpotNear(owner.x, owner.z, 1.5);
+        c.x = spot.x;
+        c.z = spot.z;
+        c.hp = c.maxHp;
+        c.anim = "idle";
+      }
+      return;
+    }
+    c.hp = Math.min(c.maxHp, c.hp + c.maxHp * 0.02 * dt);
+
+    // Too far behind (teleport, respawn, dash): catch up instantly.
+    const ownerDist = Math.hypot(owner.x - c.x, owner.z - c.z);
+    if (ownerDist > 24) {
+      const spot = this.findFreeSpotNear(owner.x, owner.z, 1.5);
+      c.x = spot.x;
+      c.z = spot.z;
+      rt.targetId = null;
+      return;
+    }
+
+    // Pick a target: whatever the owner is attacking, else whatever is attacking the owner or us.
+    if (owner.anim === "dead") rt.targetId = null;
+    let target = rt.targetId ? this.state.enemies.get(rt.targetId) : undefined;
+    if (!target) rt.targetId = null;
+    if (ort.attackTargetId && this.state.enemies.has(ort.attackTargetId)) rt.targetId = ort.attackTargetId;
+    if (!rt.targetId && owner.anim !== "dead") {
+      for (const [eid, ert] of this.enemies) {
+        if (ert.targetId === rt.ownerId || ert.targetId === cid) {
+          const e = this.state.enemies.get(eid);
+          if (e && Math.hypot(e.x - owner.x, e.z - owner.z) < 14) {
+            rt.targetId = eid;
+            break;
+          }
+        }
+      }
+    }
+    target = rt.targetId ? this.state.enemies.get(rt.targetId) : undefined;
+
+    if (target && Math.hypot(target.x - owner.x, target.z - owner.z) < 20) {
+      const reach = (rt.ranged ? 7 : 1.4) + (getEnemy(target.kind)?.radius ?? 0.5);
+      const dist = Math.hypot(target.x - c.x, target.z - c.z);
+      if (dist > reach) {
+        this.moveCompanion(c, { x: target.x, z: target.z }, dt);
+      } else {
+        c.facing = Math.atan2(target.x - c.x, target.z - c.z);
+        if (this.now >= rt.nextAttackAt) {
+          rt.nextAttackAt = this.now + power.cooldown * 1000;
+          c.anim = "attack";
+          c.actionSeq = (c.actionSeq + 1) % 65535;
+          const amount = Math.max(1, Math.round(averageHit(owner, ort.ch, this.now) * power.damage * randRange(this.rng, 0.85, 1.15)));
+          this.events.fx({
+            kind: rt.ranged ? "projectile" : "swing",
+            sourceId: cid,
+            fromX: c.x,
+            fromZ: c.z,
+            toX: target.x,
+            toZ: target.z,
+            variant: rt.ranged ? "orb" : undefined,
+            color: c.color,
+          });
+          this.damageEnemy(rt.targetId!, target, amount, cid);
+        } else if (this.now > rt.nextAttackAt - power.cooldown * 1000 + ANIM_HOLD_MS) {
+          c.anim = "idle";
+        }
+      }
+      return;
+    }
+    rt.targetId = null;
+
+    // Follow: keep a spot just behind and beside the owner.
+    const behind = { x: owner.x - Math.sin(owner.facing) * 1.6 + Math.cos(owner.facing) * 1.1, z: owner.z - Math.cos(owner.facing) * 1.6 - Math.sin(owner.facing) * 1.1 };
+    if (Math.hypot(behind.x - c.x, behind.z - c.z) > 1.2) this.moveCompanion(c, behind, dt);
+    else c.anim = "idle";
+  }
+
+  private moveCompanion(c: Companion, to: { x: number; z: number }, dt: number): void {
+    const m = stepMovement(this.world, c.x, c.z, { dirX: 0, dirZ: 0, target: to }, COMPANION_SPEED, dt, 0.35);
+    c.x = m.x;
+    c.z = m.z;
+    if (m.facing !== null) c.facing = m.facing;
+    c.anim = m.moving ? "walk" : "idle";
+  }
+
+  private damageCompanion(cid: string, c: Companion, raw: number, sourceId: string): void {
+    if (c.anim === "dead") return;
+    const amount = Math.max(1, Math.round(raw));
+    c.hp = Math.max(0, c.hp - amount);
+    this.events.hit({ targetId: cid, sourceId, amount });
+    if (c.hp <= 0) {
+      c.anim = "dead";
+      const rt = this.companions.get(cid);
+      if (rt) {
+        rt.respawnAt = this.now + COMPANION_RESPAWN_MS;
+        rt.targetId = null;
+        this.events.notice(rt.ownerId, `Your ${c.name} is hurt and retreats. It will return shortly.`);
+      }
+      this.events.fx({ kind: "death", sourceId: cid, fromX: c.x, fromZ: c.z, toX: c.x, toZ: c.z });
+      for (const e of this.enemies.values()) if (e.targetId === cid) e.targetId = null;
+    }
+  }
+
   /** Dev helper: move a player next to a landmark (or "spawn"). */
   teleportToLandmark(id: string, landmarkId: string): boolean {
     const p = this.state.players.get(id);
@@ -290,6 +535,7 @@ export class Game {
     this.now = nowMs;
     this.state.serverTime = nowMs;
     for (const [id, p] of this.state.players) this.updatePlayer(id, p, dtSec);
+    for (const [id, c] of this.state.companions) this.updateCompanion(id, c, dtSec);
     for (const [id, e] of this.state.enemies) this.updateEnemy(id, e, dtSec);
     while (this.pendingSpawns.length && this.pendingSpawns[0]! <= nowMs) {
       this.pendingSpawns.shift();
@@ -309,7 +555,7 @@ export class Game {
     for (let i = p.buffs.length - 1; i >= 0; i--) if (p.buffs[i]!.expiresAt <= this.now) p.buffs.splice(i, 1);
 
     // Resource regen/decay, slow natural HP regen.
-    const res = RESOURCES[rt.ch.cls.resource];
+    const res = RESOURCES[rt.ch.kit.base.resource];
     p.resource = Math.max(0, Math.min(p.maxResource, p.resource + res.regenPerSecond * dt));
     p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.005 * dt);
 
@@ -321,7 +567,7 @@ export class Game {
         rt.attackTargetId = null;
       } else {
         const dist = Math.hypot(target.x - p.x, target.z - p.z);
-        const reach = rt.ch.cls.basicAttack.range + (getEnemy(target.kind)?.radius ?? 0.5);
+        const reach = rt.ch.kit.basicAttack.range + (getEnemy(target.kind)?.radius ?? 0.5);
         if (dist > reach) {
           intent = { dirX: 0, dirZ: 0, target: { x: target.x, z: target.z } };
         } else {
@@ -338,13 +584,13 @@ export class Game {
     if (moved.facing !== null) p.facing = moved.facing;
     if (moved.arrived && intent === rt.intent) rt.intent.target = null;
 
-    const busy = this.now < rt.nextAttackAt - rt.ch.cls.basicAttack.cooldown * 1000 + ANIM_HOLD_MS;
+    const busy = this.now < rt.nextAttackAt - rt.ch.kit.basicAttack.cooldown * 1000 + ANIM_HOLD_MS;
     if (moved.moving) p.anim = "walk";
     else if (!busy && p.anim !== "idle") p.anim = "idle";
   }
 
   private basicAttack(id: string, p: Player, rt: PlayerRuntime, enemyId: string, target: Enemy): void {
-    const atk = rt.ch.cls.basicAttack;
+    const atk = rt.ch.kit.basicAttack;
     rt.nextAttackAt = this.now + atk.cooldown * 1000;
     p.anim = "attack";
     p.actionSeq = (p.actionSeq + 1) % 65535;
@@ -361,10 +607,10 @@ export class Game {
       toX: target.x,
       toZ: target.z,
       variant: atk.projectile,
-      color: rt.ch.cls.color,
+      color: rt.ch.kit.color,
     });
 
-    const res = RESOURCES[rt.ch.cls.resource];
+    const res = RESOURCES[rt.ch.kit.base.resource];
     if (res.gainOnHit) p.resource = Math.min(p.maxResource, p.resource + res.gainOnHit);
     this.damageEnemy(enemyId, target, amount, id, crit);
   }
@@ -376,7 +622,7 @@ export class Game {
   /** Returns false if the ability could not be used (no valid target etc.); nothing is spent then. */
   private executeAbility(id: string, p: Player, rt: PlayerRuntime, ability: AbilityDef, x: number, z: number): boolean {
     const eff = ability.effect;
-    const color = rt.ch.cls.color;
+    const color = rt.ch.kit.color;
     // Clamp the aim point to the ability's range.
     let ax = x;
     let az = z;
@@ -387,8 +633,7 @@ export class Game {
     }
     if (d > 0.01) p.facing = Math.atan2(x - p.x, z - p.z);
 
-    const atk = rt.ch.cls.basicAttack;
-    const baseDamage = ((atk.damage[0] + atk.damage[1]) / 2 + weaponBonus(p)) * damageMultiplier(p, rt.ch, this.now);
+    const baseDamage = averageHit(p, rt.ch, this.now);
     const roll = () => {
       const crit = this.rng() < critChance(rt.ch);
       return { crit, mult: crit ? 1.5 : 1 };
@@ -502,7 +747,7 @@ export class Game {
     p.hp = Math.max(0, p.hp - amount);
     this.events.hit({ targetId: id, sourceId, amount });
     const rt = this.players.get(id)!;
-    const res = RESOURCES[rt.ch.cls.resource];
+    const res = RESOURCES[rt.ch.kit.base.resource];
     if (res.gainOnHurt) p.resource = Math.min(p.maxResource, p.resource + res.gainOnHurt);
     if (p.hp <= 0) {
       p.anim = "dead";
@@ -536,6 +781,15 @@ export class Game {
       p.hp = p.maxHp;
       this.events.fx({ kind: "levelup", sourceId: id, fromX: p.x, fromZ: p.z, toX: p.x, toZ: p.z });
       this.events.announce(`${p.name} reached level ${p.level}!`);
+      const next = advancementOptions(p.classId);
+      if (next && p.level === next.level) {
+        this.events.notice(
+          id,
+          next.quest
+            ? `A new path awaits, but first you must complete the ${next.quest.name}.`
+            : "A new path awaits. Open your character panel to choose it.",
+        );
+      }
     }
   }
 
@@ -544,7 +798,7 @@ export class Game {
     p.x = spot.x;
     p.z = spot.z;
     p.hp = p.maxHp;
-    p.resource = RESOURCES[rt.ch.cls.resource].startsFull ? p.maxResource : 0;
+    p.resource = RESOURCES[rt.ch.kit.base.resource].startsFull ? p.maxResource : 0;
     p.anim = "idle";
     p.buffs.clear();
     rt.intent = { dirX: 0, dirZ: 0, target: null };
@@ -626,7 +880,7 @@ export class Game {
       rt.targetId = best;
     }
 
-    const target = rt.targetId ? this.state.players.get(rt.targetId) : undefined;
+    const target = rt.targetId ? (rt.targetId.startsWith("c:") ? this.state.companions.get(rt.targetId) : this.state.players.get(rt.targetId)) : undefined;
     if (rt.targetId && (!target || target.anim === "dead")) rt.targetId = null;
 
     if (target && target.anim !== "dead") {
@@ -640,7 +894,9 @@ export class Game {
           e.anim = "attack";
           e.actionSeq = (e.actionSeq + 1) % 65535;
           this.events.fx({ kind: "swing", sourceId: id, fromX: e.x, fromZ: e.z, toX: target.x, toZ: target.z });
-          this.damagePlayer(rt.targetId!, target, randRange(this.rng, def.damage[0], def.damage[1]), id);
+          const dmg = randRange(this.rng, def.damage[0], def.damage[1]);
+          if (rt.targetId!.startsWith("c:")) this.damageCompanion(rt.targetId!, target as Companion, dmg, id);
+          else this.damagePlayer(rt.targetId!, target as Player, dmg, id);
         } else if (this.now > rt.nextAttackAt - def.attackCooldown * 1000 + ANIM_HOLD_MS) {
           e.anim = "idle";
         }

@@ -28,8 +28,6 @@ export const WATER_INTERACT_RANGE = 2.5;
 /** Seconds a player stays down before respawning at the stream. */
 export const RESPAWN_SECONDS = 5;
 
-/** Level at which a character picks a subclass. Set to 1 to choose at character creation. */
-export const SUBCLASS_UNLOCK_LEVEL = 1;
 export const MAX_LEVEL = 50;
 
 export const INVENTORY_SLOTS = 24;

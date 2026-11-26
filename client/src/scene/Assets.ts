@@ -30,7 +30,7 @@ export interface ModelEntry {
 }
 
 export interface Manifest {
-  /** Keys: "<classId>.<subclassId>", "<classId>" or "default". */
+  /** Keys: a class id from the progression tree (e.g. "paladin"), a base class ("fighter"), or "default". */
   characters?: Record<string, ModelEntry>;
   /** Keys: enemy kind id (wolf, boar, thornling). */
   enemies?: Record<string, ModelEntry>;
@@ -85,8 +85,8 @@ export class AssetLibrary {
     await Promise.all(jobs);
   }
 
-  character(classId: string, subclassId: string): GltfInstance | null {
-    const l = this.characters.get(`${classId}.${subclassId}`) ?? this.characters.get(classId) ?? this.characters.get("default");
+  character(classId: string, baseId: string): GltfInstance | null {
+    const l = this.characters.get(classId) ?? this.characters.get(baseId) ?? this.characters.get("default");
     return l ? instantiate(l) : null;
   }
 

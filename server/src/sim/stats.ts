@@ -1,34 +1,23 @@
-import {
-  addStats,
-  BASE_MOVE_SPEED,
-  deriveMaxHp,
-  deriveMaxResource,
-  getClass,
-  getItem,
-  getSubclass,
-  type ClassDef,
-  type Stats,
-  type SubclassDef,
-} from "@rpg/shared";
+import { BASE_MOVE_SPEED, addStats, deriveMaxHp, deriveMaxResource, getItem, resolveKit, type ResolvedKit, type Stats } from "@rpg/shared";
 import type { Player } from "../schema/WorldState.ts";
 
 export interface ResolvedCharacter {
-  cls: ClassDef;
-  sub: SubclassDef;
+  kit: ResolvedKit;
   stats: Stats;
 }
 
+/** Stats = base class stats + per-level growth + every class bonus along the character's path. */
 export function resolveCharacter(p: Player): ResolvedCharacter {
-  const cls = getClass(p.classId)!;
-  const sub = getSubclass(p.classId, p.subclassId)!;
-  const levelled = addStats(cls.baseStats, cls.growth, p.level - 1);
-  return { cls, sub, stats: addStats(levelled, sub.statBonus) };
+  const kit = resolveKit(p.classId)!;
+  let stats = addStats(kit.base.baseStats, kit.base.growth, p.level - 1);
+  for (const n of kit.path) stats = addStats(stats, n.statBonus);
+  return { kit, stats };
 }
 
-/** Recompute max HP/resource after level or gear changes. Keeps current values proportionally. */
+/** Recompute max HP/resource after level or class changes. Keeps current values proportionally. */
 export function applyDerived(p: Player, ch: ResolvedCharacter): void {
   const maxHp = deriveMaxHp(ch.stats, p.level);
-  const maxRes = deriveMaxResource(ch.cls.resource, ch.stats, p.level);
+  const maxRes = deriveMaxResource(ch.kit.base.resource, ch.stats, p.level);
   const hpRatio = p.maxHp > 0 ? p.hp / p.maxHp : 1;
   p.maxHp = maxHp;
   p.hp = Math.min(maxHp, Math.max(1, Math.round(maxHp * hpRatio)));
@@ -43,7 +32,7 @@ export function buffTotal(p: Player, stat: string, now: number): number {
 }
 
 export function damageMultiplier(p: Player, ch: ResolvedCharacter, now: number): number {
-  return (1 + ch.stats[ch.cls.primaryStat] * 0.04) * (1 + buffTotal(p, "damage", now));
+  return (1 + ch.stats[ch.kit.base.primaryStat] * 0.04) * (1 + buffTotal(p, "damage", now));
 }
 
 export function critChance(ch: ResolvedCharacter): number {
@@ -61,4 +50,10 @@ export function moveSpeed(p: Player, now: number): number {
 
 export function weaponBonus(p: Player): number {
   return getItem(p.weapon)?.damageBonus ?? 0;
+}
+
+/** Average damage of one basic attack, before crits. Used for abilities and companions. */
+export function averageHit(p: Player, ch: ResolvedCharacter, now: number): number {
+  const atk = ch.kit.basicAttack;
+  return ((atk.damage[0] + atk.damage[1]) / 2 + weaponBonus(p)) * damageMultiplier(p, ch, now);
 }
