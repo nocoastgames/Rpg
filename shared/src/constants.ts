@@ -9,8 +9,11 @@ export const TICK_RATE = 20;
 export const TICK_MS = 1000 / TICK_RATE;
 
 /** World units are metres. The playable forest is a square of WORLD_SIZE x WORLD_SIZE centred on the origin. */
-export const WORLD_SIZE = 240;
+export const WORLD_SIZE = 260;
 export const WORLD_HALF = WORLD_SIZE / 2;
+
+/** Analog stick input below this magnitude counts as "not moving". */
+export const MOVE_DEADZONE = 0.08;
 
 /** Default world seed. Every room currently uses the same seed so the forest is identical for everyone. */
 export const DEFAULT_WORLD_SEED = 1337;

@@ -85,6 +85,8 @@ export const WorldState = schema(
     serverTime: t.float64().default(0),
     players: t.map(Player),
     enemies: t.map(Enemy),
+    /** Gate id -> open? (valley_exit, ruins_seal, cave_thorns). Sealed by default. */
+    gates: t.map("boolean"),
   },
   "WorldState",
 );

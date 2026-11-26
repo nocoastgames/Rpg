@@ -8,6 +8,8 @@ import {
   type ClassDef,
   type JoinOptions,
 } from "@rpg/shared";
+import { PAD, GamepadInput } from "../controls/Gamepad.ts";
+import { MenuNav } from "../controls/MenuNav.ts";
 import { h, safeStorageGet, safeStorageSet } from "./dom.ts";
 
 const STORAGE_KEY = "rpg.lastCharacter";
@@ -150,7 +152,34 @@ export function showCharacterCreate(root: HTMLElement, error?: string): Promise<
 
     renderGrid();
     renderDetail();
-    root.replaceChildren(h("div.screen.cc-screen", null, form));
-    nameInput.focus();
+    const screen = h("div.screen.cc-screen", null, form);
+    root.replaceChildren(screen);
+    if (!matchMedia("(pointer: coarse)").matches) nameInput.focus();
+
+    // Controller support: D-pad/stick moves a highlight, A selects, Menu starts.
+    const pad = new GamepadInput();
+    const nav = new MenuNav(() => form);
+    const hint = h("div.cc-pad-hint.hidden", null, h("span.glyph.glyph-a", null, "A"), " Select   ", h("span.glyph.glyph-pad", null, "Menu"), " Wake up");
+    form.querySelector(".cc-footer")?.append(hint);
+    const poll = () => {
+      if (!screen.isConnected || submit.disabled) return;
+      requestAnimationFrame(poll);
+      pad.poll();
+      if (!pad.active) return;
+      hint.classList.remove("hidden");
+      if (document.activeElement === nameInput) nameInput.blur();
+      const dir = pad.navDirection(performance.now());
+      if (dir) nav.move(dir);
+      else nav.ensure();
+      if (pad.pressed(PAD.A)) {
+        const focused = nav.focused;
+        nav.activate();
+        // Re-rendering replaces buttons; keep the highlight on the same item.
+        if (focused?.classList.contains("cc-class")) nav.focus(grid.querySelector<HTMLElement>('[aria-pressed="true"]'));
+        else if (focused?.classList.contains("cc-sub")) nav.focus(detail.querySelector<HTMLElement>('.cc-sub[aria-pressed="true"]'));
+      }
+      if (pad.pressed(PAD.MENU)) form.requestSubmit();
+    };
+    requestAnimationFrame(poll);
   });
 }

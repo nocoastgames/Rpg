@@ -17,6 +17,7 @@ import {
   type AttackMsg,
   type ChatEvent,
   type ChatMsg,
+  type GateId,
   type JoinOptions,
   type MoveDirMsg,
   type MoveToMsg,
@@ -26,6 +27,9 @@ import { WorldState } from "../schema/WorldState.ts";
 import { Game } from "../sim/Game.ts";
 
 const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
+
+/** Dev-only chat commands (/open, /close, /tp). Disabled when NODE_ENV=production. */
+const DEV_COMMANDS = process.env.NODE_ENV !== "production";
 
 function sanitizeName(raw: unknown): string {
   const name = typeof raw === "string" ? raw.replace(/[^\p{L}\p{N} _'-]/gu, "").trim().slice(0, NAME_MAX_LENGTH) : "";
@@ -69,6 +73,10 @@ export class ForestRoom extends Room<{ state: WorldState }> {
     this.onMessage(C2S.chat, (client, m: ChatMsg) => {
       const text = typeof m?.text === "string" ? m.text.trim().slice(0, CHAT_MAX_LENGTH) : "";
       const player = this.state.players.get(client.sessionId);
+      if (text.startsWith("/") && DEV_COMMANDS) {
+        this.devCommand(client, text);
+        return;
+      }
       if (text && player) this.broadcast(S2C.chat, { from: player.name, text } satisfies ChatEvent);
     });
 
@@ -79,6 +87,19 @@ export class ForestRoom extends Room<{ state: WorldState }> {
       last = now;
       this.game.update(dt, now);
     }, TICK_MS);
+  }
+
+  private devCommand(client: Client, text: string): void {
+    const [cmd, arg] = text.slice(1).split(/\s+/);
+    if ((cmd === "open" || cmd === "close") && arg) {
+      const ok = this.game.setGate(arg as GateId, cmd === "open");
+      client.send(S2C.notice, ok ? `[dev] ${arg} ${cmd === "open" ? "opened" : "sealed"}.` : `[dev] unknown gate "${arg}" (valley_exit, ruins_seal, cave_thorns)`);
+    } else if (cmd === "tp" && arg) {
+      const ok = this.game.teleportToLandmark(client.sessionId, arg);
+      client.send(S2C.notice, ok ? `[dev] teleported to ${arg}` : `[dev] unknown landmark "${arg}"`);
+    } else {
+      client.send(S2C.notice, "[dev] commands: /open <gate>, /close <gate>, /tp <landmark>");
+    }
   }
 
   onJoin(client: Client, options: JoinOptions): void {

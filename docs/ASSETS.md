@@ -33,6 +33,21 @@ A character entry can also point `animations` at a separate `.glb` that holds
 clips for the same skeleton (useful for packs that ship rigs and animations
 separately).
 
+## Downloading packs (why it's manual)
+
+Automated downloads from the cloud dev environment didn't work out:
+
+- **Quaternius** hosts packs in Google Drive folders; Drive answered "quota
+  exceeded" for every file (popular public files hit Drive's download limits).
+- **Kenney** refuses non-browser clients and marks its pages "noai", so it
+  shouldn't be scraped.
+- **KayKit** downloads go through itch.io's interactive download flow.
+
+All three download fine by hand in a browser. Note that the **Ultimate
+Modular Ruins** pack (Quaternius) ships FBX/OBJ only. Convert it to `.glb`
+first (Blender: *File › Import › FBX*, then *Export › glTF 2.0 (.glb)*), or
+with the `obj2gltf` / `FBX2glTF` command-line tools.
+
 ## Recommended open-licence packs
 
 All of these were chosen because they are **CC0 (public domain)**: no
@@ -47,6 +62,7 @@ credits screen should list them.
 | KayKit – Dungeon Remastered | Kay Lousberg | Modular dungeon walls, floors, doors, props, chests. For the dungeon layer. | CC0 | kaylousberg.itch.io/kaykit-dungeon-remastered |
 | KayKit – Forest Nature Pack | Kay Lousberg | Stylised trees, rocks, bushes matching the KayKit look. Drop-in for the forest props. | CC0 | kaylousberg.itch.io |
 | Ultimate Animated Animal Pack | Quaternius | Animated forest animals (wolf, deer, fox and others) for the forest creatures. | CC0 | quaternius.com |
+| Ultimate Modular Ruins | Quaternius | Columns, arches, broken walls; would replace the procedural ruins. FBX/OBJ only, convert first. | CC0 | quaternius.com |
 | Monster & RPG character packs | Quaternius | Animated low-poly monsters and fantasy heroes (several packs on the site). | CC0 | quaternius.com |
 | Universal Animation Library | Quaternius | Humanoid animation set that can be retargeted. | CC0 | quaternius.com |
 | Nature Kit, Graveyard Kit, Fantasy Town Kit | Kenney | Huge low-poly prop libraries (trees, rocks, fences, tents, campfires). | CC0 | kenney.nl/assets |

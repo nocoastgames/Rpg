@@ -12,27 +12,50 @@ export const occlusionUniforms = {
   uCutCenter: { value: new THREE.Vector2(-9999, -9999) }, // player position in framebuffer pixels
   uCutRadius: { value: 0 }, // pixels
   uCutViewZ: { value: 0 }, // player's view-space depth (positive)
+  uCutWorldY: { value: 0 }, // player's feet height in world space
 };
 
-export function applyOcclusionCutout<T extends THREE.Material>(material: T): T {
+export interface CutoutOptions {
+  /**
+   * Only cut fragments at least this many metres above the player's feet.
+   * Used for terrain, so the ground around the player is never cut but
+   * mountainsides between camera and player are.
+   */
+  minHeightAbovePlayer?: number;
+  /** Multiplier on the cut radius. */
+  radiusScale?: number;
+}
+
+export function applyOcclusionCutout<T extends THREE.Material>(material: T, opts: CutoutOptions = {}): T {
+  const heightAware = opts.minHeightAbovePlayer !== undefined;
+  const heightTest = heightAware ? `&& vCutWorldY > uCutWorldY + ${opts.minHeightAbovePlayer!.toFixed(2)}` : "";
+  const radius = `(uCutRadius * ${(opts.radiusScale ?? 1).toFixed(2)})`;
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, occlusionUniforms);
+    if (heightAware) {
+      shader.vertexShader = shader.vertexShader
+        .replace("#include <common>", "#include <common>\nvarying float vCutWorldY;")
+        .replace("#include <project_vertex>", "#include <project_vertex>\nvCutWorldY = (modelMatrix * vec4(transformed, 1.0)).y;");
+    }
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
         `#include <common>
 uniform vec2 uCutCenter;
 uniform float uCutRadius;
-uniform float uCutViewZ;`,
+uniform float uCutViewZ;
+uniform float uCutWorldY;
+${heightAware ? "varying float vCutWorldY;" : ""}`,
       )
       .replace(
         "#include <clipping_planes_fragment>",
         `#include <clipping_planes_fragment>
 {
+  float uCutR = ${radius};
   float d = distance(gl_FragCoord.xy, uCutCenter);
-  if (d < uCutRadius && vViewPosition.z < uCutViewZ - 1.0) {
+  if (d < uCutR && vViewPosition.z < uCutViewZ - 1.0 ${heightTest}) {
     // 4x4 ordered dither so the hole fades out at the edge.
-    float edge = smoothstep(uCutRadius * 0.55, uCutRadius, d);
+    float edge = smoothstep(uCutR * 0.55, uCutR, d);
     vec2 p = mod(floor(gl_FragCoord.xy), 4.0);
     float bayer = mod(p.x * 4.0 + p.y * 7.0 + p.x * p.y * 3.0, 16.0) / 16.0;
     if (bayer > edge) discard;
@@ -40,7 +63,7 @@ uniform float uCutViewZ;`,
 }`,
       );
   };
-  material.customProgramCacheKey = () => "occlusion-cutout";
+  material.customProgramCacheKey = () => `occlusion-cutout-${opts.minHeightAbovePlayer ?? "x"}-${opts.radiusScale ?? 1}`;
   return material;
 }
 
@@ -58,5 +81,6 @@ export function updateOcclusion(camera: THREE.Camera, renderer: THREE.WebGLRende
   tmp.project(camera);
   occlusionUniforms.uCutCenter.value.set((tmp.x * 0.5 + 0.5) * size.x, (tmp.y * 0.5 + 0.5) * size.y);
   occlusionUniforms.uCutViewZ.value = -viewPos.z;
+  occlusionUniforms.uCutWorldY.value = playerPos.y;
   occlusionUniforms.uCutRadius.value = size.y * 0.09;
 }

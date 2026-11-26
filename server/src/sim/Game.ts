@@ -15,19 +15,26 @@ import {
   SUBCLASS_UNLOCK_LEVEL,
   INVENTORY_SLOTS,
   MAX_LEVEL,
+  MOVE_DEADZONE,
+  POOL_RADIUS,
+  fromUV,
+  poolCenter,
+  findInteractable,
   generateWorld,
   getEnemy,
   getItem,
   isFree,
-  isNearWater,
   isInWater,
   mulberry32,
+  randomValleyPoint,
+  toUV,
   randRange,
   stepMovement,
   xpForNextLevel,
   type AbilityDef,
   type EnemyDef,
   type FxEvent,
+  type GateId,
   type HitEvent,
   type JoinOptions,
   type MoveIntent,
@@ -74,7 +81,7 @@ interface EnemyRuntime {
   returning: boolean;
 }
 
-const ENEMY_POPULATION = 45;
+const ENEMY_POPULATION = 18;
 const ENEMY_RESPAWN_MS = 20_000;
 const SAFE_RADIUS = 24;
 const XP_SHARE_RADIUS = 20;
@@ -97,6 +104,7 @@ export class Game {
     state.seed = seed;
     this.world = generateWorld(seed);
     this.rng = mulberry32(seed ^ 0x9e3779b9);
+    for (const l of this.world.landmarks) if (l.gate) state.gates.set(l.gate, false);
     for (let i = 0; i < ENEMY_POPULATION; i++) this.spawnEnemy();
   }
 
@@ -149,9 +157,12 @@ export class Game {
   setMoveDir(id: string, x: number, z: number): void {
     const rt = this.players.get(id);
     if (!rt) return;
-    const len = Math.hypot(x, z);
-    rt.intent.dirX = len > 0 ? x / len : 0;
-    rt.intent.dirZ = len > 0 ? z / len : 0;
+    // Keep analog magnitude (0..1) so a half-pushed stick walks slower.
+    let len = Math.hypot(x, z);
+    if (len < MOVE_DEADZONE) len = 0;
+    const scale = len > 1 ? 1 / len : 1;
+    rt.intent.dirX = len > 0 ? x * scale : 0;
+    rt.intent.dirZ = len > 0 ? z * scale : 0;
     if (len > 0) {
       rt.intent.target = null;
       rt.attackTargetId = null;
@@ -223,8 +234,15 @@ export class Game {
     const p = this.state.players.get(id);
     const rt = this.players.get(id);
     if (!p || !rt || p.anim === "dead") return;
-    if (!isNearWater(p.x, p.z)) {
+    const target = findInteractable(this.world, p.x, p.z);
+    if (!target) {
       this.events.notice(id, "There is nothing here to interact with.");
+      return;
+    }
+    if (target.kind === "landmark") {
+      const l = target.landmark;
+      const open = l.gate ? this.state.gates.get(l.gate) === true : false;
+      this.events.notice(id, open && l.openText ? l.openText : l.lockedText);
       return;
     }
     const empty = p.inventory.find((s) => s.itemId === "waterskin_empty");
@@ -237,6 +255,31 @@ export class Game {
     rt.nextDrinkAt = this.now + 5000;
     p.resource = Math.min(p.maxResource, p.resource + 10);
     this.events.notice(id, "You cup your hands and drink from the stream. Refreshing.");
+  }
+
+  /** Dev helper: move a player next to a landmark (or "spawn"). */
+  teleportToLandmark(id: string, landmarkId: string): boolean {
+    const p = this.state.players.get(id);
+    const rt = this.players.get(id);
+    const pool = poolCenter();
+    const named: Record<string, { x: number; z: number }> = { spawn: this.world.spawn, pool: fromUV(pool.u, pool.v + POOL_RADIUS + 2) };
+    const l = named[landmarkId] ?? this.world.landmarks.find((m) => m.id === landmarkId);
+    if (!p || !rt || !l) return false;
+    const spot = this.findFreeSpotNear(l.x, l.z, 1);
+    p.x = spot.x;
+    p.z = spot.z;
+    rt.intent = { dirX: 0, dirZ: 0, target: null };
+    rt.attackTargetId = null;
+    return true;
+  }
+
+  /** Open or seal a gate (story hook; also exposed as a dev chat command). */
+  setGate(gate: GateId, open: boolean): boolean {
+    if (!this.state.gates.has(gate)) return false;
+    this.state.gates.set(gate, open);
+    if (open) this.world.openGates.add(gate);
+    else this.world.openGates.delete(gate);
+    return true;
   }
 
   // -------------------------------------------------------------------------
@@ -512,34 +555,24 @@ export class Game {
   // -------------------------------------------------------------------------
 
   private spawnEnemy(): void {
-    const weights = [0.45, 0.25, 0.3];
-    let r = this.rng();
-    let def: EnemyDef = ENEMIES[0]!;
-    for (let i = 0; i < ENEMIES.length; i++) {
-      r -= weights[i] ?? 0;
-      if (r <= 0) {
-        def = ENEMIES[i]!;
-        break;
-      }
-    }
     for (let attempt = 0; attempt < 40; attempt++) {
-      const x = randRange(this.rng, -110, 110);
-      const z = randRange(this.rng, -110, 110);
-      if (Math.hypot(x - this.world.spawn.x, z - this.world.spawn.z) < SAFE_RADIUS) continue;
-      if (isInWater(x, z) || !isFree(this.world, x, z, def.radius)) continue;
+      const pos = randomValleyPoint(this.world, this.rng);
+      if (Math.hypot(pos.x - this.world.spawn.x, pos.z - this.world.spawn.z) < SAFE_RADIUS) continue;
+      const def = this.pickEnemyFor(pos.x, pos.z);
+      if (!isFree(this.world, pos.x, pos.z, def.radius)) continue;
       const id = `e${this.nextEnemyId++}`;
       const e = new Enemy();
       e.kind = def.id;
-      e.x = x;
-      e.z = z;
+      e.x = pos.x;
+      e.z = pos.z;
       e.facing = randRange(this.rng, 0, Math.PI * 2);
       e.hp = def.maxHp;
       e.maxHp = def.maxHp;
       this.state.enemies.set(id, e);
       this.enemies.set(id, {
         def,
-        homeX: x,
-        homeZ: z,
+        homeX: pos.x,
+        homeZ: pos.z,
         targetId: null,
         nextAttackAt: 0,
         wander: null,
@@ -548,6 +581,16 @@ export class Game {
       });
       return;
     }
+  }
+
+  /** Regional spawns: thornlings near the ruins and cave (west), wolves in the north, boars in the east and south. */
+  private pickEnemyFor(x: number, z: number): EnemyDef {
+    const { u, v } = toUV(x, z);
+    const byId = (id: string) => ENEMIES.find((e) => e.id === id) ?? ENEMIES[0]!;
+    const r = this.rng();
+    if (u < -15) return byId(r < 0.7 ? "thornling" : "wolf");
+    if (v < -25) return byId(r < 0.7 ? "wolf" : "boar");
+    return byId(r < 0.6 ? "boar" : "wolf");
   }
 
   private updateEnemy(id: string, e: Enemy, dt: number): void {

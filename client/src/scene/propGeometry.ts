@@ -85,6 +85,15 @@ export function buildPropGeometry(kind: PropKind): THREE.BufferGeometry {
         part(new THREE.IcosahedronGeometry(0.4, 0), "#4f8236", (g) => g.translate(0.45, 0.4, 0.2)),
       ]);
       break;
+    case "stone":
+      // Flat stepping stone.
+      geo = merge([
+        part(new THREE.DodecahedronGeometry(0.42, 0), "#8a8b84", (g) => {
+          g.scale(1, 0.32, 0.85);
+          g.translate(0, 0.02, 0);
+        }),
+      ]);
+      break;
     case "log":
       geo = merge([
         part(new THREE.CylinderGeometry(0.3, 0.32, 2.4, 7), "#6b4a2f", (g) => {

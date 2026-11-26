@@ -3,26 +3,36 @@ import {
   BASE_MOVE_SPEED,
   C2S,
   S2C,
+  findInteractable,
   generateWorld,
   getClass,
   getEnemy,
-  isNearWater,
+  getItem,
   stepMovement,
+  type AbilityDef,
   type ChatEvent,
   type FxEvent,
+  type GateId,
   type HitEvent,
   type MoveIntent,
   type World,
 } from "@rpg/shared";
+import { PAD, GamepadInput } from "../controls/Gamepad.ts";
+import { MenuNav } from "../controls/MenuNav.ts";
+import { TouchControls } from "../controls/TouchControls.ts";
 import type { GameRoom } from "../net.ts";
 import type { AssetLibrary } from "../scene/Assets.ts";
 import { createEnemyAvatar, createPlayerAvatar, type Avatar } from "../scene/Avatars.ts";
 import { Environment, groundHeight } from "../scene/Environment.ts";
 import { FxSystem } from "../scene/Fx.ts";
 import { IsoCamera } from "../scene/IsoCamera.ts";
+import { Landmarks } from "../scene/Landmarks.ts";
 import { updateOcclusion } from "../scene/occlusion.ts";
 import type { EnemyView, PlayerView } from "../types.ts";
-import { Hud } from "../ui/Hud.ts";
+import { safeStorageGet, safeStorageSet } from "../ui/dom.ts";
+import type { InputMode } from "../ui/glyphs.ts";
+import { Hud, type PartyMember } from "../ui/Hud.ts";
+import { Minimap, type MapMarker } from "../ui/Minimap.ts";
 import { Overlay } from "../ui/Overlay.ts";
 import { Input } from "./Input.ts";
 
@@ -38,21 +48,37 @@ interface Entity {
   look: string;
 }
 
+/** Screen-space aim from a stick or touch drag (x right, y up, magnitude 0..1). */
+type ScreenAim = { x: number; y: number; mag: number };
+
 const MOVE_RESEND_MS = 120;
+const MOVE_DIR_MIN_INTERVAL = 50;
+const AUTO_ATTACK_REACQUIRE_MS = 350;
+const DISCOVERY_KEY = "rpg.discovered";
+
+export function isLowPowerDevice(): boolean {
+  return matchMedia("(pointer: coarse)").matches || (navigator.hardwareConcurrency ?? 8) <= 4;
+}
 
 /**
- * Owns the 3D scene and the per-frame loop: reads input, predicts the local
- * player, mirrors the server state into avatars, and drives HUD/overlay.
+ * Owns the 3D scene and the per-frame loop: reads mouse/keyboard, gamepad
+ * and touch input, predicts the local player, mirrors the server state into
+ * avatars, and drives HUD/overlay/minimap.
  */
 export class GameClient {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
   private readonly iso: IsoCamera;
   private readonly env: Environment;
+  private readonly landmarks: Landmarks;
   private readonly fx: FxSystem;
   private readonly overlay: Overlay;
   private readonly hud: Hud;
+  private readonly minimap: Minimap;
   private readonly input: Input;
+  private readonly pad = new GamepadInput();
+  private readonly touch: TouchControls;
+  private readonly menuNav: MenuNav;
   private readonly world: World;
   private readonly timer = new THREE.Timer();
   private readonly raycaster = new THREE.Raycaster();
@@ -63,6 +89,7 @@ export class GameClient {
   private readonly enemyRingMat = new THREE.MeshBasicMaterial({ color: "#ff4a3a", transparent: true, opacity: 0.9, depthWrite: false });
   private readonly ringGeo = new THREE.RingGeometry(0.55, 0.68, 32).rotateX(-Math.PI / 2);
   private readonly hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
+  private readonly reticle: THREE.Mesh;
 
   // Local player prediction
   private readonly pred = new THREE.Vector3();
@@ -70,11 +97,16 @@ export class GameClient {
   private readonly intent: MoveIntent = { dirX: 0, dirZ: 0, target: null };
   private attackTarget: string | null = null;
   private lastDir = { x: 0, z: 0 };
+  private lastDirSentAt = 0;
   private lastMoveSent = 0;
+  private lastAutoAttack = 0;
   private hovered: string | null = null;
   private cursor = new THREE.Vector3();
   private hudTimer = 0;
   private running = true;
+  private mode: InputMode;
+  private readonly discovered: Set<string>;
+  private readonly gateState = new Map<GateId, boolean>();
 
   constructor(
     private readonly room: GameRoom,
@@ -83,8 +115,9 @@ export class GameClient {
     overlayRoot: HTMLElement,
     uiRoot: HTMLElement,
   ) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const lowPower = isLowPowerDevice();
+    this.renderer = new THREE.WebGLRenderer({ antialias: !lowPower || devicePixelRatio < 2, powerPreference: "high-performance" });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, lowPower ? 1.5 : 2));
     this.renderer.setSize(viewport.clientWidth, viewport.clientHeight);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -94,21 +127,42 @@ export class GameClient {
 
     this.world = generateWorld(room.state.seed);
     this.iso = new IsoCamera(viewport.clientWidth / viewport.clientHeight);
-    this.env = new Environment(this.world, this.scene, assets);
+    this.env = new Environment(this.world, this.scene, assets, { lowPower });
+    this.landmarks = new Landmarks(this.world);
+    this.scene.add(this.landmarks.group);
     this.fx = new FxSystem(this.scene);
     this.overlay = new Overlay(overlayRoot, this.iso.camera);
     this.input = new Input(this.renderer.domElement);
+    this.touch = new TouchControls(this.renderer.domElement);
+    this.minimap = new Minimap(this.world);
+    this.reticle = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: "#ffd54a", transparent: true, opacity: 0.85, depthWrite: false }));
+    this.reticle.visible = false;
+    this.scene.add(this.reticle);
 
-    this.hud = new Hud(uiRoot, {
-      onUseItem: (slot) => room.send(C2S.useItem, { slot }),
-      onChat: (text) => room.send(C2S.chat, { text }),
-      onTypingChange: (typing) => {
-        this.input.typing = typing;
-        if (typing) this.input.keys.clear();
+    try {
+      this.discovered = new Set(JSON.parse(safeStorageGet(DISCOVERY_KEY) ?? "[]") as string[]);
+    } catch {
+      this.discovered = new Set();
+    }
+
+    this.hud = new Hud(
+      uiRoot,
+      {
+        onUseItem: (slot) => room.send(C2S.useItem, { slot }),
+        onChat: (text) => room.send(C2S.chat, { text }),
+        onTypingChange: (typing) => {
+          this.input.typing = typing;
+          if (typing) this.input.keys.clear();
+        },
+        onAbility: (slot) => this.castAbility(slot, null),
+        onInteract: () => room.send(C2S.interact),
       },
-      onAbility: (slot) => this.castAbility(slot),
-      onInteract: () => room.send(C2S.interact),
-    });
+      this.minimap.el,
+      this.touch.el,
+    );
+    this.menuNav = new MenuNav(() => (this.hud.bagOpen ? this.hud.bag : this.hud.helpOpen ? this.hud.help : null));
+    this.mode = matchMedia("(pointer: coarse)").matches ? "touch" : "kbm";
+    this.hud.setInputMode(this.mode);
 
     this.bindNetwork();
     // Debug handle for the browser console / automated tests: open with ?debug
@@ -116,19 +170,20 @@ export class GameClient {
       (window as unknown as { __rpg: unknown }).__rpg = { room, game: this };
     }
     window.addEventListener("resize", () => this.resize(viewport));
+    window.addEventListener("gamepadconnected", () => this.hud.notice("Controller connected — Xbox layout. Press Menu for controls."));
     this.loop();
   }
 
   private bindNetwork(): void {
     this.room.onMessage(S2C.fx, (e: FxEvent) => this.fx.spawn(e));
     this.room.onMessage(S2C.hit, (e: HitEvent) => this.onHit(e));
-    this.room.onMessage(S2C.chat, (e: ChatEvent) => this.hud.chat(e.from, e.text, e.system));
+    this.room.onMessage(S2C.chat, (e: ChatEvent) => this.hud.chatLine(e.from, e.text, e.system));
     this.room.onMessage(S2C.notice, (text: string) => this.hud.notice(text));
     this.room.onLeave.once((code: number) => {
       this.running = false;
       const msg = document.createElement("div");
       msg.className = "screen disconnected";
-      msg.innerHTML = `<div class="panel"><h2>Disconnected</h2><p>Lost connection to the server (code ${code}).</p><button class="btn btn-primary" onclick="location.reload()">Reconnect</button></div>`;
+      msg.innerHTML = `<div class="panel"><h2>Disconnected</h2><p>Lost connection to the server (code ${Number(code)}).</p><button class="btn btn-primary" onclick="location.reload()">Reconnect</button></div>`;
       document.body.append(msg);
     });
   }
@@ -140,6 +195,7 @@ export class GameClient {
     const isMe = e.targetId === this.room.sessionId;
     const cls = e.heal ? "heal" : isMe ? "hurt" : e.crit ? "crit" : "dmg";
     this.overlay.floatText(at, `${e.heal ? "+" : ""}${e.amount}${e.crit ? "!" : ""}`, cls);
+    if (isMe && !e.heal && this.mode === "gamepad") this.pad.rumble(0.45, 140);
   }
 
   private resize(viewport: HTMLElement): void {
@@ -153,8 +209,15 @@ export class GameClient {
     return this.room.state.players.get(this.room.sessionId);
   }
 
+  private setMode(mode: InputMode): void {
+    if (mode === this.mode) return;
+    this.mode = mode;
+    this.hud.setInputMode(mode);
+    if (mode !== "gamepad") this.menuNav.clear();
+  }
+
   // -------------------------------------------------------------------------
-  // Input
+  // Targeting helpers
   // -------------------------------------------------------------------------
 
   private updateCursor(): void {
@@ -168,29 +231,210 @@ export class GameClient {
     this.hovered = (hit?.object.userData.enemyId as string | undefined) ?? null;
   }
 
-  private castAbility(slot: 0 | 1): void {
-    this.room.send(C2S.ability, { slot, x: this.cursor.x, z: this.cursor.z });
+  private facingDir(): { x: number; z: number } {
+    const ent = this.players.get(this.room.sessionId);
+    const f = ent?.facing ?? 0;
+    return { x: Math.sin(f), z: Math.cos(f) };
   }
+
+  /** Best enemy to auto-target: close, and roughly in the preferred direction. */
+  private pickTarget(maxDist: number, prefer?: { x: number; z: number }): string | null {
+    const dir = prefer && Math.hypot(prefer.x, prefer.z) > 0.1 ? prefer : this.facingDir();
+    const dl = Math.hypot(dir.x, dir.z) || 1;
+    let best: string | null = null;
+    let bestScore = Infinity;
+    this.room.state.enemies.forEach((e, id) => {
+      if (e.hp <= 0) return;
+      const dx = e.x - this.pred.x;
+      const dz = e.z - this.pred.z;
+      const d = Math.hypot(dx, dz);
+      if (d > maxDist) return;
+      const cos = d > 0.01 ? (dx * dir.x + dz * dir.z) / (d * dl) : 1;
+      const score = d + (1 - cos) * 4;
+      if (score < bestScore) {
+        bestScore = score;
+        best = id;
+      }
+    });
+    return best;
+  }
+
+  private attackNearest(silent: boolean, prefer?: { x: number; z: number }): void {
+    const me = this.me;
+    if (!me || me.anim === "dead") return;
+    const atk = getClass(me.classId)?.basicAttack;
+    const reach = atk?.kind === "ranged" ? atk.range + 3 : 9;
+    const id = this.pickTarget(reach, prefer);
+    if (id) {
+      this.attackTarget = id;
+      this.intent.target = null;
+      this.room.send(C2S.attack, { targetId: id });
+    } else if (!silent) {
+      this.hud.notice("No enemy nearby.");
+    }
+  }
+
+  private abilityDef(slot: 0 | 1): AbilityDef | undefined {
+    const me = this.me;
+    const cls = me ? getClass(me.classId) : undefined;
+    return slot === 0 ? cls?.ability : cls?.subclasses.find((s) => s.id === me?.subclassId)?.ability;
+  }
+
+  /** World point an ability would be cast at for the given screen-space aim (or auto-aim when null). */
+  private abilityPoint(slot: 0 | 1, aim: ScreenAim | null): { x: number; z: number } {
+    const ability = this.abilityDef(slot);
+    const range = ability?.range ?? 0;
+    const selfCentred = !ability || range === 0 || ["nova", "heal", "buff"].includes(ability.effect.type);
+    if (selfCentred) return { x: this.pred.x, z: this.pred.z };
+    if (aim && aim.mag > 0.05) {
+      const d = this.iso.screenDirToWorld(aim.x, aim.y);
+      const l = Math.hypot(d.x, d.z) || 1;
+      const dist = Math.max(2, range * Math.min(1, aim.mag));
+      return { x: this.pred.x + (d.x / l) * dist, z: this.pred.z + (d.z / l) * dist };
+    }
+    const id = this.pickTarget(range + 2);
+    const e = id ? this.room.state.enemies.get(id) : undefined;
+    if (e) return { x: e.x, z: e.z };
+    const f = this.facingDir();
+    const dist = Math.min(range, 6);
+    return { x: this.pred.x + f.x * dist, z: this.pred.z + f.z * dist };
+  }
+
+  /** Cast at the mouse cursor (kbm) or with stick/touch aim / auto-aim. */
+  private castAbility(slot: 0 | 1, aim: ScreenAim | null): void {
+    const p = this.mode === "kbm" ? { x: this.cursor.x, z: this.cursor.z } : this.abilityPoint(slot, aim);
+    this.room.send(C2S.ability, { slot, x: p.x, z: p.z });
+  }
+
+  private quickUse(kind: "heal" | "restoreResource"): void {
+    const me = this.me;
+    if (!me) return;
+    for (let i = 0; i < me.inventory.length; i++) {
+      const use = getItem(me.inventory[i]!.itemId)?.use;
+      if (use?.type === kind) {
+        this.room.send(C2S.useItem, { slot: i });
+        return;
+      }
+    }
+    this.hud.notice(kind === "heal" ? "You have no food left." : "You have nothing to drink. Fill your waterskin at the stream.");
+  }
+
+  // -------------------------------------------------------------------------
+  // Input
+  // -------------------------------------------------------------------------
 
   private handleInput(now: number): void {
     const inp = this.input;
+    this.pad.poll();
+    if (this.pad.active) this.setMode("gamepad");
+    else if (inp.mouseActive) this.setMode("kbm");
+    inp.mouseActive = false;
+
+    // Touch: world taps behave like mouse clicks at that point.
+    const taps = this.touch.consumeTaps();
+    const touchActions = this.touch.consumeActions();
+    const releases = this.touch.consumeAbilityReleases();
+    const pinch = this.touch.consumePinch();
+    if (taps.length || touchActions.length || releases.length || this.touch.move.x || this.touch.move.y || pinch) this.setMode("touch");
+    const tap = taps.at(-1);
+    if (tap) {
+      inp.mouseX = tap.x;
+      inp.mouseY = tap.y;
+    }
     this.updateCursor();
 
     if (inp.wheel !== 0) {
       this.iso.zoom(inp.wheel, inp.width / inp.height);
       inp.wheel = 0;
     }
+    if (pinch) this.iso.zoom(pinch, inp.width / inp.height);
 
+    // --- Menus with a controller (bag / help) ----------------------------
+    const menuOpen = this.hud.bagOpen || this.hud.helpOpen;
+    if (this.mode === "gamepad" && menuOpen) {
+      const dir = this.pad.navDirection(now);
+      if (dir) this.menuNav.move(dir);
+      else this.menuNav.ensure();
+      if (this.pad.pressed(PAD.A)) this.menuNav.activate();
+      if (this.pad.pressed(PAD.B)) {
+        this.hud.closePanels();
+        this.hud.hideTooltip();
+        this.menuNav.clear();
+      }
+      if (this.pad.pressed(PAD.VIEW)) this.hud.toggleBag();
+      if (this.pad.pressed(PAD.MENU)) this.hud.toggleHelp();
+      this.sendMoveDir({ x: 0, z: 0 }, now);
+      return;
+    }
+
+    // --- Keyboard actions --------------------------------------------------
     for (const k of inp.consumePressed()) {
       if (k === "enter") this.hud.focusChat();
       else if (k === "i" || k === "b" || k === "c") this.hud.toggleBag();
       else if (k === "h" || k === "?") this.hud.toggleHelp();
-      else if (k === "1" || k === "q") this.castAbility(0);
-      else if (k === "2" || k === "e") this.castAbility(1);
+      else if (k === "m") this.minimap.toggle();
+      else if (k === "escape") this.hud.closePanels();
+      else if (k === "1" || k === "q") this.castAbility(0, null);
+      else if (k === "2" || k === "e") this.castAbility(1, null);
+      else if (k === "3") this.quickUse("heal");
+      else if (k === "4") this.quickUse("restoreResource");
       else if (k === "f") this.room.send(C2S.interact);
     }
 
-    // Keyboard movement in screen space.
+    // --- Gamepad actions (Xbox layout) -------------------------------------
+    const pad = this.pad;
+    const aim: ScreenAim | null = pad.right.mag > 0.25 ? { x: pad.right.x, y: pad.right.y, mag: pad.right.mag } : null;
+    if (pad.connected) {
+      const preferWorld = pad.left.mag > 0.2 ? this.iso.screenDirToWorld(pad.left.x, pad.left.y) : undefined;
+      if (pad.pressed(PAD.A)) this.attackNearest(false, preferWorld);
+      else if (pad.held(PAD.A) && !this.attackTarget && now - this.lastAutoAttack > AUTO_ATTACK_REACQUIRE_MS) {
+        this.lastAutoAttack = now;
+        this.attackNearest(true, preferWorld);
+      }
+      if (pad.pressed(PAD.X)) this.castAbility(0, aim);
+      if (pad.pressed(PAD.Y)) this.castAbility(1, aim);
+      if (pad.pressed(PAD.B)) this.room.send(C2S.interact);
+      if (pad.pressed(PAD.UP)) this.quickUse("heal");
+      if (pad.pressed(PAD.DOWN)) this.quickUse("restoreResource");
+      if (pad.pressed(PAD.LB)) this.iso.zoom(120, inp.width / inp.height);
+      if (pad.pressed(PAD.RB)) this.iso.zoom(-120, inp.width / inp.height);
+      if (pad.pressed(PAD.VIEW)) this.hud.toggleBag();
+      if (pad.pressed(PAD.MENU)) this.hud.toggleHelp();
+      if (pad.pressed(PAD.RS)) this.minimap.toggle();
+    }
+
+    // --- Touch actions -----------------------------------------------------
+    for (const a of touchActions) {
+      if (a === "attack") this.attackNearest(false);
+      else if (a === "interact") this.room.send(C2S.interact);
+      else if (a === "bag") this.hud.toggleBag();
+      else if (a === "map") this.minimap.toggle();
+      else if (a === "help") this.hud.toggleHelp();
+      else if (a === "chat") this.hud.focusChat();
+      else if (a === "fullscreen") void (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {}));
+    }
+    if (this.touch.attackHeld && !this.attackTarget && now - this.lastAutoAttack > AUTO_ATTACK_REACQUIRE_MS) {
+      this.lastAutoAttack = now;
+      this.attackNearest(true);
+    }
+    for (const r of releases) this.castAbility(r.slot, r.aim);
+
+    // --- Aim reticle (stick or touch drag) ---------------------------------
+    const touchAim = this.touch.aiming;
+    const showAim = (this.mode === "gamepad" && aim) || (this.mode === "touch" && touchAim?.aim);
+    if (showAim) {
+      const slot = touchAim?.slot ?? 0;
+      const p = this.abilityPoint(slot, touchAim?.aim ?? aim);
+      this.reticle.position.set(p.x, groundHeight(p.x, p.z) + 0.08, p.z);
+      const radius = (() => {
+        const e = this.abilityDef(slot)?.effect;
+        return e && "radius" in e && e.radius > 0 ? e.radius : 0.8;
+      })();
+      this.reticle.scale.setScalar(radius);
+    }
+    this.reticle.visible = !!showAim;
+
+    // --- Movement: keyboard, left stick, or virtual joystick ---------------
     let sx = 0;
     let sy = 0;
     if (!inp.typing) {
@@ -199,19 +443,18 @@ export class GameClient {
       if (inp.keys.has("d") || inp.keys.has("arrowright")) sx += 1;
       if (inp.keys.has("a") || inp.keys.has("arrowleft")) sx -= 1;
     }
-    const dir = this.iso.screenDirToWorld(sx, sy);
-    if (dir.x !== this.lastDir.x || dir.z !== this.lastDir.z) {
-      this.lastDir = dir;
-      this.room.send(C2S.moveDir, dir);
-      this.intent.dirX = dir.x;
-      this.intent.dirZ = dir.z;
-      if (dir.x !== 0 || dir.z !== 0) {
-        this.intent.target = null;
-        this.attackTarget = null;
-      }
+    if (sx === 0 && sy === 0 && pad.left.mag > 0) {
+      sx = pad.left.x;
+      sy = pad.left.y;
     }
+    if (sx === 0 && sy === 0 && (this.touch.move.x || this.touch.move.y)) {
+      sx = this.touch.move.x;
+      sy = this.touch.move.y;
+    }
+    this.sendMoveDir(this.iso.screenDirToWorld(sx, sy), now);
 
-    if (inp.leftPressed) {
+    // --- Mouse / tap ---------------------------------------------------------
+    if (inp.leftPressed || tap) {
       inp.leftPressed = false;
       if (this.hovered) {
         this.attackTarget = this.hovered;
@@ -225,7 +468,27 @@ export class GameClient {
     }
     if (inp.rightPressed) {
       inp.rightPressed = false;
-      this.castAbility(0);
+      this.castAbility(0, null);
+    }
+  }
+
+  /** Send analog movement, throttled, only when it changed meaningfully. */
+  private sendMoveDir(dir: { x: number; z: number }, now: number): void {
+    const changed = Math.hypot(dir.x - this.lastDir.x, dir.z - this.lastDir.z);
+    const stopping = dir.x === 0 && dir.z === 0;
+    const wasStopped = this.lastDir.x === 0 && this.lastDir.z === 0;
+    if (stopping && wasStopped) return;
+    if (!stopping && !wasStopped && (changed < 0.06 || now - this.lastDirSentAt < MOVE_DIR_MIN_INTERVAL)) return;
+    if (stopping !== wasStopped || changed >= 0.06) {
+      this.lastDir = dir;
+      this.lastDirSentAt = now;
+      this.room.send(C2S.moveDir, dir);
+      this.intent.dirX = dir.x;
+      this.intent.dirZ = dir.z;
+      if (!stopping) {
+        this.intent.target = null;
+        this.attackTarget = null;
+      }
     }
   }
 
@@ -281,10 +544,36 @@ export class GameClient {
   }
 
   // -------------------------------------------------------------------------
+  // World state: gates, discovery
+  // -------------------------------------------------------------------------
+
+  private syncGates(): void {
+    this.room.state.gates?.forEach((open, id) => {
+      const gate = id as GateId;
+      if (this.gateState.get(gate) === open) return;
+      this.gateState.set(gate, open);
+      if (open) this.world.openGates.add(gate);
+      else this.world.openGates.delete(gate);
+      this.landmarks.setGateOpen(gate, open);
+    });
+  }
+
+  private checkDiscovery(): void {
+    for (const l of this.world.landmarks) {
+      if (l.discoverRadius === 0 || this.discovered.has(l.id)) continue;
+      if (Math.hypot(this.pred.x - l.x, this.pred.z - l.z) < l.discoverRadius) {
+        this.discovered.add(l.id);
+        safeStorageSet(DISCOVERY_KEY, JSON.stringify([...this.discovered]));
+        this.hud.banner(l.name, "Discovered");
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // Entity sync
   // -------------------------------------------------------------------------
 
-  private syncEntities(dt: number, me: PlayerView | undefined): void {
+  private syncEntities(dt: number): void {
     const state = this.room.state;
     const smooth = 1 - Math.exp(-dt * 12);
 
@@ -351,14 +640,12 @@ export class GameClient {
       }
     }
 
-    // Finalise transforms + animation.
     for (const ent of [...this.players.values(), ...this.enemies.values()]) {
       ent.avatar.root.position.copy(ent.pos);
       ent.avatar.root.rotation.y = ent.facing;
       ent.avatar.update(dt, ent.speed);
       if (ent.ring) ent.ring.position.set(ent.pos.x, ent.pos.y + 0.04, ent.pos.z);
     }
-    void me;
   }
 
   private makeEntity(avatar: Avatar, x: number, z: number, look: string): Entity {
@@ -398,13 +685,15 @@ export class GameClient {
     const state = this.room.state;
     const me = this.me;
 
+    this.syncGates();
     this.handleInput(now);
     if (me) this.predictLocal(me, dt, state.serverTime);
-    this.syncEntities(dt, me);
+    this.syncEntities(dt);
 
     const focus = me ? new THREE.Vector3(this.pred.x, groundHeight(this.pred.x, this.pred.z), this.pred.z) : new THREE.Vector3();
     this.iso.follow(focus.x, focus.y, focus.z, dt, time < 0.2);
     this.env.update(dt, time, focus);
+    this.landmarks.update(time);
     this.fx.update(dt);
     updateOcclusion(this.iso.camera, this.renderer, me ? focus : null);
 
@@ -424,18 +713,48 @@ export class GameClient {
     this.overlay.endFrame();
     this.overlay.update(dt);
 
-    // HUD at ~15 Hz.
+    // HUD, minimap, prompts at ~15 Hz.
     this.hudTimer -= dt;
     if (me && this.hudTimer <= 0) {
       this.hudTimer = 1 / 15;
-      const others: Array<{ name: string; level: number; classId: string; hp: number; maxHp: number }> = [];
+      const others: PartyMember[] = [];
+      const markers: MapMarker[] = [{ x: this.pred.x, z: this.pred.z, kind: "self", facing: this.players.get(this.room.sessionId)?.facing ?? 0 }];
       state.players.forEach((p, id) => {
-        if (id !== this.room.sessionId) others.push({ name: p.name, level: p.level, classId: p.classId, hp: p.hp, maxHp: p.maxHp });
+        if (id === this.room.sessionId) return;
+        others.push({ name: p.name, level: p.level, classId: p.classId, hp: p.hp, maxHp: p.maxHp });
+        markers.push({ x: p.x, z: p.z, kind: "player" });
+      });
+      state.enemies.forEach((e) => {
+        if (Math.hypot(e.x - this.pred.x, e.z - this.pred.z) < 30) markers.push({ x: e.x, z: e.z, kind: "enemy" });
       });
       this.hud.update(me, state.serverTime, others);
-      const hov = this.hovered ? state.enemies.get(this.hovered) : undefined;
-      this.hud.setTarget(hov ? (getEnemy(hov.kind)?.name ?? hov.kind) : null, hov?.hp, hov?.maxHp);
-      this.hud.setNearWater(isNearWater(this.pred.x, this.pred.z) && me.anim !== "dead");
+      this.minimap.draw(markers, this.discovered, this.world.openGates);
+
+      const targetId = this.hovered ?? this.attackTarget;
+      const tgt = targetId ? state.enemies.get(targetId) : undefined;
+      this.hud.setTarget(tgt ? (getEnemy(tgt.kind)?.name ?? tgt.kind) : null, tgt?.hp, tgt?.maxHp);
+
+      const interact = me.anim === "dead" ? null : findInteractable(this.world, this.pred.x, this.pred.z);
+      let hasEmptySkin = false;
+      me.inventory.forEach((s) => {
+        if (s.itemId === "waterskin_empty") hasEmptySkin = true;
+      });
+      const hint = !interact
+        ? null
+        : interact.kind === "landmark"
+          ? interact.landmark.verb
+          : hasEmptySkin
+            ? "Fill your waterskin"
+            : "Drink from the stream";
+      this.hud.setInteractHint(hint);
+      this.touch.setInteract(!!hint);
+      const names = this.hud.abilityNames;
+      this.touch.setAbilityLabels(names[0], names[1]);
+      for (const slot of [0, 1] as const) {
+        const st = this.hud.abilityState(me, state.serverTime, slot);
+        this.touch.setCooldown(slot, st.frac, st.text, st.noRes);
+      }
+      this.checkDiscovery();
     }
 
     this.renderer.domElement.style.cursor = this.hovered ? "crosshair" : "default";

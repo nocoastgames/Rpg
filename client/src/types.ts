@@ -62,4 +62,6 @@ export interface WorldStateView {
   serverTime: number;
   players: MapView<PlayerView>;
   enemies: MapView<EnemyView>;
+  /** Gate id -> open. Sealed gates block movement. */
+  gates: MapView<boolean>;
 }

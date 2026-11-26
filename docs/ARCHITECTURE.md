@@ -37,6 +37,22 @@ cheating requires compromising the server.
 the forest (stream, trees, rocks, colliders) identically on both sides. Only
 the seed is synced; the static world never crosses the network.
 
+**The valley is a signed distance field.** `shared/src/valley.ts` describes
+the zone in a camera-aligned (u, v) frame: an irregular basin plus capsules for
+the pass and cave alcove. Positive distance = walkable; the same function
+drives collision (players slide along cliffs), terrain height (mountains rise
+with distance outside), the minimap, and spawn placement. Mountain height is
+capped by the camera's sight line so cliffs never hide the player.
+
+**Gates.** Sealed places (`valley_exit`, `ruins_seal`, `cave_thorns`) have
+colliders tagged with a gate id. The server syncs `state.gates`; when a gate is
+open, collision ignores its colliders and the client hides the blocker meshes.
+
+**Input.** `client/src/controls/` holds the gamepad reader (Xbox/standard
+mapping, radial dead zones, menu key-repeat), spatial menu navigation and the
+touch controls. `GameClient.handleInput` merges all three each frame; analog
+stick magnitude travels to the server so a half-pushed stick walks slower.
+
 **Shared movement for prediction.** `stepMovement()` runs on the server for the
 truth and on the client to move your own character instantly. The client then
 eases toward the server's position, so corrections are rare and smooth. Other
@@ -62,12 +78,12 @@ Defined in `shared/src/protocol.ts`.
 
 | Direction | Message | Payload |
 | --- | --- | --- |
-| C→S | `moveDir` | `{x, z}` normalised world direction (0,0 = stop) |
+| C→S | `moveDir` | `{x, z}` world direction, length 0..1 (analog; 0,0 = stop) |
 | C→S | `moveTo` | `{x, z}` destination |
 | C→S | `attack` | `{targetId}` enemy to chase and auto-attack |
 | C→S | `ability` | `{slot: 0 \| 1, x, z}` cast at point |
 | C→S | `useItem` | `{slot}` inventory index |
-| C→S | `interact` | – (stream: fill waterskin / drink) |
+| C→S | `interact` | – (inspect a landmark, fill waterskin, drink) |
 | C→S | `chat` | `{text}` |
 | S→C | `hit` | damage / heal numbers |
 | S→C | `fx` | visual effect cue (projectile, nova, dash…) |

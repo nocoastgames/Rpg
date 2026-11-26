@@ -7,7 +7,10 @@ import { PLAYER_RADIUS, WATER_SPEED_MULTIPLIER } from "./constants.ts";
 import { isInWater, resolveCollisions, type World } from "./world.ts";
 
 export interface MoveIntent {
-  /** Normalised direction from keyboard (WASD). Takes priority over the target. */
+  /**
+   * Direction from keyboard/stick in world space. Length 0..1: analog sticks
+   * walk slower when only partly pushed. Takes priority over the target.
+   */
   dirX: number;
   dirZ: number;
   /** Click-to-move destination, if any. */
@@ -37,6 +40,9 @@ export function stepMovement(
   let dz = intent.dirZ;
   let arrived = false;
   let maxStep = Infinity;
+  // Analog magnitude: 0..1, with a floor so a light push still walks.
+  const dirLen = Math.hypot(dx, dz);
+  let throttle = dirLen > 0 ? Math.max(0.3, Math.min(1, dirLen)) : 1;
 
   if (dx === 0 && dz === 0 && intent.target) {
     dx = intent.target.x - x;
@@ -51,7 +57,8 @@ export function stepMovement(
   dx /= len;
   dz /= len;
 
-  const effSpeed = speed * (isInWater(x, z) ? WATER_SPEED_MULTIPLIER : 1);
+  if (intent.target && dirLen === 0) throttle = 1;
+  const effSpeed = speed * throttle * (isInWater(x, z) ? WATER_SPEED_MULTIPLIER : 1);
   const stepLen = Math.min(effSpeed * dt, maxStep);
   if (stepLen >= maxStep) arrived = true;
 

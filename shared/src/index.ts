@@ -5,6 +5,7 @@ export * from "./abilities.ts";
 export * from "./classes.ts";
 export * from "./items.ts";
 export * from "./enemies.ts";
+export * from "./valley.ts";
 export * from "./world.ts";
 export * from "./movement.ts";
 export * from "./protocol.ts";

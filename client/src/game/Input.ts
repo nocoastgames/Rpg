@@ -14,16 +14,22 @@ export class Input {
   wheel = 0;
   /** True while typing in chat or another text box. */
   typing = false;
+  /** Set whenever the mouse or keyboard is used (for switching the UI's input glyphs). */
+  mouseActive = false;
   private readonly pressedKeys: string[] = [];
 
   constructor(private readonly el: HTMLElement) {
     el.addEventListener("contextmenu", (e) => e.preventDefault());
     el.addEventListener("pointermove", (e) => {
+      if (e.pointerType === "touch") return; // handled by TouchControls
+      this.mouseActive = true;
       const r = el.getBoundingClientRect();
       this.mouseX = e.clientX - r.left;
       this.mouseY = e.clientY - r.top;
     });
     el.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "touch") return; // handled by TouchControls
+      this.mouseActive = true;
       const r = el.getBoundingClientRect();
       this.mouseX = e.clientX - r.left;
       this.mouseY = e.clientY - r.top;
@@ -47,6 +53,7 @@ export class Input {
     );
     window.addEventListener("keydown", (e) => {
       if (this.typing) return;
+      this.mouseActive = true;
       const k = e.key.toLowerCase();
       if (!this.keys.has(k)) this.pressedKeys.push(k);
       this.keys.add(k);

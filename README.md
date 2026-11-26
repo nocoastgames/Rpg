@@ -53,6 +53,15 @@ docker build -t rpg .
 docker run -p 2567:2567 rpg
 ```
 
+### Dev chat commands
+
+When the server is not running with `NODE_ENV=production`, these chat commands help with testing:
+
+| Command | Effect |
+| --- | --- |
+| `/tp <place>` | Teleport to `spawn`, `pool`, `ruins_seal`, `cave_thorns`, `valley_exit` or `signpost` |
+| `/open <gate>` / `/close <gate>` | Open or seal `valley_exit`, `ruins_seal` or `cave_thorns` for everyone |
+
 ### Other scripts
 
 | Command | What it does |
@@ -63,18 +72,31 @@ docker run -p 2567:2567 rpg
 
 ## Controls
 
-| Input | Action |
-| --- | --- |
-| Left click ground (hold) | Move |
-| Left click enemy | Chase and attack |
-| `W` `A` `S` `D` | Move |
-| Right click / `1` | Class ability at cursor |
-| `2` | Subclass ability at cursor |
-| `F` | Interact (fill your waterskin or drink at the stream) |
-| `I` | Character and pack |
-| `Enter` | Chat |
-| Mouse wheel | Zoom |
-| `H` | Help |
+Mouse and keyboard, an **Xbox controller** (the default glyph layout; any
+controller using the browser's standard mapping works) and **touch screens**
+are all supported. The on-screen prompts switch to whatever you last used.
+
+| Action | Mouse & keyboard | Xbox controller | Touch |
+| --- | --- | --- | --- |
+| Move | Left click (hold) / `W A S D` | Left stick (analog: push lightly to walk) | Drag on the left half of the screen |
+| Attack | Left click an enemy | `A` (auto-targets, hold to keep fighting) | ⚔ button, or tap an enemy |
+| Class ability | Right click / `1` | `X` (aim with right stick, else auto-aim) | Ability button (tap to auto-aim, drag to aim) |
+| Subclass ability | `2` | `Y` | Second ability button |
+| Interact / inspect | `F` | `B` | ✋ button (appears when something is near) |
+| Quick-use food / water | `3` / `4` | D-pad ↑ / ↓ | via the pack |
+| Character & pack | `I` | View | 🎒 |
+| Map | `M` | Right stick click | 🗺 |
+| Zoom | Mouse wheel | `LB` / `RB` | Pinch |
+| Help | `H` | Menu | ? |
+
+Menus (character creation, pack) are navigable with the D-pad / stick and `A`;
+`Menu` starts the game from character creation, `B` closes panels. Controllers
+rumble when you take damage, where the browser supports it.
+
+On phones the game runs in landscape or portrait, and can be added to the home
+screen to run full-screen (it ships a web app manifest).
+
+![Phone, landscape](docs/images/mobile.png)
 
 ## What's in the groundwork
 
@@ -89,9 +111,20 @@ docker run -p 2567:2567 rpg
   | Monk (Iron Fist / Windwalker) | Bard (Skald / Trickster) | Warlock (Hexblade / Voidcaller) | Shaman (Stormcaller / Spiritwalker) |
 
 - **Character creation** with name, class and path (subclass).
-- **The starting forest**: a seeded, procedurally generated 240 m × 240 m
-  woodland with a winding stream (wading slows you down), glades, rocks and
-  fallen logs. You wake in a clearing on the bank.
+- **The starting valley**: a small forested valley (~100 m × 160 m) walled in by
+  mountains. A waterfall in the north cliffs feeds a pool and a winding stream
+  (wading slows you down) that leaves through a gorge in the south. Worn trails
+  lead from the clearing where you wake to three places you can't enter yet:
+  - **The Narrow Pass** (east): the only way out, buried under a rockslide.
+  - **Unknown Ruins** (south-west): a broken colonnade around a stairway sealed by a rune-carved slab.
+  - **The Cave Mouth** (north-west): a cave in the cliffs, choked with black thorns.
+
+  Each is a server-side *gate*: sealed for now, with an inspect message, and
+  ready for the story to open later (`/open` in dev). Landmarks are announced
+  the first time you find them and appear on the minimap.
+- **Isometric cut-away**: mountains on the camera side of the valley are kept
+  low and anything between the camera and your character fades out, so you are
+  never hidden.
 - **Minimal starting supplies**: class-flavoured crude weapon, tattered clothes,
   stale bread (heal) and an empty waterskin you can fill at the stream (`F`) and
   drink to restore your resource.
@@ -102,6 +135,12 @@ docker run -p 2567:2567 rpg
 - **Classic isometric presentation**: orthographic camera, low-poly art,
   see-through foliage around your hero, health/resource orbs, hotbar with
   cooldowns, floating combat text, nameplates, party frames, chat.
+
+![Unknown ruins](docs/images/ruins.png)
+
+| The Narrow Pass | Valley map |
+| --- | --- |
+| ![The pass](docs/images/pass.png) | ![Map](docs/images/map.png) |
 
 ![Character creation](docs/images/character-create.png)
 
@@ -120,7 +159,7 @@ Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the pieces fit.
 
 Suggested next steps, roughly in order:
 
-1. **Art pass**: drop in KayKit/Quaternius CC0 packs via the model manifest.
+1. **Art pass**: drop in KayKit/Quaternius CC0 packs via the model manifest (manual download for now; see [docs/ASSETS.md](docs/ASSETS.md)).
 2. **Persistence**: accounts and saved characters (Colyseus auth + a database such as SQLite/Postgres).
 3. **Loot & inventory**: drops, equipment slots, item rarity, vendor.
 4. **Abilities 2.0**: status effects (slow, stun, DoT), pets/summons (Beastmaster, Bonecaller), forms (Shapeshifter), talent points per level.

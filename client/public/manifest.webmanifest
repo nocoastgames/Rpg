@@ -1,0 +1,11 @@
+{
+  "name": "RPG",
+  "short_name": "RPG",
+  "description": "Old-school isometric multiplayer action RPG.",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0f1210",
+  "theme_color": "#0f1210",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

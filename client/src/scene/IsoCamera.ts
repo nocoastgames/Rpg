@@ -27,7 +27,8 @@ export class IsoCamera {
   }
 
   resize(aspect: number): void {
-    const h = this.viewHeight / 2;
+    // Portrait phones: show more height so the visible width stays playable.
+    const h = (this.viewHeight / 2) * (aspect < 1 ? Math.min(1.8, 0.75 / aspect) : 1);
     this.camera.left = -h * aspect;
     this.camera.right = h * aspect;
     this.camera.top = h;
@@ -36,7 +37,8 @@ export class IsoCamera {
   }
 
   zoom(deltaY: number, aspect: number): void {
-    this.viewHeight = THREE.MathUtils.clamp(this.viewHeight * (1 + Math.sign(deltaY) * 0.1), this.minView, this.maxView);
+    const step = Math.sign(deltaY) * Math.min(0.1, Math.abs(deltaY) / 600);
+    this.viewHeight = THREE.MathUtils.clamp(this.viewHeight * (1 + step), this.minView, this.maxView);
     this.resize(aspect);
   }
 
@@ -50,8 +52,9 @@ export class IsoCamera {
   }
 
   /**
-   * Convert a screen-space direction (WASD: right = +x, up = +y) into a
-   * normalised world XZ direction, so "W" always walks up the screen.
+   * Convert a screen-space direction (WASD/stick: right = +x, up = +y) into a
+   * world XZ direction, so "up" always walks up the screen. The input's
+   * magnitude (0..1, analog sticks) is preserved.
    */
   screenDirToWorld(sx: number, sy: number): { x: number; z: number } {
     if (sx === 0 && sy === 0) return { x: 0, z: 0 };
@@ -60,6 +63,7 @@ export class IsoCamera {
     const x = right.x * sx + fwd.x * sy;
     const z = right.z * sx + fwd.z * sy;
     const len = Math.hypot(x, z);
-    return { x: x / len, z: z / len };
+    const mag = Math.min(1, Math.hypot(sx, sy));
+    return { x: (x / len) * mag, z: (z / len) * mag };
   }
 }
