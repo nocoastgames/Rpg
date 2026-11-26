@@ -23,6 +23,7 @@ import {
   type World,
 } from "@rpg/shared";
 import { applyOcclusionCutout } from "./occlusion.ts";
+import { toonMaterial } from "./toon.ts";
 import { buildPropGeometry } from "./propGeometry.ts";
 import type { AssetLibrary } from "./Assets.ts";
 
@@ -75,13 +76,13 @@ export class Environment {
     assets: AssetLibrary,
     opts: EnvironmentOptions,
   ) {
-    const sky = new THREE.Color("#22302a");
+    const sky = new THREE.Color("#0d1214");
     scene.background = sky;
-    scene.fog = new THREE.Fog(sky, 110, 190);
+    scene.fog = new THREE.Fog(sky, 90, 170);
 
-    // Early-morning light: you just woke up.
-    scene.add(new THREE.HemisphereLight("#d6e6ff", "#3a4a2a", 1.15));
-    this.sun = new THREE.DirectionalLight("#ffe2b0", 2.4);
+    // Dusk: a low, warm sun and a cold blue fill. Dark fantasy, not storybook.
+    scene.add(new THREE.HemisphereLight("#7d8fb0", "#232b1e", 1.5));
+    this.sun = new THREE.DirectionalLight("#ffc890", 2.3);
     this.sun.castShadow = true;
     const shadowRes = opts.lowPower ? 1024 : 2048;
     this.sun.shadow.mapSize.set(shadowRes, shadowRes);
@@ -92,8 +93,8 @@ export class Environment {
     sc.bottom = -32;
     sc.near = 1;
     sc.far = 160;
-    this.sun.shadow.bias = -0.0006;
-    this.sun.shadow.normalBias = 0.04;
+    this.sun.shadow.bias = -0.0015;
+    this.sun.shadow.normalBias = 0.09;
     scene.add(this.sun, this.sun.target);
 
     this.group.add(this.buildTerrain(opts.lowPower ? 220 : 300));
@@ -111,7 +112,7 @@ export class Environment {
 
   /** Keep the shadow frustum centred on the player; animate water and particles. */
   update(_dt: number, time: number, focus: THREE.Vector3): void {
-    this.sun.position.set(focus.x - 28, focus.y + 50, focus.z + 16);
+    this.sun.position.set(focus.x - 26, focus.y + 36, focus.z + 30);
     this.sun.target.position.copy(focus);
     this.waterMat.uniforms.uTime!.value = time;
     this.motes.position.set(focus.x, focus.y, focus.z);
@@ -135,16 +136,16 @@ export class Environment {
     const pos = geo.attributes.position as THREE.BufferAttribute;
     const colors = new Float32Array(pos.count * 3);
     const c = new THREE.Color();
-    const grassA = new THREE.Color("#4f7a35");
-    const grassB = new THREE.Color("#6c8f3d");
-    const forestFloor = new THREE.Color("#3b4f2a");
-    const dirt = new THREE.Color("#7d6a47");
-    const mud = new THREE.Color("#6b5a3c");
-    const bed = new THREE.Color("#4a5a55");
-    const moss = new THREE.Color("#55643f");
-    const rock = new THREE.Color("#6a645c");
-    const darkRock = new THREE.Color("#4c4843");
-    const snow = new THREE.Color("#e6ecef");
+    const grassA = new THREE.Color("#30492a");
+    const grassB = new THREE.Color("#405a2e");
+    const forestFloor = new THREE.Color("#1f2b1b");
+    const dirt = new THREE.Color("#4f4333");
+    const mud = new THREE.Color("#3d3428");
+    const bed = new THREE.Color("#1d2a2c");
+    const moss = new THREE.Color("#2a3524");
+    const rock = new THREE.Color("#35322f");
+    const darkRock = new THREE.Color("#2e2c2b");
+    const snow = new THREE.Color("#5f6871");
     const seed = this.world.seed;
 
     for (let i = 0; i < pos.count; i++) {
@@ -164,7 +165,7 @@ export class Environment {
       } else {
         const { v } = toUV(x, z);
         const alt = h - valleyBase(v);
-        c.copy(moss).lerp(rock, smoothstep(1, 7, alt)).lerp(darkRock, n * 0.5 * smoothstep(3, 10, alt));
+        c.copy(moss).lerp(rock, smoothstep(5, 15, alt)).lerp(darkRock, n * 0.5 * smoothstep(3, 10, alt));
         if (alt > 21 + n * 6) c.lerp(snow, smoothstep(21 + n * 6, 25 + n * 6, alt));
         const dw = distanceToWater(x, z);
         if (dw < 0.5) c.lerp(bed, 0.6);
@@ -175,7 +176,7 @@ export class Environment {
     }
     geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
     geo.computeVertexNormals();
-    const mat = applyOcclusionCutout(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, flatShading: true }), {
+    const mat = applyOcclusionCutout(toonMaterial({ vertexColors: true }), {
       minHeightAbovePlayer: 2.2,
       radiusScale: 1.7,
     });
@@ -194,7 +195,7 @@ export class Environment {
       side: THREE.DoubleSide,
       uniforms: THREE.UniformsUtils.merge([
         THREE.UniformsLib.fog,
-        { uTime: { value: 0 }, uDeep: { value: new THREE.Color("#1f5a73") }, uShallow: { value: new THREE.Color("#5fa7b8") } },
+        { uTime: { value: 0 }, uDeep: { value: new THREE.Color("#0c2733") }, uShallow: { value: new THREE.Color("#2a5d6a") } },
       ]),
       vertexShader: /* glsl */ `
         #include <fog_pars_vertex>
@@ -227,7 +228,7 @@ export class Environment {
           // Waterfall: white streaks.
           float streak = smoothstep(0.4, 1.0, sin(flow * 3.0 + vUv.x * 30.0) * 0.5 + 0.5);
           foam = max(foam, vSteep * (0.55 + 0.45 * streak));
-          col = mix(col, vec3(0.88, 0.94, 0.97), clamp(foam, 0.0, 1.0) * 0.75);
+          col = mix(col, vec3(0.62, 0.74, 0.78), clamp(step(0.45, foam) * foam, 0.0, 1.0) * 0.8);
           gl_FragColor = vec4(col, mix(0.8, 0.55, edge) + vSteep * 0.15);
           #include <fog_fragment>
         }`,
@@ -321,7 +322,7 @@ export class Environment {
       }
 
       const geo = buildPropGeometry(kind);
-      const mat = applyOcclusionCutout(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 }));
+      const mat = applyOcclusionCutout(toonMaterial({ vertexColors: true }));
       const inst = new THREE.InstancedMesh(geo, mat, matrices.length);
       matrices.forEach((mat4, i) => inst.setMatrixAt(i, mat4));
       inst.castShadow = kind !== "mushroom" && kind !== "stone";
@@ -342,7 +343,8 @@ export class Environment {
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    const mat = new THREE.PointsMaterial({ color: "#fff3b0", size: 0.12, transparent: true, opacity: 0.6, depthWrite: false });
+    // Fireflies: small, bright and additive so they glow in the gloom.
+    const mat = new THREE.PointsMaterial({ color: "#d8f07a", size: 0.16, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending });
     return new THREE.Points(geo, mat);
   }
 
@@ -350,7 +352,7 @@ export class Environment {
     const count = 70;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(count * 3), 3));
-    const mat = new THREE.PointsMaterial({ color: "#eef6ff", size: 0.5, transparent: true, opacity: 0.35, depthWrite: false });
+    const mat = new THREE.PointsMaterial({ color: "#9fb4bf", size: 0.5, transparent: true, opacity: 0.3, depthWrite: false });
     const pts = new THREE.Points(geo, mat);
     pts.frustumCulled = false;
     return pts;

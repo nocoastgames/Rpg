@@ -3,6 +3,7 @@ import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import type { PropKind } from "@rpg/shared";
 import { applyOcclusionCutout } from "./occlusion.ts";
+import { toToon } from "./toon.ts";
 
 /**
  * Optional glTF model overrides.
@@ -110,7 +111,7 @@ export class AssetLibrary {
       const mesh = obj as THREE.Mesh;
       if (!mesh.isMesh) return;
       const local = base.clone().multiply(mesh.matrixWorld);
-      const materials = (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).map((m) => applyOcclusionCutout(m.clone()));
+      const materials = (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).map((m) => applyOcclusionCutout(toToon(m)));
       const inst = new THREE.InstancedMesh(mesh.geometry, materials.length === 1 ? materials[0]! : materials, matrices.length);
       const tmp = new THREE.Matrix4();
       matrices.forEach((m, i) => inst.setMatrixAt(i, tmp.multiplyMatrices(m, local)));
@@ -134,9 +135,12 @@ function instantiate(l: Loaded): GltfInstance {
   model.scale.setScalar(l.entry.scale ?? 1);
   model.rotation.y = l.entry.rotationY ?? 0;
   model.traverse((o) => {
-    if ((o as THREE.Mesh).isMesh) {
-      o.castShadow = true;
-      o.receiveShadow = true;
+    const mesh = o as THREE.Mesh;
+    if (mesh.isMesh) {
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      // Match the cel-shaded look of the rest of the world.
+      mesh.material = Array.isArray(mesh.material) ? mesh.material.map(toToon) : toToon(mesh.material);
     }
   });
   const root = new THREE.Group();

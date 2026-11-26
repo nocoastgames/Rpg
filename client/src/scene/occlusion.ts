@@ -2,8 +2,9 @@ import * as THREE from "three";
 
 /**
  * "See-through foliage": trees and rocks that stand between the camera and
- * the local player get a dithered hole cut around the player, the way classic
- * isometric ARPGs keep your hero visible in dense woods.
+ * the local player get a hole cut around the player, the way classic
+ * isometric ARPGs keep your hero visible in dense woods. The hole is
+ * hard-edged so the ink-outline pass draws a clean rim around it.
  *
  * Works by patching built-in materials via onBeforeCompile, so it applies to
  * procedural props and to loaded glTF models alike.
@@ -54,11 +55,8 @@ ${heightAware ? "varying float vCutWorldY;" : ""}`,
   float uCutR = ${radius};
   float d = distance(gl_FragCoord.xy, uCutCenter);
   if (d < uCutR && vViewPosition.z < uCutViewZ - 1.0 ${heightTest}) {
-    // 4x4 ordered dither so the hole fades out at the edge.
-    float edge = smoothstep(uCutR * 0.55, uCutR, d);
-    vec2 p = mod(floor(gl_FragCoord.xy), 4.0);
-    float bayer = mod(p.x * 4.0 + p.y * 7.0 + p.x * p.y * 3.0, 16.0) / 16.0;
-    if (bayer > edge) discard;
+    // Hard-edged porthole: the ink pass outlines its rim, which reads well with cel shading.
+    discard;
   }
 }`,
       );

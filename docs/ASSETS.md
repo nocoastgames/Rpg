@@ -17,8 +17,11 @@ gradually without touching game code.
    <https://gltf-viewer.donmccurdy.com/>) and map them under `clips`
    (`idle`, `walk`, `attack`, `cast`, `dead`). If you leave `clips` out, the
    loader guesses from common names ("Idle", "Walk", "Attack", "Death"…).
-4. Tune `scale` (placeholders are ~1.8 m tall) and `rotationY` (models must face +Z).
-5. Reload. Anything that fails to load falls back to the placeholder and logs a
+4. Materials are converted to the game's toon shading automatically, so PBR
+   packs blend in with the cel-shaded look; strong baked lighting in textures
+   may look odd.
+5. Tune `scale` (placeholders are ~1.8 m tall) and `rotationY` (models must face +Z).
+6. Reload. Anything that fails to load falls back to the placeholder and logs a
    warning in the browser console.
 
 Manifest keys:

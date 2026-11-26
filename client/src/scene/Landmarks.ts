@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { mulberry32, type GateId, type Structure, type World } from "@rpg/shared";
 import { applyOcclusionCutout } from "./occlusion.ts";
+import { toonMaterial } from "./toon.ts";
 import { groundHeight } from "./Environment.ts";
 
 /**
@@ -9,12 +10,12 @@ import { groundHeight } from "./Environment.ts";
  * hidden (or moved) when the server opens the gate.
  */
 
-const mats = new Map<string, THREE.MeshStandardMaterial>();
-function mat(color: string, emissive?: string): THREE.MeshStandardMaterial {
+const mats = new Map<string, THREE.MeshToonMaterial>();
+function mat(color: string, emissive?: string): THREE.MeshToonMaterial {
   const key = color + (emissive ?? "");
   let m = mats.get(key);
   if (!m) {
-    m = applyOcclusionCutout(new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: 0.95 }));
+    m = applyOcclusionCutout(toonMaterial({ color }));
     if (emissive) {
       m.emissive = new THREE.Color(emissive);
       m.emissiveIntensity = 1;
@@ -24,9 +25,9 @@ function mat(color: string, emissive?: string): THREE.MeshStandardMaterial {
   return m;
 }
 
-const STONE = "#a8a294";
-const STONE_DARK = "#8a8478";
-const MOSS = "#6f7d4a";
+const STONE = "#7c776c";
+const STONE_DARK = "#5e5a52";
+const MOSS = "#45502f";
 
 function mesh(geo: THREE.BufferGeometry, material: THREE.Material, x = 0, y = 0, z = 0): THREE.Mesh {
   const m = new THREE.Mesh(geo, material);
@@ -39,11 +40,11 @@ function mesh(geo: THREE.BufferGeometry, material: THREE.Material, x = 0, y = 0,
 export class Landmarks {
   readonly group = new THREE.Group();
   private readonly gated = new Map<GateId, THREE.Object3D[]>();
-  private readonly runeMat: THREE.MeshStandardMaterial;
+  private readonly runeMat: THREE.MeshToonMaterial;
   private readonly seals: THREE.Object3D[] = [];
 
   constructor(world: World) {
-    this.runeMat = new THREE.MeshStandardMaterial({ color: "#7fe3ff", emissive: "#4fd2ff", emissiveIntensity: 1.5, flatShading: true });
+    this.runeMat = toonMaterial({ color: "#7fe3ff", emissive: "#4fd2ff", emissiveIntensity: 1.5 });
     const rng = mulberry32(777);
     for (const s of world.structures) {
       const obj = this.build(s, rng);
@@ -51,12 +52,21 @@ export class Landmarks {
       obj.position.set(s.x, groundHeight(s.x, s.z), s.z);
       obj.rotation.y = s.rotation;
       this.group.add(obj);
+      // A few static glows give the sealed places a presence in the dark.
+      if (s.kind === "thorns") this.glow(obj, "#8a5cff", 40, 14, 2.5);
+      if (s.kind === "seal") this.glow(obj, "#4fd2ff", 18, 10, 1.6);
       if (s.gate) {
         let list = this.gated.get(s.gate);
         if (!list) this.gated.set(s.gate, (list = []));
         list.push(obj);
       }
     }
+  }
+
+  private glow(parent: THREE.Object3D, color: string, intensity: number, distance: number, y: number): void {
+    const light = new THREE.PointLight(color, intensity, distance, 2);
+    light.position.y = y;
+    parent.add(light);
   }
 
   setGateOpen(gate: GateId, open: boolean): void {
@@ -140,7 +150,7 @@ export class Landmarks {
       }
       case "seal": {
         const slab = new THREE.Group();
-        slab.add(mesh(new THREE.BoxGeometry(2.3, 0.22, 3.3), mat("#3c3a44"), 0, 0.72, 0));
+        slab.add(mesh(new THREE.BoxGeometry(2.3, 0.22, 3.3), mat("#2c2a33"), 0, 0.72, 0));
         for (let i = 0; i < 5; i++) {
           const r = mesh(new THREE.BoxGeometry(0.08, 0.03, 0.6 + rng() * 1.6), this.runeMat, -0.8 + i * 0.4, 0.84, (rng() - 0.5) * 0.6);
           r.rotation.y = (rng() - 0.5) * 0.8;
@@ -152,8 +162,8 @@ export class Landmarks {
         break;
       }
       case "obelisk": {
-        g.add(mesh(new THREE.CylinderGeometry(0.35, 0.6, 3.2, 4), mat("#5a5866"), 0, 1.6, 0));
-        const tip = mesh(new THREE.CylinderGeometry(0.0, 0.36, 1.3, 4), mat("#5a5866"), 0.5, 0.35, 1.1);
+        g.add(mesh(new THREE.CylinderGeometry(0.35, 0.6, 3.2, 4), mat("#3e3c48"), 0, 1.6, 0));
+        const tip = mesh(new THREE.CylinderGeometry(0.0, 0.36, 1.3, 4), mat("#3e3c48"), 0.5, 0.35, 1.1);
         tip.rotation.x = Math.PI / 2.2;
         g.add(tip);
         g.add(mesh(new THREE.BoxGeometry(0.05, 1.8, 0.05), this.runeMat, 0, 1.7, 0.42));
@@ -169,7 +179,7 @@ export class Landmarks {
         break;
       }
       case "boulder": {
-        const b = mesh(new THREE.DodecahedronGeometry(1, 0), mat(rng() < 0.3 ? "#6e6a62" : "#7f7a70"), 0, 0.45, 0);
+        const b = mesh(new THREE.DodecahedronGeometry(1, 0), mat(rng() < 0.3 ? "#46433e" : "#57534c"), 0, 0.45, 0);
         b.scale.set(1.1, 0.8, 0.95);
         b.rotation.set(rng(), rng() * 3, rng());
         g.add(b);
@@ -189,7 +199,7 @@ export class Landmarks {
         // Rocky arch around the opening.
         for (let i = 0; i <= 10; i++) {
           const a = (i / 10) * Math.PI;
-          const r = mesh(new THREE.DodecahedronGeometry(1 + rng() * 0.7, 0), mat(rng() < 0.4 ? "#5f5a54" : "#6f6a62"), Math.cos(a) * 3.9, Math.sin(a) * 5.6, back + 0.4 + rng() * 0.6);
+          const r = mesh(new THREE.DodecahedronGeometry(1 + rng() * 0.7, 0), mat(rng() < 0.4 ? "#3a3733" : "#47433e"), Math.cos(a) * 3.9, Math.sin(a) * 5.6, back + 0.4 + rng() * 0.6);
           r.rotation.set(rng() * 3, rng() * 3, rng() * 3);
           g.add(r);
         }
@@ -200,12 +210,12 @@ export class Landmarks {
         for (let i = 0; i < 26; i++) {
           const x = (rng() - 0.5) * 6.8;
           const h = 1.0 + rng() * 1.9;
-          const t = mesh(new THREE.ConeGeometry(0.12 + rng() * 0.12, h, 4), mat(rng() < 0.2 ? "#4a1a22" : "#241c26"), x, h / 2 - 0.1, (rng() - 0.5) * 1.4);
+          const t = mesh(new THREE.ConeGeometry(0.12 + rng() * 0.12, h, 4), mat(rng() < 0.25 ? "#5a1a2e" : "#1c1424"), x, h / 2 - 0.1, (rng() - 0.5) * 1.4);
           t.rotation.set((rng() - 0.5) * 0.9, rng() * 3, (rng() - 0.5) * 0.9);
           g.add(t);
         }
         for (let i = 0; i < 8; i++) {
-          const vine = mesh(new THREE.TorusGeometry(0.6 + rng() * 0.6, 0.05, 4, 8, Math.PI * 1.4), mat("#2b2230"), (rng() - 0.5) * 6, 0.8 + rng() * 1.4, (rng() - 0.5));
+          const vine = mesh(new THREE.TorusGeometry(0.6 + rng() * 0.6, 0.05, 4, 8, Math.PI * 1.4), mat("#1c1620"), (rng() - 0.5) * 6, 0.8 + rng() * 1.4, (rng() - 0.5));
           vine.rotation.set(rng() * 3, rng() * 3, rng() * 3);
           g.add(vine);
         }

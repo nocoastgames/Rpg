@@ -23,6 +23,7 @@ import { TouchControls } from "../controls/TouchControls.ts";
 import type { GameRoom } from "../net.ts";
 import type { AssetLibrary } from "../scene/Assets.ts";
 import { createEnemyAvatar, createPlayerAvatar, type Avatar } from "../scene/Avatars.ts";
+import { CelPost } from "../scene/CelPost.ts";
 import { Environment, groundHeight } from "../scene/Environment.ts";
 import { FxSystem } from "../scene/Fx.ts";
 import { IsoCamera } from "../scene/IsoCamera.ts";
@@ -90,6 +91,9 @@ export class GameClient {
   private readonly ringGeo = new THREE.RingGeometry(0.55, 0.68, 32).rotateX(-Math.PI / 2);
   private readonly hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
   private readonly reticle: THREE.Mesh;
+  private readonly post: CelPost;
+  /** Warm glow carried by your character so you stay readable in the dark. */
+  private readonly lantern = new THREE.PointLight("#ffb366", 30, 16, 2);
 
   // Local player prediction
   private readonly pred = new THREE.Vector3();
@@ -122,8 +126,9 @@ export class GameClient {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.0;
     viewport.append(this.renderer.domElement);
+    this.post = new CelPost(this.renderer, { msaa: false });
 
     this.world = generateWorld(room.state.seed);
     this.iso = new IsoCamera(viewport.clientWidth / viewport.clientHeight);
@@ -137,7 +142,7 @@ export class GameClient {
     this.minimap = new Minimap(this.world);
     this.reticle = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: "#ffd54a", transparent: true, opacity: 0.85, depthWrite: false }));
     this.reticle.visible = false;
-    this.scene.add(this.reticle);
+    this.scene.add(this.reticle, this.lantern);
 
     try {
       this.discovered = new Set(JSON.parse(safeStorageGet(DISCOVERY_KEY) ?? "[]") as string[]);
@@ -203,6 +208,7 @@ export class GameClient {
     const hgt = viewport.clientHeight;
     this.renderer.setSize(w, hgt);
     this.iso.resize(w / hgt);
+    this.post.resize();
   }
 
   private get me(): PlayerView | undefined {
@@ -693,6 +699,8 @@ export class GameClient {
     const focus = me ? new THREE.Vector3(this.pred.x, groundHeight(this.pred.x, this.pred.z), this.pred.z) : new THREE.Vector3();
     this.iso.follow(focus.x, focus.y, focus.z, dt, time < 0.2);
     this.env.update(dt, time, focus);
+    this.lantern.position.set(focus.x + 0.6, focus.y + 3.6, focus.z + 0.6);
+    this.lantern.intensity = 30 + Math.sin(time * 7.3) * 1.5 + Math.sin(time * 3.1) * 1.5;
     this.landmarks.update(time);
     this.fx.update(dt);
     updateOcclusion(this.iso.camera, this.renderer, me ? focus : null);
@@ -758,7 +766,7 @@ export class GameClient {
     }
 
     this.renderer.domElement.style.cursor = this.hovered ? "crosshair" : "default";
-    this.renderer.render(this.scene, this.iso.camera);
+    this.post.render(this.scene, this.iso.camera);
   };
 }
 

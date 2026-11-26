@@ -69,6 +69,14 @@ beyond the schema objects it mutates. `ForestRoom` is a thin adapter. This
 keeps rules testable and lets other room types (dungeon instances, towns) reuse
 the same simulation.
 
+**Cel-shaded rendering.** Every lit surface uses `MeshToonMaterial` with one
+shared 4-step light ramp (`client/src/scene/toon.ts`); loaded glTF models are
+converted to it automatically. `CelPost` renders the scene to an offscreen
+target with a depth texture and draws ink outlines where the Laplacian of
+linear depth spikes (silhouettes only, never flat or sloped surfaces), then
+grades, vignettes and tone-maps to the screen. The see-through cut-out is
+hard-edged so the ink pass draws a clean rim around it.
+
 **Art is optional.** See [ASSETS.md](ASSETS.md). Procedural placeholders are
 always available; glTF models are layered on through a manifest.
 

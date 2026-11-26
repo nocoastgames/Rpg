@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { getClass, getEnemy } from "@rpg/shared";
 import type { AnimName, AssetLibrary, GltfInstance } from "./Assets.ts";
+import { toonMaterial } from "./toon.ts";
 
 /**
  * Visual representation of a character or creature. The entity layer
@@ -75,12 +76,12 @@ class GltfAvatar implements Avatar {
 // Procedural placeholder humanoid
 // ---------------------------------------------------------------------------
 
-const matCache = new Map<string, THREE.MeshStandardMaterial>();
-function mat(color: string, emissive = false): THREE.MeshStandardMaterial {
+const matCache = new Map<string, THREE.MeshToonMaterial>();
+function mat(color: string, emissive = false): THREE.MeshToonMaterial {
   const key = color + (emissive ? "!" : "");
   let m = matCache.get(key);
   if (!m) {
-    m = new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: 0.8 });
+    m = toonMaterial({ color });
     if (emissive) {
       m.emissive = new THREE.Color(color);
       m.emissiveIntensity = 1.2;
