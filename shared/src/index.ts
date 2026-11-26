@@ -3,6 +3,7 @@ export * from "./rng.ts";
 export * from "./stats.ts";
 export * from "./abilities.ts";
 export * from "./classes.ts";
+export * from "./character.ts";
 export * from "./items.ts";
 export * from "./enemies.ts";
 export * from "./valley.ts";

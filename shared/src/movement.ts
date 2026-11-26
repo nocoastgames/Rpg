@@ -35,6 +35,8 @@ export function stepMovement(
   speed: number,
   dt: number,
   radius = PLAYER_RADIUS,
+  /** Speed multiplier while wading (lower = slower). */
+  waterMultiplier = WATER_SPEED_MULTIPLIER,
 ): MoveResult {
   let dx = intent.dirX;
   let dz = intent.dirZ;
@@ -58,7 +60,7 @@ export function stepMovement(
   dz /= len;
 
   if (intent.target && dirLen === 0) throttle = 1;
-  const effSpeed = speed * throttle * (isInWater(x, z) ? WATER_SPEED_MULTIPLIER : 1);
+  const effSpeed = speed * throttle * (isInWater(x, z) ? waterMultiplier : 1);
   const stepLen = Math.min(effSpeed * dt, maxStep);
   if (stepLen >= maxStep) arrived = true;
 

@@ -29,6 +29,20 @@ export const Buff = schema(
 );
 export type Buff = SchemaType<typeof Buff>;
 
+/** Indices into APPEARANCE_OPTIONS (shared/src/character.ts). */
+export const AppearanceState = schema(
+  {
+    build: t.uint8().default(1),
+    skin: t.uint8().default(0),
+    hair: t.uint8().default(0),
+    hairColor: t.uint8().default(0),
+    beard: t.uint8().default(0),
+    dye: t.uint8().default(0),
+  },
+  "Appearance",
+);
+export type AppearanceState = SchemaType<typeof AppearanceState>;
+
 export const Player = schema(
   {
     name: t.string().default(""),
@@ -36,6 +50,12 @@ export const Player = schema(
     classId: t.string().default(""),
     /** Completed gate quests (e.g. trial_of_paths). */
     quests: t.array("string"),
+    /** Hidden background (revealed through memories), faith (flavour), and creation point-buy in STAT_IDS order. */
+    background: t.string().default(""),
+    faith: t.string().default(""),
+    memories: t.uint8().default(0),
+    alloc: t.array("int8"),
+    appearance: AppearanceState,
 
     x: t.float32().default(0),
     z: t.float32().default(0),

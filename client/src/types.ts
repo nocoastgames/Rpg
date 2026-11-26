@@ -22,6 +22,14 @@ export interface PlayerView {
   classId: string;
   /** Completed gate quests. */
   quests: ArrayLike<string> & { includes(id: string): boolean };
+  /** Hidden background id (the UI only shows it once remembered). */
+  background: string;
+  faith: string;
+  /** Number of memory fragments recovered. */
+  memories: number;
+  /** Creation point-buy, in STAT_IDS order. */
+  alloc: ArrayLike<number>;
+  appearance: { build: number; skin: number; hair: number; hairColor: number; beard: number; dye: number };
   x: number;
   z: number;
   facing: number;

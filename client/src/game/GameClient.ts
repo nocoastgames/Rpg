@@ -15,6 +15,9 @@ import {
   type FxEvent,
   type GateId,
   type HitEvent,
+  type MemoryEvent,
+  WATER_SPEED_MULTIPLIER,
+  backgroundBonus,
   type MoveIntent,
   type World,
 } from "@rpg/shared";
@@ -213,6 +216,7 @@ export class GameClient {
     this.room.onMessage(S2C.hit, (e: HitEvent) => this.onHit(e));
     this.room.onMessage(S2C.chat, (e: ChatEvent) => this.hud.chatLine(e.from, e.text, e.system));
     this.room.onMessage(S2C.notice, (text: string) => this.hud.notice(text));
+    this.room.onMessage(S2C.memory, (e: MemoryEvent) => this.hud.memory(e));
     this.room.onLeave.once((code: number) => {
       this.running = false;
       const msg = document.createElement("div");
@@ -567,7 +571,10 @@ export class GameClient {
       me.buffs.forEach((b) => {
         if (b.stat === "speed" && b.expiresAt > serverTime) speedBuff += b.amount;
       });
-      const r = stepMovement(this.world, this.pred.x, this.pred.z, intent, BASE_MOVE_SPEED * (1 + speedBuff), dt);
+      // Mirror the server's speed rules (buffs, background) so prediction rarely needs correcting.
+      const speed = BASE_MOVE_SPEED * (1 + speedBuff + backgroundBonus(me.background, "moveSpeed"));
+      const water = WATER_SPEED_MULTIPLIER + (1 - WATER_SPEED_MULTIPLIER) * backgroundBonus(me.background, "waterSlow");
+      const r = stepMovement(this.world, this.pred.x, this.pred.z, intent, speed, dt, undefined, water);
       this.pred.x = r.x;
       this.pred.z = r.z;
       moving = r.moving;
@@ -622,14 +629,20 @@ export class GameClient {
     const seenP = new Set<string>();
     state.players.forEach((p, id) => {
       seenP.add(id);
-      const look = `${p.classId}.${p.weapon}`;
+      const a = p.appearance;
+      const look = `${p.classId}.${p.weapon}.${a.build}${a.skin}${a.hair}${a.hairColor}${a.beard}${a.dye}`;
       let ent = this.players.get(id);
       if (ent && ent.look !== look) {
         this.removeEntity(ent);
         ent = undefined;
       }
       if (!ent) {
-        ent = this.makeEntity(createPlayerAvatar(this.assets, p.classId, p.weapon), p.x, p.z, look);
+        ent = this.makeEntity(
+          createPlayerAvatar(this.assets, p.classId, p.weapon, { build: a.build, skin: a.skin, hair: a.hair, hairColor: a.hairColor, beard: a.beard, dye: a.dye }),
+          p.x,
+          p.z,
+          look,
+        );
         if (id === this.room.sessionId) {
           ent.ring = new THREE.Mesh(this.ringGeo, this.selfRingMat);
           this.scene.add(ent.ring);

@@ -15,6 +15,7 @@ export function h<K extends keyof HTMLElementTagNameMap>(
       if (v === undefined || v === false) continue;
       if (typeof v === "function") el.addEventListener(k.replace(/^on/, ""), v);
       else if (k === "style") el.setAttribute("style", String(v));
+      else if (k === "class") String(v).split(/\s+/).filter(Boolean).forEach((c) => el.classList.add(c));
       else if (v === true) el.setAttribute(k, "");
       else el.setAttribute(k, String(v));
     }

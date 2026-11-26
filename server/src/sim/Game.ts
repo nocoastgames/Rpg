@@ -32,6 +32,11 @@ import {
   randomValleyPoint,
   toUV,
   randRange,
+  STAT_IDS,
+  backgroundBonus,
+  getBackground,
+  memoriesAt,
+  backgroundRevealed,
   stepMovement,
   xpForNextLevel,
   type AbilityDef,
@@ -40,7 +45,8 @@ import {
   type FxEvent,
   type GateId,
   type HitEvent,
-  type JoinOptions,
+  type CreationChoices,
+  type MemoryEvent,
   type MoveIntent,
   type World,
 } from "@rpg/shared";
@@ -53,6 +59,7 @@ import {
   damageMultiplier,
   moveSpeed,
   resolveCharacter,
+  waterMultiplier,
   weaponBonus,
   type ResolvedCharacter,
 } from "./stats.ts";
@@ -64,6 +71,8 @@ export interface GameEvents {
   notice(playerId: string, text: string): void;
   /** System chat line to everyone. */
   announce(text: string): void;
+  /** A recovered memory, sent only to that player. */
+  memory(playerId: string, e: MemoryEvent): void;
 }
 
 interface PlayerRuntime {
@@ -108,6 +117,9 @@ const COMPANION_RESPAWN_MS = 12_000;
 
 const ENEMY_POPULATION = 18;
 
+/** Enemy kinds that count as beasts (Trapper background bonus). */
+const BEASTS = new Set(["wolf", "boar"]);
+
 const article = (word: string) => (/^[aeiou]/i.test(word) ? "an" : "a");
 const capitalize = (w: string) => w[0]!.toUpperCase() + w.slice(1);
 const ENEMY_RESPAWN_MS = 20_000;
@@ -141,10 +153,14 @@ export class Game {
   // Players
   // -------------------------------------------------------------------------
 
-  addPlayer(id: string, opts: JoinOptions): Player {
+  addPlayer(id: string, opts: CreationChoices): Player {
     const p = new Player();
     p.name = opts.name;
     p.classId = opts.classId;
+    p.background = opts.backgroundId;
+    p.faith = opts.faithId;
+    for (const s of STAT_IDS) p.alloc.push(opts.alloc[s]);
+    Object.assign(p.appearance, opts.appearance);
     p.level = 1;
     p.xpNext = xpForNextLevel(1);
     for (let i = 0; i < ABILITY_SLOTS; i++) p.cooldowns.push(0);
@@ -153,6 +169,8 @@ export class Game {
     p.weapon = ch.kit.base.starterWeapon;
     p.armor = STARTING_ARMOR;
     for (const s of STARTING_INVENTORY) this.giveItem(p, s.id, s.qty);
+    const bg = getBackground(opts.backgroundId);
+    if (bg) this.giveItem(p, bg.item, 1);
 
     applyDerived(p, ch);
     p.hp = p.maxHp;
@@ -245,7 +263,7 @@ export class Game {
       return;
     }
     if (def.use.type === "heal") {
-      const amount = Math.round(p.maxHp * def.use.fraction);
+      const amount = Math.round(p.maxHp * def.use.fraction * (1 + backgroundBonus(p.background, "foodHealing")));
       p.hp = Math.min(p.maxHp, p.hp + amount);
       this.events.hit({ targetId: id, sourceId: id, amount, heal: true });
     } else if (def.use.type === "restoreResource") {
@@ -321,6 +339,18 @@ export class Game {
     if (c) this.events.notice(id, c.power === "familiar" ? `${capitalize(article(c.def.name))} ${c.def.name} has chosen you as its companion.` : `Your ${c.def.name} answers your call.`);
   }
 
+  /** Send any memory fragments unlocked by the player's level. */
+  private recallMemories(id: string, p: Player): void {
+    const memories = memoriesAt(p.background, p.level);
+    const bg = getBackground(p.background);
+    while (p.memories < memories.length && bg) {
+      const m = memories[p.memories]!;
+      p.memories += 1;
+      const done = p.memories === bg.memories.length && backgroundRevealed(p.background, p.level);
+      this.events.memory(id, { text: m.text, revealed: done ? bg.name : undefined, passive: done ? bg.passiveText : undefined });
+    }
+  }
+
   completeQuest(id: string, questId: string): boolean {
     const p = this.state.players.get(id);
     if (!p) return false;
@@ -339,6 +369,7 @@ export class Game {
     rt.ch = resolveCharacter(p);
     applyDerived(p, rt.ch);
     p.hp = p.maxHp;
+    this.recallMemories(id, p);
     this.syncCompanion(id);
   }
 
@@ -579,7 +610,7 @@ export class Game {
       }
     }
 
-    const moved = stepMovement(this.world, p.x, p.z, intent, moveSpeed(p, this.now), dt);
+    const moved = stepMovement(this.world, p.x, p.z, intent, moveSpeed(p, this.now), dt, undefined, waterMultiplier(p));
     p.x = moved.x;
     p.z = moved.z;
     if (moved.facing !== null) p.facing = moved.facing;
@@ -597,7 +628,7 @@ export class Game {
     p.actionSeq = (p.actionSeq + 1) % 65535;
 
     const base = randRange(this.rng, atk.damage[0], atk.damage[1]) + weaponBonus(p);
-    const crit = this.rng() < critChance(rt.ch);
+    const crit = this.rng() < critChance(p, rt.ch);
     const amount = Math.round(base * damageMultiplier(p, rt.ch, this.now) * (crit ? 1.5 : 1));
 
     this.events.fx({
@@ -636,7 +667,7 @@ export class Game {
 
     const baseDamage = averageHit(p, rt.ch, this.now);
     const roll = () => {
-      const crit = this.rng() < critChance(rt.ch);
+      const crit = this.rng() < critChance(p, rt.ch);
       return { crit, mult: crit ? 1.5 : 1 };
     };
 
@@ -724,6 +755,9 @@ export class Game {
 
   private damageEnemy(enemyId: string, e: Enemy, amount: number, sourceId: string, crit = false): void {
     if (e.hp <= 0) return;
+    // Trappers know where beasts are soft.
+    const src = this.state.players.get(sourceId);
+    if (src && BEASTS.has(e.kind)) amount = Math.round(amount * (1 + backgroundBonus(src.background, "beastDamage")));
     e.hp = Math.max(0, e.hp - amount);
     this.events.hit({ targetId: enemyId, sourceId, amount, crit });
     const ert = this.enemies.get(enemyId);
@@ -764,14 +798,14 @@ export class Game {
   private healPlayer(id: string, p: Player, amount: number, sourceId: string): void {
     if (p.anim === "dead") return;
     const before = p.hp;
-    p.hp = Math.min(p.maxHp, p.hp + amount);
+    p.hp = Math.min(p.maxHp, p.hp + amount * (1 + backgroundBonus(p.background, "healingReceived")));
     const healed = Math.round(p.hp - before);
     if (healed > 0) this.events.hit({ targetId: id, sourceId, amount: healed, heal: true });
   }
 
   private grantXp(id: string, p: Player, amount: number): void {
     if (p.anim === "dead" || p.level >= MAX_LEVEL) return;
-    p.xp += amount;
+    p.xp += Math.round(amount * (1 + backgroundBonus(p.background, "xp")));
     while (p.xp >= p.xpNext && p.level < MAX_LEVEL) {
       p.xp -= p.xpNext;
       p.level += 1;
@@ -782,6 +816,7 @@ export class Game {
       p.hp = p.maxHp;
       this.events.fx({ kind: "levelup", sourceId: id, fromX: p.x, fromZ: p.z, toX: p.x, toZ: p.z });
       this.events.announce(`${p.name} reached level ${p.level}!`);
+      this.recallMemories(id, p);
       const next = advancementOptions(p.classId);
       if (next && p.level === next.level) {
         this.events.notice(

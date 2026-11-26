@@ -52,6 +52,16 @@ export function deriveMaxResource(resource: ResourceType, stats: Stats, level: n
   return Math.round(40 + stats.intellect * 3 + stats.spirit * 3 + level * 5);
 }
 
+/** Damage multiplier from a class's primary stat. */
+export function primaryDamageMultiplier(primaryValue: number): number {
+  return 1 + primaryValue * 0.04;
+}
+
+/** Base critical-hit chance from agility (before bonuses), capped at 40%. */
+export function critChanceFor(agility: number, bonus = 0): number {
+  return Math.min(0.4, 0.05 + agility * 0.003 + bonus);
+}
+
 /** Experience required to go from `level` to `level + 1`. */
 export function xpForNextLevel(level: number): number {
   return Math.round(60 * Math.pow(level, 1.6));

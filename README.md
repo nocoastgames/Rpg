@@ -122,7 +122,11 @@ screen to run full-screen (it ships a web app manifest).
   into something several times stronger, while every other end class gains a
   lesser familiar. Companions follow you, fight your target, defend you and
   return if downed.
-- **Character creation** with name and base class, previewing the whole tree.
+- **Character creation** in six steps with a live 3D preview: appearance
+  (build, skin, hair, beard, clothes dye; everyone starts in ragged clothes),
+  calling (base class), a **first memory** that secretly picks your background
+  (revealed through memories at levels 3, 8 and 15), faith (flavour), and
+  point-buy attributes. See [docs/CHARACTER_CREATION.md](docs/CHARACTER_CREATION.md).
 - **The starting valley**: a small forested valley (~100 m × 160 m) walled in by
   mountains. A waterfall in the north cliffs feeds a pool and a winding stream
   (wading slows you down) that leaves through a gorge in the south. Worn trails
@@ -166,6 +170,8 @@ screen to run full-screen (it ships a web app manifest).
 | ![Night](docs/images/night.png) | ![Map](docs/images/map.png) |
 
 ![Character creation](docs/images/character-create.png)
+
+![Remembering who you were](docs/images/memories.png)
 
 | Choosing a path (Character panel) | The 8 pet classes at 50: Beastlord, Death Knight, Phoenix Caller, Lich, Archdruid, Witch Doctor, Falconer, Plaguebringer |
 | --- | --- |

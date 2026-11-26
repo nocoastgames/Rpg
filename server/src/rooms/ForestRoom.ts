@@ -9,13 +9,14 @@ import {
   CHAT_MAX_LENGTH,
   DEFAULT_WORLD_SEED,
   MAX_PLAYERS_PER_ROOM,
-  NAME_MAX_LENGTH,
   S2C,
   TICK_MS,
   ABILITY_SLOTS,
   GATE_QUESTS,
   getClassNode,
-  isBaseClass,
+  validateCreation,
+  getBackground,
+  type MemoryEvent,
   type AbilityMsg,
   type AdvanceMsg,
   type AttackMsg,
@@ -35,10 +36,6 @@ const finite = (n: unknown): n is number => typeof n === "number" && Number.isFi
 /** Dev-only chat commands (/open, /close, /tp, /level, /quest, /class). Disabled when NODE_ENV=production. */
 const DEV_COMMANDS = process.env.NODE_ENV !== "production";
 
-function sanitizeName(raw: unknown): string {
-  const name = typeof raw === "string" ? raw.replace(/[^\p{L}\p{N} _'-]/gu, "").trim().slice(0, NAME_MAX_LENGTH) : "";
-  return name || "Wanderer";
-}
 
 export class ForestRoom extends Room<{ state: WorldState }> {
   maxClients = MAX_PLAYERS_PER_ROOM;
@@ -52,6 +49,10 @@ export class ForestRoom extends Room<{ state: WorldState }> {
       notice: (playerId, text) => {
         const client = this.clients.getById(playerId);
         if (client) client.send(S2C.notice, text);
+      },
+      memory: (playerId, e) => {
+        const client = this.clients.getById(playerId);
+        if (client) client.send(S2C.memory, e);
       },
       announce: (text) => this.broadcast(S2C.chat, { from: "", text, system: true } satisfies ChatEvent),
     });
@@ -130,13 +131,12 @@ export class ForestRoom extends Room<{ state: WorldState }> {
   }
 
   onJoin(client: Client, options: JoinOptions): void {
-    if (!isBaseClass(options?.classId)) {
-      throw new Error("Choose one of the four base classes.");
-    }
-    const player = this.game.addPlayer(client.sessionId, {
-      name: sanitizeName(options.name),
-      classId: options.classId,
-    });
+    const result = validateCreation(options);
+    if (!result.ok) throw new Error(result.error);
+    const player = this.game.addPlayer(client.sessionId, result.value);
+    // The one thing you remember as you open your eyes.
+    const bg = getBackground(result.value.backgroundId);
+    if (bg) client.send(S2C.memory, { text: bg.impression } satisfies MemoryEvent);
     this.broadcast(S2C.chat, { from: "", text: `${player.name} wakes up by the stream.`, system: true } satisfies ChatEvent);
   }
 

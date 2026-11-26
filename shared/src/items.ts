@@ -23,6 +23,15 @@ export interface ItemDef {
   icon: string;
 }
 
+const keepsake = (id: string, name: string, description: string, icon: string): ItemDef => ({
+  id,
+  name,
+  kind: "material",
+  description,
+  stackable: false,
+  icon,
+});
+
 const weapon = (id: string, name: string, description: string, icon: string, damageBonus = 1): ItemDef => ({
   id,
   name,
@@ -70,6 +79,17 @@ export const ITEMS: readonly ItemDef[] = [
     use: { type: "restoreResource", amount: 30, becomes: "waterskin_empty" },
     icon: "💧",
   },
+
+  // --- Keepsakes: one per background. Clues to a past you don't remember. ---
+  keepsake("whetstone", "Worn Whetstone", "Smooth from years of use. Your thumb knows exactly how to hold it.", "🪨"),
+  keepsake("snare", "Wire Snare", "A loop of wire, expertly knotted. You don't remember learning the knot.", "🪢"),
+  keepsake("torn_journal", "Torn Journal", "Most pages are water-stained. The handwriting looks oddly familiar.", "📓"),
+  keepsake("prayer_beads", "Prayer Beads", "Worn smooth. Your fingers count them without being asked.", "📿"),
+  keepsake("lockpick", "Bent Lockpick", "Hidden in your boot. Why would you need one of these?", "🗝️"),
+  keepsake("hammer_charm", "Hammer Charm", "A tiny iron hammer on a cord, warm from your skin.", "🔨"),
+  keepsake("coil_of_rope", "Coil of Rope", "Tarred and salt-stiff. Tied off with a knot you can't name.", "🪢"),
+  keepsake("wanted_poster", "Wanted Poster", "Folded small and tucked away. The face is smudged, but it could be yours.", "📜"),
+  keepsake("signet_ring", "Signet Ring", "Heavy gold with a crest you don't recognise. It fits perfectly.", "💍"),
 
   // --- Crude starter weapons, one per class ---
   weapon("rusty_shortsword", "Rusty Shortsword", "Pitted and dull, but it still has a point.", "🗡️"),

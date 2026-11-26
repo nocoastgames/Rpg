@@ -8,7 +8,12 @@ import {
   companionFor,
   getClassNode,
   getItem,
+  getBackground,
+  getFaith,
+  memoriesAt,
+  backgroundRevealed,
   resolveKit,
+  type MemoryEvent,
   type ResolvedKit,
 } from "@rpg/shared";
 import type { PlayerView } from "../types.ts";
@@ -60,6 +65,11 @@ export class Hud {
   private readonly equip: HTMLElement;
   private readonly charInfo: HTMLElement;
   private readonly pathEl: HTMLElement;
+  private readonly pastEl: HTMLElement;
+  private pastKey = "";
+  private readonly memoryEl: HTMLElement;
+  private memoryTimer = 0;
+  private readonly memoryReadyAt = performance.now() + 3800;
   private pathKey = "";
   private pendingChoice: string | null = null;
   private readonly notices: HTMLElement;
@@ -140,12 +150,15 @@ export class Hud {
     this.equip = h("div.equip");
     this.charInfo = h("div.char-info");
     this.pathEl = h("div.path");
+    this.pastEl = h("div.past");
+    this.memoryEl = h("div.memory.hidden");
     this.bagGrid = h("div.bag-grid");
     this.bag = h(
       "div.panel.bag.hidden",
       { onpointerdown: stop },
       h("div.panel-title", null, "Character", h("button.panel-close", { type: "button", onclick: () => this.toggleBag() }, "×")),
       this.charInfo,
+      this.pastEl,
       this.pathEl,
       this.equip,
       h("div.panel-sub", null, "Pack"),
@@ -171,6 +184,7 @@ export class Hud {
       this.party,
       this.target,
       this.notices,
+      this.memoryEl,
       this.interactHint,
       this.death,
       minimap,
@@ -295,6 +309,30 @@ export class Hud {
     this.bannerTimer = window.setTimeout(() => this.bannerEl.classList.add("fade"), 3000);
   }
 
+  /** A recovered memory: shown large, then kept in the character panel's journal. */
+  memory(e: MemoryEvent): void {
+    // Don't talk over the zone title when you first wake up.
+    const wait = this.memoryReadyAt - performance.now();
+    if (wait > 0) {
+      window.setTimeout(() => this.memory(e), wait);
+      return;
+    }
+    window.clearTimeout(this.memoryTimer);
+    this.memoryEl.replaceChildren(
+      h("div.memory-label", null, e.revealed ? "You remember who you were" : "A memory returns"),
+      h("div.memory-text", null, e.text),
+      e.revealed ? h("div.memory-reveal", null, `You were ${/^[aeiou]/i.test(e.revealed) ? "an" : "a"} ${e.revealed}.`) : "",
+      e.passive ? h("div.memory-passive", null, e.passive) : "",
+    );
+    this.memoryEl.classList.remove("hidden", "fade");
+    const life = Math.max(6000, e.text.length * 70);
+    this.memoryTimer = window.setTimeout(() => {
+      this.memoryEl.classList.add("fade");
+      this.memoryTimer = window.setTimeout(() => this.memoryEl.classList.add("hidden"), 1500);
+    }, life);
+    this.pastKey = "";
+  }
+
   setInteractHint(text: string | null): void {
     const key = `${text}|${this.mode}`;
     if (key === this.hintKey) return;
@@ -374,6 +412,7 @@ export class Hud {
     const ready = !!next && p.level >= next.level && (!next.quest || p.quests.includes(next.quest.id));
     this.slots[this.slots.length - 1]!.el.classList.toggle("ready", ready);
     this.renderPath(p);
+    this.renderPast(p);
     this.renderBag(p);
     this.renderParty(others);
   }
@@ -410,6 +449,36 @@ export class Hud {
       cells.push(s ? itemCell(s.itemId, s.qty, () => this.cb.onUseItem(i)) : h("div.bag-cell.empty"));
     }
     this.bagGrid.replaceChildren(...cells);
+  }
+
+  /** Faith and the half-remembered past: memories recovered so far; the background is named once fully remembered. */
+  private renderPast(p: PlayerView): void {
+    const key = `${p.faith}|${p.background}|${p.memories}|${p.level}`;
+    if (key === this.pastKey) return;
+    this.pastKey = key;
+    const faith = getFaith(p.faith);
+    const bg = getBackground(p.background);
+    const recovered = memoriesAt(p.background, p.level).slice(0, Math.max(p.memories, 0));
+    const revealed = backgroundRevealed(p.background, p.level) && p.memories >= (bg?.memories.length ?? 99);
+    const parts: Array<Node | null> = [
+      h("div.panel-sub", null, "Past"),
+      h(
+        "div.past-row",
+        null,
+        h("span.past-label", null, "Faith "),
+        faith ? h("span", { style: `color:${faith.color}` }, `${faith.name}${faith.title ? " " + faith.title : ""}`) : "—",
+      ),
+      h("div.past-row", null, h("span.past-label", null, "Who you were "), revealed && bg ? h("b", null, bg.name) : h("i", null, "You don't remember yet.")),
+      revealed && bg ? h("div.past-passive", null, bg.passiveText) : null,
+      h(
+        "div.past-memories",
+        null,
+        bg ? h("div.past-memory.first", null, bg.impression) : null,
+        ...recovered.map((m) => h("div.past-memory", null, m.text)),
+        bg && !revealed ? h("div.past-hint", null, `More will come back to you (next around level ${bg.memories.find((m) => m.level > p.level)?.level ?? "?"}).`) : null,
+      ),
+    ];
+    this.pastEl.replaceChildren(...parts.filter((n): n is Node => !!n));
   }
 
   /** Path breadcrumb, companion, and the next advancement choice. */

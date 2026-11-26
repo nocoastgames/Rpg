@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { getEnemy, resolveKit } from "@rpg/shared";
+import { APPEARANCE_OPTIONS, DEFAULT_APPEARANCE, getEnemy, resolveKit, type Appearance } from "@rpg/shared";
 import type { AnimName, AssetLibrary, GltfInstance } from "./Assets.ts";
 import { toonMaterial } from "./toon.ts";
 
@@ -296,6 +296,93 @@ function buildHumanoid(opts: {
   return { root, rig: { body, armL: armL.pivot, armR: armR.pivot, legL: legL.pivot, legR: legR.pivot, head } };
 }
 
+/**
+ * A player character: built from their chosen appearance, wearing the same
+ * ragged clothes as everyone else. Visible equipment will layer on later; for
+ * now only the weapon in hand shows.
+ */
+function buildPlayerBody(app: Appearance, weaponId: string): { root: THREE.Group; rig: Rig } {
+  const o = APPEARANCE_OPTIONS;
+  const build = o.build[app.build] ?? o.build[1];
+  const skin = o.skin[app.skin] ?? o.skin[2];
+  const hairStyle = (o.hair[app.hair] ?? o.hair[1]).id;
+  const hairColor = o.hairColor[app.hairColor] ?? o.hairColor[2];
+  const beard = (o.beard[app.beard] ?? o.beard[0]).id;
+  const cloth = (o.dye[app.dye] ?? o.dye[0]).color;
+  const clothDark = `#${new THREE.Color(cloth).multiplyScalar(0.7).getHexString()}`;
+  const trousers = "#4a3e30";
+  const wraps = "#7a6a50";
+  const w = build.width;
+
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  root.add(body);
+
+  // Legs: ragged trousers, bare shins, cloth foot-wraps.
+  const legL = limb(0.17 * w, 0.78, 0.19, trousers);
+  const legR = limb(0.17 * w, 0.78, 0.19, trousers);
+  legL.pivot.position.set(-0.13 * w, 0.8, 0);
+  legR.pivot.position.set(0.13 * w, 0.8, 0);
+  for (const l of [legL, legR]) {
+    l.end.add(mesh(box(0.16 * w, 0.16, 0.17), skin, 0, 0.14, 0));
+    l.end.add(mesh(box(0.19 * w, 0.1, 0.26), wraps, 0, 0.04, 0.04));
+  }
+  body.add(legL.pivot, legR.pivot);
+
+  // Torso: a torn tunic with a jagged hem, a patch and a rope belt.
+  body.add(mesh(box(0.54 * w, 0.68, 0.32), cloth, 0, 1.15, 0));
+  const hem = [0.12, 0.05, 0.15, 0.07, 0.11];
+  hem.forEach((drop, i) => {
+    const x = (i / (hem.length - 1) - 0.5) * 0.48 * w;
+    body.add(mesh(box(0.11 * w, drop, 0.33), cloth, x, 0.81 - drop / 2, 0));
+  });
+  body.add(mesh(box(0.14, 0.14, 0.02), clothDark, 0.12 * w, 1.25, 0.165));
+  body.add(mesh(box(0.56 * w, 0.05, 0.34), "#9a8458", 0, 0.9, 0));
+
+  // Head, face, hair, beard.
+  const head = new THREE.Group();
+  head.position.set(0, 1.72, 0);
+  head.add(mesh(box(0.34, 0.36, 0.34), skin));
+  head.add(mesh(box(0.06, 0.05, 0.02), "#1a1a1a", -0.08, 0.03, 0.17), mesh(box(0.06, 0.05, 0.02), "#1a1a1a", 0.08, 0.03, 0.17));
+  const hair = (geo: THREE.BufferGeometry, x: number, y: number, z: number) => head.add(mesh(geo, hairColor, x, y, z));
+  if (hairStyle !== "none" && hairStyle !== "mohawk") {
+    hair(box(0.37, 0.1, 0.37), 0, 0.2, -0.01);
+    hair(box(0.37, 0.22, 0.08), 0, 0.08, -0.16);
+  }
+  if (hairStyle === "long") hair(box(0.38, 0.42, 0.09), 0, -0.1, -0.17);
+  if (hairStyle === "ponytail") hair(new THREE.CylinderGeometry(0.05, 0.03, 0.34, 5), 0, -0.02, -0.24);
+  if (hairStyle === "braid") hair(box(0.07, 0.55, 0.07), 0, -0.2, -0.22);
+  if (hairStyle === "mohawk") hair(box(0.08, 0.14, 0.38), 0, 0.24, -0.01);
+  if (beard === "stubble") head.add(mesh(box(0.3, 0.1, 0.02), `#${new THREE.Color(hairColor).lerp(new THREE.Color(skin), 0.55).getHexString()}`, 0, -0.12, 0.172));
+  if (beard === "short") hair(box(0.3, 0.13, 0.06), 0, -0.13, 0.18);
+  if (beard === "long") hair(box(0.28, 0.3, 0.07), 0, -0.2, 0.18);
+  body.add(head);
+
+  // Arms: short ragged sleeves over bare arms.
+  const armL = limb(0.14, 0.68, 0.15, skin);
+  const armR = limb(0.14, 0.68, 0.15, skin);
+  armL.pivot.position.set(-(0.27 * w + 0.09), 1.45, 0);
+  armR.pivot.position.set(0.27 * w + 0.09, 1.45, 0);
+  for (const a of [armL, armR]) {
+    a.pivot.add(mesh(box(0.17, 0.24, 0.18), cloth, 0, -0.1, 0));
+    a.end.add(mesh(box(0.13, 0.13, 0.13), skin));
+  }
+  body.add(armL.pivot, armR.pivot);
+
+  const weapon = buildWeapon(weaponId, "#8a8a8a");
+  if (weapon) {
+    if (weaponId === "makeshift_bow") armL.end.add(weapon);
+    else if (weaponId === "battered_lute") {
+      weapon.position.set(0, 1.35, -0.25);
+      weapon.rotation.z = 0.5;
+      body.add(weapon);
+    } else armR.end.add(weapon);
+  }
+
+  root.scale.setScalar(build.height);
+  return { root, rig: { body, armL: armL.pivot, armR: armR.pivot, legL: legL.pivot, legR: legR.pivot, head } };
+}
+
 class ProceduralHumanoid implements Avatar {
   readonly root: THREE.Group;
   readonly height: number;
@@ -307,8 +394,8 @@ class ProceduralHumanoid implements Avatar {
   private deadT = 0;
   private readonly ranged: boolean;
 
-  constructor(opts: Parameters<typeof buildHumanoid>[0] & { ranged?: boolean }) {
-    const built = buildHumanoid(opts);
+  constructor(opts: Parameters<typeof buildHumanoid>[0] & { ranged?: boolean; appearance?: Appearance }) {
+    const built = opts.appearance ? buildPlayerBody(opts.appearance, opts.weapon) : buildHumanoid(opts);
     this.root = built.root;
     this.rig = built.rig;
     this.height = 2.1 * (opts.scale ?? 1);
@@ -482,24 +569,7 @@ class ProceduralBeast implements Avatar {
 // Factories
 // ---------------------------------------------------------------------------
 
-/** Which placeholder outfit a class wears: the most specific match along its path, else its base class's. */
-const LOOKS: Record<string, string> = {
-  fighter: "warrior",
-  knight: "paladin",
-  woodsman: "ranger",
-  scout: "ranger",
-  mage: "wizard",
-  occultist: "warlock",
-  necromancer: "necromancer",
-  priest: "cleric",
-  monk: "monk",
-  druid: "druid",
-  shaman: "shaman",
-  thief: "rogue",
-  wanderer: "ranger",
-  bard: "bard",
-};
-
+/** What the character visibly holds: their starter weapon, or a class tool (bow, lute…) once their path calls for it. */
 function weaponVisual(path: string[], projectile: string | undefined, item: string): string {
   if (projectile === "arrow") return "makeshift_bow";
   if (projectile === "note") return "battered_lute";
@@ -512,20 +582,18 @@ function weaponVisual(path: string[], projectile: string | undefined, item: stri
   return item;
 }
 
-export function createPlayerAvatar(assets: AssetLibrary, classId: string, weapon: string): Avatar {
+export function createPlayerAvatar(assets: AssetLibrary, classId: string, weapon: string, appearance: Appearance = DEFAULT_APPEARANCE): Avatar {
   const kit = resolveKit(classId);
   const path = kit?.path.map((n) => n.id) ?? [classId];
   const gltf = assets.character(classId, kit?.base.id ?? classId);
   if (gltf) return new GltfAvatar(gltf);
-  let look = "warrior";
-  for (const id of path) if (LOOKS[id]) look = LOOKS[id]!;
-  const flavor = path.includes("berserker") ? "berserker" : path.includes("juggernaut") || path.includes("knight") ? "guardian" : "";
   return new ProceduralHumanoid({
-    classId: look,
-    flavor: flavor,
+    classId: "player",
+    flavor: "",
     color: kit?.color ?? "#888888",
     weapon: weaponVisual(path, kit?.basicAttack.projectile, weapon),
     ranged: kit?.basicAttack.kind === "ranged",
+    appearance,
   });
 }
 

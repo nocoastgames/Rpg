@@ -4,12 +4,10 @@
  * patches; these messages carry player intent and one-off events.
  */
 
-/** Options sent when joining a room. */
-export interface JoinOptions {
-  name: string;
-  /** One of the four base classes: fighter, mage, priest, thief. */
-  classId: string;
-}
+import type { CreationChoices } from "./character.ts";
+
+/** Options sent when joining a room: the full character-creation result (validated on the server). */
+export type JoinOptions = CreationChoices;
 
 // ---- Client -> Server -----------------------------------------------------
 
@@ -88,6 +86,13 @@ export interface FxEvent {
   color?: string;
 }
 
+/** A recovered memory of your forgotten past. `revealed` names your background once it is fully remembered. */
+export interface MemoryEvent {
+  text: string;
+  revealed?: string;
+  passive?: string;
+}
+
 export interface ChatEvent {
   from: string;
   text: string;
@@ -99,4 +104,5 @@ export const S2C = {
   fx: "fx",
   chat: "chat",
   notice: "notice",
+  memory: "memory",
 } as const;

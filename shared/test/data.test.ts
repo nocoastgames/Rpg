@@ -102,3 +102,34 @@ test("every starter weapon and starting item exists", () => {
   for (const b of BASE_CLASS_IDS) assert.ok(itemIds.has(BASE_CLASSES[b].starterWeapon), b);
   for (const s of STARTING_INVENTORY) assert.ok(itemIds.has(s.id), s.id);
 });
+
+import { BACKGROUNDS, FAITHS, POINT_BUY, EMPTY_ALLOCATION, validateCreation, memoriesAt, backgroundRevealed, pointsRemaining } from "../src/character.ts";
+
+const valid = { name: "Ash", classId: "fighter", backgroundId: "soldier", faithId: "orren", alloc: { ...EMPTY_ALLOCATION, might: 5, vitality: 5 }, appearance: { build: 1, skin: 0, hair: 2, hairColor: 3, beard: 1, dye: 4 } };
+
+test("creation validation accepts a legal character and rejects bad point-buy", () => {
+  assert.equal(validateCreation(valid).ok, true);
+  assert.equal(pointsRemaining(valid.alloc), 0);
+  assert.equal(validateCreation({ ...valid, alloc: { ...EMPTY_ALLOCATION, might: 6 } }).ok, false, "raise cap");
+  assert.equal(validateCreation({ ...valid, alloc: { ...EMPTY_ALLOCATION, might: 5, agility: 5, vitality: 1 } }).ok, false, "overspent");
+  assert.equal(validateCreation({ ...valid, alloc: { ...EMPTY_ALLOCATION, spirit: -2, might: 5, vitality: 5, agility: 2 } }).ok, true, "lowering gives points back");
+  assert.equal(validateCreation({ ...valid, alloc: { ...EMPTY_ALLOCATION, spirit: -2, intellect: -1 } }).ok, false, "total lower cap");
+  assert.equal(validateCreation({ ...valid, classId: "paladin" }).ok, false, "must start as a base class");
+  assert.equal(validateCreation({ ...valid, appearance: { ...valid.appearance, skin: 99 } }).ok, false, "appearance range");
+  assert.equal(POINT_BUY.points, 10);
+});
+
+test("backgrounds: 3 memories each, name revealed only by the last; faiths exist", () => {
+  assert.equal(BACKGROUNDS.length, 10);
+  const items = new Set(ITEMS.map((i) => i.id));
+  for (const b of BACKGROUNDS) {
+    assert.equal(b.memories.length, 3, b.id);
+    assert.ok(items.has(b.item), `${b.id} item`);
+    const statTotal = Object.values(b.statBonus).reduce((a, v) => a + (v ?? 0), 0);
+    assert.equal(statTotal, 3, `${b.id} stat bonus`);
+    assert.equal(memoriesAt(b.id, 1).length, 0);
+    assert.equal(backgroundRevealed(b.id, b.memories[1]!.level), false);
+    assert.equal(backgroundRevealed(b.id, b.memories[2]!.level), true);
+  }
+  assert.ok(FAITHS.length >= 8);
+});
