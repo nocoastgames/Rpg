@@ -74,7 +74,7 @@ export function showCharacterCreate(root: HTMLElement, error?: string): Promise<
           h("span.tree-name", null, n.name),
           ...classTags(n)
             .filter((t) => t !== "Pure")
-            .map((t) => h("span.tree-tag", null, t.replace("Hybrid · ", "+").replace(/^\+\w+ \+ /, "+"))),
+            .map((t) => h(`span.tree-tag${n.pet === "evil" && t.startsWith("Pet") ? ".evil" : n.pet && t.startsWith("Pet") ? ".good" : ""}` as "span", null, t.startsWith("Hybrid") ? `+${t.split(" + ")[1]}` : t.replace("Pet class · ", "") + " pet")),
         );
       return h(
         "div.tree",
@@ -93,7 +93,7 @@ export function showCharacterCreate(root: HTMLElement, error?: string): Promise<
                   { style: `--class-color:${t3.color}`, title: t3.description },
                   h("small", null, "Lv 25"),
                   t3.name,
-                  t3.petLine ? h("span.tree-tag", null, "Pet") : null,
+                  t3.petLine ? h("span.tree-tag", null, "Pet at 25") : null,
                 ),
                 h("div.tree-leaves", null, h("small", null, "Lv 50"), ...childrenOf(t3.id).map(leaf)),
               ),
@@ -143,7 +143,7 @@ export function showCharacterCreate(root: HTMLElement, error?: string): Promise<
         h(
           "p.cc-hint",
           null,
-          "Choose a new path at levels 10, 25 and 50 (25 and 50 need a trial). Choices are permanent. Every class gains a companion at 50; pet classes get theirs at 25, and much stronger.",
+          "Choose a new path at levels 10, 25 and 50 (25 and 50 need a trial). Choices are permanent. Every class gains a companion at 50. Two pet classes per path, one good and one evil, raise theirs from 25 into something far stronger.",
         ),
         renderTree(base),
       );

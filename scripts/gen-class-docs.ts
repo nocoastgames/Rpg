@@ -30,6 +30,21 @@ const companion = (n: ClassNode) => {
   return c ? `${c.def.name} (${c.power === "familiar" ? "familiar" : c.power === "pet" ? "pet" : "empowered pet"})` : "";
 };
 
+function petTable(): string {
+  return BASE_CLASS_IDS.map((b) => {
+    const pets = childrenOf(b)
+      .flatMap((t2) => childrenOf(t2.id))
+      .flatMap((t3) => childrenOf(t3.id))
+      .filter((n) => n.pet);
+    const cell = (n?: ClassNode) => {
+      if (!n) return "";
+      const line = getClassNode(n.parent!)!;
+      return `${line.name} → **${n.name}** (${line.companion?.name} → ${n.companion?.name})`;
+    };
+    return `| ${cap(b)} | ${cell(pets.find((p) => p.pet === "good"))} | ${cell(pets.find((p) => p.pet === "evil"))} |`;
+  }).join("\n") + "\n";
+}
+
 let md = `# Classes
 
 > Generated from \`shared/src/classes.ts\` by \`npm run docs:classes\`. Edit the data, not this file.
@@ -46,7 +61,13 @@ let md = `# Classes
 - **4 → 8 → 16 → 32.** Every class branches in two. Choices are permanent (a lineage system will allow changes later).
 - **Each class teaches one ability**, and you keep every ability on your path: 4 abilities plus a basic attack at level 50.
 - **Each base has 5 pure and 3 hybrid end classes.** A hybrid blends in a second base (one hybrid with each other base). Every pair of bases has exactly two hybrids, one reached from each side.
-- **Companions.** One level-25 specialisation per base is a *pet line* and brings a pet at 25; its two end classes are *pet classes* whose companion is far stronger at 50 (about 4x a familiar's health and damage). Every other end class gains a lesser *familiar* at 50.
+- **Companions.** Each base has two *pet classes* on separate lines with different creatures: one traditionally good, one evil. Their level-25 specialisation (a *pet line*) brings a young companion at 25; at 50 the pet class grows it into something several times stronger (about 4x a familiar's health and damage), while the line's other end class takes a familiar instead. Every other end class gains a lesser *familiar* at 50.
+
+## Pet classes
+
+| Base | Good | Evil |
+|---|---|---|
+${petTable()}
 
 ## Hybrids
 

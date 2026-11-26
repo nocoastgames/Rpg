@@ -62,12 +62,22 @@ test("each base has 5 pure and 3 hybrid end classes; every pair of bases has exa
   }
 });
 
-test("one pet line per base: pet at 25, empowered pets at 50; everyone else gets a familiar at 50", () => {
+test("two pet classes per base, one good and one evil, on separate lines with different creatures", () => {
   for (const b of BASE_CLASS_IDS) {
+    const pets = endClassesOf(b).filter((n) => n.pet);
+    assert.equal(pets.length, 2, `${b} pet classes`);
+    assert.deepEqual(pets.map((p) => p.pet).sort(), ["evil", "good"], `${b} alignments`);
+    assert.notEqual(pets[0]!.parent, pets[1]!.parent, `${b} pet classes should come from different lines`);
+    assert.notEqual(pets[0]!.companion!.kind, pets[1]!.companion!.kind, `${b} pet creatures should differ`);
+    for (const p of pets) {
+      const line = CLASS_NODES.find((n) => n.id === p.parent)!;
+      assert.ok(line.petLine, `${p.id}'s parent should be a pet line`);
+      assert.equal(companionFor(line.id)?.power, "pet");
+      assert.equal(line.companion!.kind, p.companion!.kind, `${p.id} should grow the same creature it got at 25`);
+      assert.equal(companionFor(p.id)?.power, "empowered");
+    }
     const lines = CLASS_NODES.filter((n) => n.base === b && n.petLine);
-    assert.equal(lines.length, 1, `${b} pet lines`);
-    assert.equal(lines[0]!.tier, 3);
-    assert.equal(companionFor(lines[0]!.id)?.power, "pet");
+    assert.equal(lines.length, 2, `${b} pet lines`);
   }
   const ends = CLASS_NODES.filter((n) => n.tier === 4);
   for (const n of ends) {
@@ -76,7 +86,6 @@ test("one pet line per base: pet at 25, empowered pets at 50; everyone else gets
     assert.equal(c.power, isPetClass(n.id) ? "empowered" : "familiar", n.id);
   }
   assert.equal(ends.filter((n) => isPetClass(n.id)).length, 8);
-  // Nobody below 25 has a companion; non-pet specialisations get none at 25.
   for (const n of CLASS_NODES.filter((n) => n.tier <= 3 && !n.petLine)) assert.equal(companionFor(n.id), null, n.id);
 });
 

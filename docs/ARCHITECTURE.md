@@ -71,7 +71,8 @@ and 50. The server executes abilities through a few generic effect types
 `state.companions` (keyed `c:<owner>`). They follow their owner, attack the
 owner's target or anything attacking the owner, can be targeted by enemies,
 and return after being downed. Strength scales with the owner and with power:
-familiar < pet (pet lines at 25) < empowered (pet classes at 50).
+familiar < pet (young companion on a pet line at 25) < empowered (the
+8 pet classes at 50, two per base: one good, one evil).
 
 **Simulation separate from networking.** `Game` has no Colyseus dependency
 beyond the schema objects it mutates. `ForestRoom` is a thin adapter. This

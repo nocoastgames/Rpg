@@ -1470,3 +1470,12 @@ body[data-input="gamepad"] .interact-hint {
   padding: 0 5px;
   margin-left: 4px;
 }
+
+.tree-tag.good {
+  border-color: #c8a84a;
+  color: #e8cf7a;
+}
+.tree-tag.evil {
+  border-color: #8a3a4a;
+  color: #e07a8a;
+}

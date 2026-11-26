@@ -8,9 +8,14 @@
  *
  * Each base has 8 end classes: 5 pure and 3 hybrids (one with each other
  * base). Every pair of bases has exactly two hybrids, one reached from each
- * side. One level-25 specialisation per base is a pet line: it grants a
- * companion at 25, and its two end classes are pet classes whose companion is
- * far stronger at 50. Every other end class gains a lesser familiar at 50.
+ * side.
+ *
+ * Pets: each base has two pet classes on separate lines with different
+ * creatures - one traditionally good, one evil (e.g. the Falconer and her
+ * war falcon vs the Plaguebringer and his rats). Their level-25 specialisation
+ * is a pet line that brings a young companion at 25; at 50 the pet class turns
+ * it into something far stronger, while the line's other end class takes a
+ * familiar instead. Every other end class also gains a familiar at 50.
  *
  * Choices are permanent (a lineage system will allow changes later).
  * Each node grants one ability; a character keeps every ability on its path,
@@ -47,11 +52,13 @@ export type CompanionKind =
   | "crane"
   | "parrot"
   | "songbird"
+  | "phoenix"
   | "wisp"
   | "skeleton"
   | "wraith"
   | "ancestor"
-  | "treant";
+  | "treant"
+  | "demon";
 
 export interface CompanionDef {
   kind: CompanionKind;
@@ -61,8 +68,13 @@ export interface CompanionDef {
   scale?: number;
 }
 
-/** How strong a companion is. Pet classes get "pet" at 25 and "empowered" at 50; everyone else gets a "familiar" at 50. */
+/**
+ * How strong a companion is: pet lines get a young "pet" at 25, pet classes an
+ * "empowered" companion at 50 (several times stronger), everyone else a "familiar" at 50.
+ */
 export type CompanionPower = "familiar" | "pet" | "empowered";
+
+export type Alignment = "good" | "evil";
 
 export interface BaseClassDef {
   id: BaseClassId;
@@ -89,13 +101,15 @@ export interface ClassNode {
   statBonus: Partial<Stats>;
   /** Ability learned at this tier (ability slot = tier - 1). */
   ability: AbilityDef;
-  /** Replaces the basic attack from this tier on (e.g. Hunters switch to bows). */
+  /** Replaces the basic attack from this tier on (e.g. Woodsmen switch to bows). */
   basicAttack?: BasicAttackDef;
   /** End classes only: the second base this hybrid blends in. */
   hybrid?: BaseClassId;
-  /** Tier 3 only: this specialisation is a pet line (companion at 25; both end classes are pet classes). */
+  /** Tier 3 only: brings a young companion at level 25 and leads to a pet class. */
   petLine?: boolean;
-  /** Tier-3 pet lines: their pet. Tier 4: the end class's familiar or empowered pet. */
+  /** Tier 4 only: a pet class, and whether it is the base's good or evil one. */
+  pet?: Alignment;
+  /** Tier 3 pet lines: the young companion. Tier 4: the familiar, or the pet class's empowered companion. */
   companion?: CompanionDef;
 }
 
@@ -119,6 +133,8 @@ const nova = (multiplier: number, radius: number): AbilityEffect => ({ type: "no
 const heal = (fraction: number, radius: number): AbilityEffect => ({ type: "heal", fraction, radius });
 const dash = (distance: number, multiplier = 0, radius = 0): AbilityEffect => ({ type: "dash", distance, multiplier, radius });
 const buff = (stat: "damage" | "speed" | "armor", amount: number, duration: number, radius = 0): AbilityEffect => ({ type: "buff", stat, amount, duration, radius });
+
+const BOW: BasicAttackDef = { kind: "ranged", range: 14, damage: [5, 9], cooldown: 0.85, projectile: "arrow" };
 
 type NodeInput = Omit<ClassNode, "tier" | "base" | "parent">;
 
@@ -174,6 +190,8 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
 
 // ===========================================================================
 // FIGHTER — strength, steel and grit
+//   Warrior:  Knight (Paladin*, Juggernaut) · Woodsman [good pet line] (Beastlord, Ranger*)
+//   Marauder: Berserker (Warlord, Bloodreaver) · Dark Knight [evil pet line] (Death Knight, Shadow Knight*)
 // ===========================================================================
 {
   const B = "fighter";
@@ -193,42 +211,10 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
     name: "Warrior",
     role: "Melee DPS",
     tagline: "Master of arms",
-    description: "Heavy weapons, heavy armour, front of the line.",
+    description: "A disciplined soldier: shield and sword in the line, or bow and axe in the wilds.",
     color: "#a8402c",
     statBonus: { might: 2, vitality: 2 },
     ability: ability("cleave", "Cleave", "A wide swing that hits every enemy in front of you.", 15, 5, 2.5, strike(1.3, 2.2)),
-  });
-  const berserker = node(B, 3, warrior, {
-    id: "berserker",
-    name: "Berserker",
-    role: "Melee DPS",
-    tagline: "Fury unchained",
-    description: "Trades caution for overwhelming violence.",
-    color: "#c0392b",
-    statBonus: { might: 4 },
-    ability: ability("bloodfury", "Bloodfury", "Deal 40% more damage for 6 seconds.", 20, 18, 0, buff("damage", 0.4, 6)),
-  });
-  node(B, 4, berserker, {
-    id: "warlord",
-    name: "Warlord",
-    role: "Melee DPS",
-    tagline: "Where I stand, the line holds",
-    description: "A battlefield commander whose war cries drive allies into a frenzy.",
-    color: "#d4442e",
-    statBonus: { might: 5, vitality: 3 },
-    ability: ability("rallying_cry", "Rallying Cry", "You and nearby allies deal 30% more damage for 10 seconds.", 30, 25, 0, buff("damage", 0.3, 10, 10)),
-    companion: { kind: "hound", name: "War Hound", color: "#7a5a3a" },
-  });
-  node(B, 4, berserker, {
-    id: "juggernaut",
-    name: "Juggernaut",
-    role: "Tank",
-    tagline: "Nothing stops me",
-    description: "Rage hardened into armour. Shrugs off blows that would fell anyone else.",
-    color: "#8e3a2a",
-    statBonus: { vitality: 7, might: 2 },
-    ability: ability("unstoppable", "Unstoppable", "Take 55% less damage for 8 seconds.", 25, 22, 0, buff("armor", 0.55, 8)),
-    companion: { kind: "boar", name: "Iron Boar", color: "#6a6460" },
   });
   const knight = node(B, 3, warrior, {
     id: "knight",
@@ -253,38 +239,40 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
     companion: { kind: "wisp", name: "Light Wisp", color: "#ffe08a" },
   });
   node(B, 4, knight, {
-    id: "shadow_knight",
-    name: "Shadow Knight",
+    id: "juggernaut",
+    name: "Juggernaut",
     role: "Tank",
-    tagline: "An oath to darker things",
-    description: "A knight who bargained with forbidden magic. Feeds on the life of every foe.",
-    color: "#4a3a6a",
-    hybrid: "mage",
-    statBonus: { vitality: 3, intellect: 5 },
-    ability: ability("soul_rend", "Soul Rend", "Rip at an enemy's soul, healing yourself for half the damage.", 25, 8, 3, strike(2.0, 0, 0.5)),
-    companion: { kind: "hound", name: "Shadow Hound", color: "#2c2438" },
+    tagline: "Nothing stops me",
+    description: "Plate, shield and stubbornness. Shrugs off blows that would fell anyone else.",
+    color: "#7a7e86",
+    statBonus: { vitality: 7, might: 2 },
+    ability: ability("unstoppable", "Unstoppable", "Take 55% less damage for 8 seconds.", 25, 22, 0, buff("armor", 0.55, 8)),
+    companion: { kind: "boar", name: "Iron Boar", color: "#6a6460" },
   });
-
-  const hunter = node(B, 2, root, {
-    id: "hunter",
-    name: "Hunter",
-    role: "Ranged DPS",
-    tagline: "Bow, blade and patience",
-    description: "Trades the shield for a bow and learns to read the wild.",
-    color: "#5f7a34",
-    statBonus: { agility: 3, might: 1 },
-    basicAttack: { kind: "ranged", range: 14, damage: [5, 9], cooldown: 0.85, projectile: "arrow" },
-    ability: ability("volley", "Volley", "Loose a spray of arrows into an area.", 15, 6, 14, strike(1.0, 3)),
-  });
-  const woodsman = node(B, 3, hunter, {
+  const woodsman = node(B, 3, warrior, {
     id: "woodsman",
     name: "Woodsman",
     role: "Ranged DPS",
     tagline: "The forest is home",
-    description: "A tracker and archer who strikes from the treeline.",
+    description: "A tracker and archer who takes to the bow. A wolf pup joins you at level 25.",
     color: "#4f8a3a",
+    petLine: true,
     statBonus: { agility: 4 },
+    basicAttack: BOW,
     ability: ability("aimed_shot", "Aimed Shot", "A careful shot that hits hard at long range.", 20, 7, 16, strike(2.0)),
+    companion: { kind: "wolf", name: "Wolf Pup", color: "#9a9aa0", scale: 0.75 },
+  });
+  node(B, 4, woodsman, {
+    id: "beastlord",
+    name: "Beastlord",
+    role: "Summoner",
+    tagline: "Guardian of the wild",
+    description: "Your wolf grows into a great alpha, sworn protector of forest and folk. You fight as one.",
+    color: "#7a8a4a",
+    pet: "good",
+    statBonus: { vitality: 4, might: 4 },
+    ability: ability("pack_fury", "Pack Fury", "You and nearby allies deal 35% more damage for 10 seconds.", 30, 22, 0, buff("damage", 0.35, 10, 10)),
+    companion: { kind: "wolf", name: "Alpha Wolf", color: "#c8c8cc", scale: 1.6 },
   });
   node(B, 4, woodsman, {
     id: "ranger",
@@ -296,57 +284,93 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
     hybrid: "thief",
     statBonus: { agility: 6, might: 2 },
     ability: ability("fade_step", "Fade Step", "Dart through the undergrowth, striking where you land.", 25, 8, 8, dash(7, 1.4, 2)),
-    companion: { kind: "wolf", name: "Grey Wolf", color: "#8a8a90" },
+    companion: { kind: "cat", name: "Red Fox", color: "#c8642a", scale: 0.9 },
   });
-  node(B, 4, woodsman, {
-    id: "warden",
-    name: "Warden",
-    role: "Ranged DPS",
-    tagline: "Keeper of the old roads",
-    description: "Guardian of the wild places. Lays snares and holds ground.",
-    color: "#5a7a2a",
-    statBonus: { agility: 4, vitality: 4 },
-    ability: ability("bramble_trap", "Bramble Trap", "Thorned snares burst from the ground in an area.", 25, 12, 10, strike(2.2, 3)),
-    companion: { kind: "owl", name: "Barn Owl", color: "#c8a878" },
+
+  const marauder = node(B, 2, root, {
+    id: "marauder",
+    name: "Marauder",
+    role: "Melee DPS",
+    tagline: "Take what you can",
+    description: "Fights without mercy or rules, and finds power in darker places.",
+    color: "#8a2a24",
+    statBonus: { might: 3, vitality: 1 },
+    ability: ability("rampage", "Rampage", "A frenzied spin that hits everything around you.", 15, 6, 0, nova(1.3, 2.5)),
   });
-  const beastmaster = node(B, 3, hunter, {
-    id: "beastmaster",
-    name: "Beastmaster",
-    role: "Summoner",
-    tagline: "Never hunts alone",
-    description: "Bonds with a wolf that fights at your side from level 25.",
-    color: "#7a6a3a",
+  const berserker = node(B, 3, marauder, {
+    id: "berserker",
+    name: "Berserker",
+    role: "Melee DPS",
+    tagline: "Fury unchained",
+    description: "Trades caution for overwhelming violence.",
+    color: "#c0392b",
+    statBonus: { might: 4 },
+    ability: ability("bloodfury", "Bloodfury", "Deal 40% more damage for 6 seconds.", 20, 18, 0, buff("damage", 0.4, 6)),
+  });
+  node(B, 4, berserker, {
+    id: "warlord",
+    name: "Warlord",
+    role: "Melee DPS",
+    tagline: "Where I stand, the line holds",
+    description: "A battlefield commander whose war cries drive allies into a frenzy.",
+    color: "#d4442e",
+    statBonus: { might: 5, vitality: 3 },
+    ability: ability("rallying_cry", "Rallying Cry", "You and nearby allies deal 30% more damage for 10 seconds.", 30, 25, 0, buff("damage", 0.3, 10, 10)),
+    companion: { kind: "hound", name: "War Hound", color: "#7a5a3a" },
+  });
+  node(B, 4, berserker, {
+    id: "bloodreaver",
+    name: "Bloodreaver",
+    role: "Melee DPS",
+    tagline: "Every wound feeds me",
+    description: "Drinks the life of every foe struck. The more blood, the harder to kill.",
+    color: "#9a1a2a",
+    statBonus: { might: 5, vitality: 3 },
+    ability: ability("blood_frenzy", "Blood Frenzy", "A savage strike that heals you for 40% of the damage.", 30, 8, 2.5, strike(2.4, 0, 0.4)),
+    companion: { kind: "raven", name: "Carrion Crow", color: "#1e1a1e" },
+  });
+  const darkKnight = node(B, 3, marauder, {
+    id: "dark_knight",
+    name: "Dark Knight",
+    role: "Tank",
+    tagline: "An oath to darker things",
+    description: "Swears to powers that should not be served. A nightmare hound stalks at your side from level 25.",
+    color: "#4a2a4a",
     petLine: true,
-    statBonus: { vitality: 2, spirit: 2 },
-    ability: ability("call_of_the_wild", "Call of the Wild", "You and nearby allies move 40% faster for 8 seconds.", 20, 18, 0, buff("speed", 0.4, 8, 8)),
-    companion: { kind: "wolf", name: "Bonded Wolf", color: "#9a8a70" },
+    statBonus: { vitality: 3, intellect: 2 },
+    ability: ability("soul_rend", "Soul Rend", "Rip at an enemy's soul, healing yourself for 40% of the damage.", 25, 8, 3, strike(1.8, 0, 0.4)),
+    companion: { kind: "hound", name: "Nightmare Hound", color: "#3a1c24" },
   });
-  node(B, 4, beastmaster, {
-    id: "beastlord",
-    name: "Beastlord",
+  node(B, 4, darkKnight, {
+    id: "death_knight",
+    name: "Death Knight",
     role: "Summoner",
-    tagline: "The pack answers",
-    description: "Your bond deepens into a mighty dire bear. You and your beast fight as one.",
-    color: "#8a6a3a",
-    statBonus: { vitality: 4, might: 4 },
-    ability: ability("pack_fury", "Pack Fury", "You and nearby allies deal 35% more damage for 10 seconds.", 30, 22, 0, buff("damage", 0.35, 10, 10)),
-    companion: { kind: "bear", name: "Dire Bear", color: "#5a3e2a", scale: 1.3 },
-  });
-  node(B, 4, beastmaster, {
-    id: "dragon_knight",
-    name: "Dragon Knight",
-    role: "Summoner",
-    tagline: "Wings of fire",
-    description: "Raises a young drake that breathes fire alongside you.",
-    color: "#b4522a",
+    tagline: "Death rides with me",
+    description: "Your hound returns from the grave as a hellhound wreathed in black fire.",
+    color: "#3a2a3a",
+    pet: "evil",
     statBonus: { might: 4, vitality: 4 },
-    ability: ability("dragons_breath", "Dragon's Breath", "A gout of flame scorches an area in front of you.", 30, 10, 8, strike(2.0, 4)),
-    companion: { kind: "drake", name: "Young Drake", color: "#a83a24", scale: 1.2 },
+    ability: ability("unholy_blight", "Unholy Blight", "A wave of death magic bursts around you.", 30, 9, 0, nova(2.0, 4)),
+    companion: { kind: "hound", name: "Hellhound", color: "#5a1a14", scale: 1.5 },
+  });
+  node(B, 4, darkKnight, {
+    id: "shadow_knight",
+    name: "Shadow Knight",
+    role: "Tank",
+    tagline: "Steel and sorcery",
+    description: "A dark knight who studied forbidden magic. Shadow-edged swings tear through groups.",
+    color: "#4a3a6a",
+    hybrid: "mage",
+    statBonus: { vitality: 3, intellect: 5 },
+    ability: ability("shadow_cleave", "Shadow Cleave", "A shadow-wreathed swing through everything in front of you.", 30, 8, 3, strike(2.2, 2.5)),
+    companion: { kind: "wisp", name: "Void Wisp", color: "#8a5aff" },
   });
 }
 
 // ===========================================================================
 // MAGE — study, will and forbidden knowledge
+//   Arcanist:  Elementalist (Archmage, Spellblade*) · Conjurer [good pet line] (Phoenix Caller, Illusionist*)
+//   Occultist: Necromancer [evil pet line] (Lich, Deathspeaker*) · Warlock (Voidcaller, Hexmaster)
 // ===========================================================================
 {
   const B = "mage";
@@ -366,7 +390,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
     name: "Arcanist",
     role: "Caster",
     tagline: "The pure art",
-    description: "Masters the fundamental forces: elements, time and space.",
+    description: "Masters the fundamental forces: the elements, and the spirits that live in them.",
     color: "#4a6ad8",
     statBonus: { intellect: 3, spirit: 1 },
     ability: ability("blink", "Blink", "Teleport a short distance.", 15, 8, 8, dash(8)),
@@ -405,28 +429,31 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
     ability: ability("arcane_edge", "Arcane Edge", "A burst of blazing steel around you.", 30, 8, 0, nova(1.9, 3.5)),
     companion: { kind: "wisp", name: "Flame Sprite", color: "#ff8a3a" },
   });
-  const enchanter = node(B, 3, arcanist, {
-    id: "enchanter",
-    name: "Enchanter",
-    role: "Support",
-    tagline: "Weaver of wards",
-    description: "Shields allies and bends time and perception.",
-    color: "#8a6ad8",
+  const conjurer = node(B, 3, arcanist, {
+    id: "conjurer",
+    name: "Conjurer",
+    role: "Summoner",
+    tagline: "Something answers",
+    description: "Calls spirits of light and illusion. A firebird hatchling answers you at level 25.",
+    color: "#e0904a",
+    petLine: true,
     statBonus: { intellect: 3, spirit: 2 },
-    ability: ability("mana_ward", "Mana Ward", "You and nearby allies take 35% less damage for 8 seconds.", 25, 18, 0, buff("armor", 0.35, 8, 8)),
+    ability: ability("binding_circle", "Binding Circle", "A circle of runes flares and burns everything inside it.", 25, 8, 12, strike(1.8, 3)),
+    companion: { kind: "phoenix", name: "Firebird Hatchling", color: "#ffa040", scale: 0.8 },
   });
-  node(B, 4, enchanter, {
-    id: "timeweaver",
-    name: "Timeweaver",
-    role: "Support",
-    tagline: "Every second is mine",
-    description: "Speeds allies and slows the world around them.",
-    color: "#6ab0d8",
+  node(B, 4, conjurer, {
+    id: "phoenix_caller",
+    name: "Phoenix Caller",
+    role: "Summoner",
+    tagline: "From the ashes",
+    description: "Your firebird becomes a phoenix of living sunfire that guards the faithful and burns the wicked.",
+    color: "#ff9a2a",
+    pet: "good",
     statBonus: { intellect: 5, spirit: 3 },
-    ability: ability("haste", "Haste", "You and nearby allies move 50% faster for 8 seconds.", 30, 20, 0, buff("speed", 0.5, 8, 10)),
-    companion: { kind: "owl", name: "Clockwork Owl", color: "#b89a5a" },
+    ability: ability("sunfire", "Sunfire", "A column of holy flame falls on an area.", 35, 9, 14, strike(2.4, 4)),
+    companion: { kind: "phoenix", name: "Phoenix", color: "#ff8a1a", scale: 1.6 },
   });
-  node(B, 4, enchanter, {
+  node(B, 4, conjurer, {
     id: "illusionist",
     name: "Illusionist",
     role: "Caster",
@@ -454,7 +481,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
     name: "Necromancer",
     role: "Summoner",
     tagline: "The dead remember",
-    description: "Raises a skeletal servant at level 25.",
+    description: "Commands bone and the border between life and death. Raises a skeletal servant at level 25.",
     color: "#6b3f8f",
     petLine: true,
     statBonus: { intellect: 3, vitality: 1 },
@@ -466,23 +493,24 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
     name: "Lich",
     role: "Summoner",
     tagline: "Death is a door",
-    description: "Commands a skeletal champion and unleashes waves of grave-cold.",
+    description: "Has stepped through death and back, and commands a skeletal champion. Waves of grave-cold follow.",
     color: "#4a6a7a",
+    pet: "evil",
     statBonus: { intellect: 6, vitality: 2 },
     ability: ability("death_nova", "Death Nova", "A wave of grave-cold bursts out around you.", 35, 9, 0, nova(1.9, 5)),
-    companion: { kind: "skeleton", name: "Skeletal Champion", color: "#e8e2cc", scale: 1.25 },
+    companion: { kind: "skeleton", name: "Skeletal Champion", color: "#e8e2cc", scale: 1.3 },
   });
   node(B, 4, necromancer, {
     id: "deathspeaker",
     name: "Deathspeaker",
-    role: "Summoner",
+    role: "Healer",
     tagline: "The dead and the divine",
-    description: "Speaks to spirits on both sides of death. A wraith guards you; last rites mend the living.",
+    description: "Speaks to spirits on both sides of death. Last rites mend the living.",
     color: "#7a8a9a",
     hybrid: "priest",
     statBonus: { intellect: 4, spirit: 4 },
     ability: ability("last_rites", "Last Rites", "Heal yourself and nearby allies for 30% of maximum health.", 30, 18, 0, heal(0.3, 8)),
-    companion: { kind: "wraith", name: "Bound Wraith", color: "#9fb4c8", scale: 1.1 },
+    companion: { kind: "wraith", name: "Bound Wraith", color: "#9fb4c8" },
   });
   const warlock = node(B, 3, occultist, {
     id: "warlock",
@@ -520,6 +548,8 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
 
 // ===========================================================================
 // PRIEST — faith, nature and the spirit world
+//   Cleric: Lifebinder (Saint, Oracle) · Monk (Grandmaster*, Ascendant*)
+//   Druid:  Wildcaller [good pet line] (Archdruid, Primalist) · Shaman [evil pet line] (Witch Doctor, Tempest*)
 // ===========================================================================
 {
   const B = "priest";
@@ -617,7 +647,7 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
     name: "Druid",
     role: "Hybrid",
     tagline: "The old ways",
-    description: "Faith in the land itself: root, beast and storm.",
+    description: "Faith in the land itself: root, beast, storm and spirit.",
     color: "#7a5a2e",
     statBonus: { spirit: 2, intellect: 1, vitality: 1 },
     ability: ability("thornlash", "Thornlash", "Thorned vines erupt beneath a target.", 15, 5, 10, strike(1.6)),
@@ -625,46 +655,61 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
   const wildcaller = node(B, 3, druid, {
     id: "wildcaller",
     name: "Wildcaller",
-    role: "Summoner",
+    role: "Healer",
     tagline: "The forest provides",
-    description: "A spirit wolf answers your call at level 25.",
+    description: "Tends the living wild. A young treant sapling follows you from level 25.",
     color: "#5a8a4a",
     petLine: true,
     statBonus: { spirit: 3, vitality: 1 },
     ability: ability("rejuvenation", "Rejuvenation", "Heal yourself and nearby allies for 30% of maximum health.", 25, 14, 0, heal(0.3, 8)),
-    companion: { kind: "wolf", name: "Spirit Wolf", color: "#a8e0c8" },
+    companion: { kind: "treant", name: "Treant Sapling", color: "#6a5a36", scale: 0.7 },
   });
   node(B, 4, wildcaller, {
     id: "archdruid",
     name: "Archdruid",
-    role: "Healer",
+    role: "Summoner",
     tagline: "Voice of the grove",
-    description: "Awakens an ancient treant guardian and mends the land and its people.",
+    description: "Your sapling grows into an ancient treant guardian, and you mend the land and its people.",
     color: "#4a7a3a",
+    pet: "good",
     statBonus: { spirit: 6, vitality: 2 },
     ability: ability("tranquility", "Tranquility", "Heal yourself and nearby allies for 50% of maximum health.", 40, 28, 0, heal(0.5, 10)),
-    companion: { kind: "treant", name: "Ancient Treant", color: "#5a4a2e", scale: 1.3 },
+    companion: { kind: "treant", name: "Ancient Treant", color: "#5a4a2e", scale: 1.4 },
   });
   node(B, 4, wildcaller, {
     id: "primalist",
     name: "Primalist",
     role: "Tank",
     tagline: "Claw and fang",
-    description: "Takes on a bear's hide and fights beside a great spirit bear.",
+    description: "Takes on a bear's hide to stand in front of the fight.",
     color: "#8a5a2a",
     statBonus: { vitality: 5, might: 3 },
     ability: ability("bear_form", "Bear Form", "Take 45% less damage for 10 seconds.", 30, 20, 0, buff("armor", 0.45, 10)),
-    companion: { kind: "bear", name: "Spirit Bear", color: "#c8d8e0", scale: 1.2 },
+    companion: { kind: "bear", name: "Bear Cub", color: "#6a4a2e", scale: 0.7 },
   });
   const shaman = node(B, 3, druid, {
     id: "shaman",
     name: "Shaman",
     role: "Hybrid",
     tagline: "Speaker to spirits",
-    description: "Calls on earth, sky and ancestors.",
+    description: "Bargains with restless spirits of storm and grave. A lesser loa haunts your steps from level 25.",
     color: "#2f7fa8",
+    petLine: true,
     statBonus: { spirit: 3, intellect: 1 },
     ability: ability("earthshock", "Earthshock", "A jolt of earth energy shakes an area.", 20, 6, 10, strike(1.8, 2.5)),
+    companion: { kind: "demon", name: "Lesser Loa", color: "#5a7a3a", scale: 0.75 },
+  });
+  node(B, 4, shaman, {
+    id: "witch_doctor",
+    name: "Witch Doctor",
+    role: "Summoner",
+    tagline: "The spirits demand payment",
+    description: "Feeds your loa with blood and bone until it becomes a vengeful horror. It answers every insult tenfold.",
+    color: "#4a6a2a",
+    pet: "evil",
+    statBonus: { spirit: 5, intellect: 3 },
+    ability: ability("voodoo_curse", "Voodoo Curse", "A spreading curse withers everything in an area.", 35, 9, 12, strike(2.4, 3.5)),
+    companion: { kind: "demon", name: "Bound Loa", color: "#3e5a2a", scale: 1.35 },
   });
   node(B, 4, shaman, {
     id: "tempest",
@@ -678,21 +723,12 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
     ability: ability("chain_lightning", "Chain Lightning", "Lightning arcs between every enemy in an area.", 30, 8, 14, strike(2.2, 4.5)),
     companion: { kind: "wisp", name: "Storm Wisp", color: "#9ad8ff" },
   });
-  node(B, 4, shaman, {
-    id: "soulkeeper",
-    name: "Soulkeeper",
-    role: "Support",
-    tagline: "Ancestors guide me",
-    description: "Keeper of ancestral spirits who guard and restore the living.",
-    color: "#4aa8a0",
-    statBonus: { spirit: 6, vitality: 2 },
-    ability: ability("ancestral_spirits", "Ancestral Spirits", "Heal yourself and nearby allies for 40% of maximum health.", 35, 20, 0, heal(0.4, 9)),
-    companion: { kind: "ancestor", name: "Ancestor Spirit", color: "#a8e8e0" },
-  });
 }
 
 // ===========================================================================
 // THIEF — speed, shadow and wit
+//   Rogue:    Assassin [evil pet line] (Plaguebringer, Nightblade) · Shadowdancer (Phantom*, Swashbuckler*)
+//   Wanderer: Scout [good pet line] (Falconer, Deadeye) · Bard (Troubadour*, Virtuoso)
 // ===========================================================================
 {
   const B = "thief";
@@ -722,10 +758,24 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
     name: "Assassin",
     role: "Melee DPS",
     tagline: "Death, delivered",
-    description: "Specialises in single, lethal strikes.",
+    description: "Poison and a quick blade. A plague rat scurries after you from level 25.",
     color: "#3a3a48",
+    petLine: true,
     statBonus: { agility: 4 },
     ability: ability("eviscerate", "Eviscerate", "A brutal finishing strike.", 40, 8, 2.5, strike(3.0)),
+    companion: { kind: "rat", name: "Plague Rat", color: "#5a6a3a" },
+  });
+  node(B, 4, assassin, {
+    id: "plaguebringer",
+    name: "Plaguebringer",
+    role: "Summoner",
+    tagline: "Rot spreads",
+    description: "Your rat swells into a bloated rat king, and your poisons become plagues.",
+    color: "#6a8a2a",
+    pet: "evil",
+    statBonus: { agility: 4, intellect: 4 },
+    ability: ability("plague_cloud", "Plague Cloud", "Release a choking cloud over an area.", 35, 9, 12, strike(2.0, 4.5)),
+    companion: { kind: "rat", name: "Rat King", color: "#4a5a2a", scale: 2.0 },
   });
   node(B, 4, assassin, {
     id: "nightblade",
@@ -738,45 +788,34 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
     ability: ability("death_mark", "Death Mark", "An execution strike of enormous power.", 50, 14, 3, strike(4.0)),
     companion: { kind: "cat", name: "Shadow Cat", color: "#24242c" },
   });
-  node(B, 4, assassin, {
+  const shadowdancer = node(B, 3, rogue, {
+    id: "shadowdancer",
+    name: "Shadowdancer",
+    role: "Melee DPS",
+    tagline: "Never where you strike",
+    description: "Evasion, flourish and footwork.",
+    color: "#6a5a7a",
+    statBonus: { agility: 3, vitality: 1 },
+    ability: ability("evasion", "Evasion", "Take 40% less damage for 5 seconds.", 25, 14, 0, buff("armor", 0.4, 5)),
+  });
+  node(B, 4, shadowdancer, {
     id: "phantom",
     name: "Phantom",
     role: "Melee DPS",
     tagline: "Through the veil",
-    description: "An assassin who learned to slip between worlds with shadow magic.",
+    description: "A shadowdancer who learned to slip between worlds with shadow magic.",
     color: "#5a4a8a",
     hybrid: "mage",
     statBonus: { agility: 4, intellect: 4 },
     ability: ability("phase_strike", "Phase Strike", "Phase through space and tear into enemies where you emerge.", 40, 9, 9, dash(9, 2.0, 2.5)),
     companion: { kind: "wisp", name: "Shade", color: "#6a5aa8" },
   });
-  const duelist = node(B, 3, rogue, {
-    id: "duelist",
-    name: "Duelist",
-    role: "Melee DPS",
-    tagline: "En garde",
-    description: "Parry, riposte, repeat.",
-    color: "#7a6a5a",
-    statBonus: { agility: 3, vitality: 1 },
-    ability: ability("riposte", "Riposte", "Take 40% less damage for 5 seconds.", 25, 14, 0, buff("armor", 0.4, 5)),
-  });
-  node(B, 4, duelist, {
-    id: "blademaster",
-    name: "Blademaster",
-    role: "Melee DPS",
-    tagline: "A storm of steel",
-    description: "Perfect blade-work against any number of foes.",
-    color: "#8a8a9a",
-    statBonus: { agility: 6, might: 2 },
-    ability: ability("blade_storm", "Blade Storm", "Become a whirlwind of blades, cutting everything around you.", 40, 9, 0, nova(2.0, 4)),
-    companion: { kind: "raven", name: "Steel Raven", color: "#3a3a44" },
-  });
-  node(B, 4, duelist, {
+  node(B, 4, shadowdancer, {
     id: "swashbuckler",
     name: "Swashbuckler",
     role: "Melee DPS",
     tagline: "Fight dirty, look good",
-    description: "A duelist with a brawler's grit. Takes a punch and throws two.",
+    description: "A shadowdancer with a brawler's grit. Takes a punch and throws two.",
     color: "#a84a3a",
     hybrid: "fighter",
     statBonus: { agility: 4, might: 3, vitality: 1 },
@@ -794,6 +833,43 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
     statBonus: { agility: 2, spirit: 2 },
     basicAttack: { kind: "ranged", range: 11, damage: [4, 7], cooldown: 0.75, projectile: "dagger" },
     ability: ability("fan_of_knives", "Fan of Knives", "Hurl knives at every enemy around you.", 30, 8, 0, nova(1.3, 4)),
+  });
+  const scout = node(B, 3, wanderer, {
+    id: "scout",
+    name: "Scout",
+    role: "Ranged DPS",
+    tagline: "Eyes on the horizon",
+    description: "Takes up the bow. A hunting hawk flies with you from level 25.",
+    color: "#7a6a3a",
+    petLine: true,
+    statBonus: { agility: 3, vitality: 1 },
+    basicAttack: BOW,
+    ability: ability("marked_shot", "Marked Shot", "A precise shot at one enemy.", 25, 7, 16, strike(2.0)),
+    companion: { kind: "hawk", name: "Hunting Hawk", color: "#8a5a2a" },
+  });
+  node(B, 4, scout, {
+    id: "falconer",
+    name: "Falconer",
+    role: "Summoner",
+    tagline: "Death from above",
+    description: "Hunts as a pair with a great war-falcon, a guardian of the open roads.",
+    color: "#9a6a2a",
+    pet: "good",
+    statBonus: { agility: 6, spirit: 2 },
+    basicAttack: { kind: "ranged", range: 15, damage: [6, 10], cooldown: 0.85, projectile: "arrow" },
+    ability: ability("talon_strike", "Talon Strike", "A precise shot at long range, marked by your falcon.", 40, 10, 18, strike(3.0)),
+    companion: { kind: "hawk", name: "War Falcon", color: "#6a4a2a", scale: 1.5 },
+  });
+  node(B, 4, scout, {
+    id: "deadeye",
+    name: "Deadeye",
+    role: "Ranged DPS",
+    tagline: "One arrow, one kill",
+    description: "The finest shot alive.",
+    color: "#7a5a2a",
+    statBonus: { agility: 8 },
+    ability: ability("deadly_aim", "Deadly Aim", "A drawn-out shot of enormous power at extreme range.", 45, 12, 20, strike(3.4)),
+    companion: { kind: "raven", name: "Watcher Crow", color: "#2a2a30" },
   });
   const bard = node(B, 3, wanderer, {
     id: "bard",
@@ -828,41 +904,6 @@ export const BASE_CLASSES: Record<BaseClassId, BaseClassDef> = {
     statBonus: { agility: 4, spirit: 4 },
     ability: ability("dissonance", "Dissonance", "A jarring chord that damages all nearby enemies.", 35, 8, 0, nova(2.2, 5)),
     companion: { kind: "wisp", name: "Echo", color: "#ff9ad8" },
-  });
-  const trapper = node(B, 3, wanderer, {
-    id: "trapper",
-    name: "Trapper",
-    role: "Summoner",
-    tagline: "Patience and a hawk",
-    description: "Trains a hawk that hunts with you from level 25.",
-    color: "#7a6a3a",
-    petLine: true,
-    statBonus: { agility: 3, vitality: 1 },
-    ability: ability("bear_trap", "Bear Trap", "Spring a hidden trap under an enemy.", 25, 9, 10, strike(2.0, 2)),
-    companion: { kind: "hawk", name: "Hunting Hawk", color: "#8a5a2a" },
-  });
-  node(B, 4, trapper, {
-    id: "falconer",
-    name: "Falconer",
-    role: "Summoner",
-    tagline: "Death from above",
-    description: "Hunts as a pair with a great war-falcon.",
-    color: "#9a6a2a",
-    statBonus: { agility: 6, spirit: 2 },
-    basicAttack: { kind: "ranged", range: 15, damage: [6, 10], cooldown: 0.85, projectile: "arrow" },
-    ability: ability("talon_strike", "Talon Strike", "A precise shot at long range, marked by your falcon.", 40, 10, 18, strike(3.0)),
-    companion: { kind: "hawk", name: "War Falcon", color: "#6a4a2a", scale: 1.4 },
-  });
-  node(B, 4, trapper, {
-    id: "plaguebringer",
-    name: "Plaguebringer",
-    role: "Summoner",
-    tagline: "Rot spreads",
-    description: "Commands a swollen plague rat and spreads poison clouds.",
-    color: "#6a8a2a",
-    statBonus: { agility: 4, intellect: 4 },
-    ability: ability("plague_cloud", "Plague Cloud", "Release a choking cloud over an area.", 35, 9, 12, strike(2.0, 4.5)),
-    companion: { kind: "rat", name: "Plague Rat", color: "#5a6a3a", scale: 1.3 },
   });
 }
 
@@ -902,9 +943,9 @@ export function endClassesOf(base: BaseClassId): ClassNode[] {
   return NODES.filter((n) => n.base === base && n.tier === 4);
 }
 
-/** True if this node is an end class of a pet line (or the pet-line specialisation itself). */
+/** True for the 8 pet end classes (2 per base: one good, one evil). */
 export function isPetClass(id: string): boolean {
-  return classPath(id).some((n) => n.petLine);
+  return !!NODE_MAP.get(id)?.pet;
 }
 
 export interface ResolvedKit {
@@ -930,17 +971,15 @@ export function resolveKit(classId: string): ResolvedKit | undefined {
 
 /**
  * The companion a class has, if any:
- *   - pet lines get their pet at tier 3 (level 25) with "pet" power,
- *   - pet classes (tier 4 under a pet line) get an "empowered" companion,
- *   - every other end class gets a "familiar" at tier 4 (level 50).
+ *   - pet lines (tier 3) bring a young companion at 25,
+ *   - pet classes (tier 4) turn it into an "empowered" companion at 50,
+ *   - every other end class has a "familiar" at 50.
  */
 export function companionFor(classId: string): { def: CompanionDef; power: CompanionPower } | null {
-  const path = classPath(classId);
-  const node = path[path.length - 1];
-  if (!node) return null;
-  const petLine = path.some((n) => n.petLine);
-  if (node.tier === 3 && node.petLine && node.companion) return { def: node.companion, power: "pet" };
-  if (node.tier === 4 && node.companion) return { def: node.companion, power: petLine ? "empowered" : "familiar" };
+  const node = NODE_MAP.get(classId);
+  if (!node?.companion) return null;
+  if (node.tier === 3 && node.petLine) return { def: node.companion, power: "pet" };
+  if (node.tier === 4) return { def: node.companion, power: node.pet ? "empowered" : "familiar" };
   return null;
 }
 
@@ -952,12 +991,13 @@ export function advancementOptions(classId: string): { tier: Tier; level: number
   return { tier, level: TIER_LEVELS[tier], quest: GATE_QUESTS[tier], options: childrenOf(classId) };
 }
 
-/** Label for UI: "Hybrid · Fighter + Priest", "Pet class", "Pure". */
+/** Labels for UI, e.g. "Hybrid · Fighter + Priest", "Pet class · Good", "Pet at 25". */
 export function classTags(n: ClassNode): string[] {
   const tags: string[] = [];
   const cap = (b: string) => b[0]!.toUpperCase() + b.slice(1);
   if (n.hybrid) tags.push(`Hybrid · ${cap(n.base)} + ${cap(n.hybrid)}`);
   else if (n.tier === 4) tags.push("Pure");
-  if (n.petLine || (n.tier === 4 && isPetClass(n.id))) tags.push("Pet class");
+  if (n.pet) tags.push(`Pet class · ${n.pet === "good" ? "Good" : "Evil"}`);
+  if (n.petLine) tags.push("Pet at 25");
   return tags;
 }

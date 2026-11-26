@@ -486,7 +486,8 @@ class ProceduralBeast implements Avatar {
 const LOOKS: Record<string, string> = {
   fighter: "warrior",
   knight: "paladin",
-  hunter: "ranger",
+  woodsman: "ranger",
+  scout: "ranger",
   mage: "wizard",
   occultist: "warlock",
   necromancer: "necromancer",
@@ -545,22 +546,25 @@ class ProceduralBird implements Avatar {
 
   constructor(kind: string, color: string, scale: number) {
     const crane = kind === "crane";
-    const dark = `#${new THREE.Color(color).multiplyScalar(0.7).getHexString()}`;
+    const phoenix = kind === "phoenix";
+    const dark = phoenix ? "#ffd040" : `#${new THREE.Color(color).multiplyScalar(0.7).getHexString()}`;
     const beak = kind === "parrot" ? "#e8c040" : crane ? "#c84030" : "#e0b040";
     this.height = 2.3;
     this.root.add(this.body);
-    const torso = mesh(new THREE.SphereGeometry(0.18, 8, 6), color);
+    const torso = mesh(new THREE.SphereGeometry(0.18, 8, 6), color, 0, 0, 0, phoenix);
     torso.scale.set(0.9, 0.9, crane ? 1.6 : 1.3);
     this.body.add(torso);
-    this.body.add(mesh(new THREE.SphereGeometry(0.11, 8, 6), crane ? "#c83a30" : color, 0, 0.1, crane ? 0.36 : 0.22));
+    this.body.add(mesh(new THREE.SphereGeometry(0.11, 8, 6), crane ? "#c83a30" : color, 0, 0.1, crane ? 0.36 : 0.22, phoenix));
     const b = mesh(new THREE.ConeGeometry(0.035, crane ? 0.22 : 0.12, 4), beak, 0, 0.09, crane ? 0.52 : 0.34);
     b.rotation.x = Math.PI / 2;
     this.body.add(b);
-    this.body.add(mesh(box(0.14, 0.03, 0.22), dark, 0, 0, -0.28));
+    // Tail: a long flame for the phoenix.
+    const tail = mesh(box(phoenix ? 0.22 : 0.14, 0.03, phoenix ? 0.6 : 0.22), dark, 0, 0, phoenix ? -0.45 : -0.28, phoenix);
+    this.body.add(tail);
     for (const side of [-1, 1]) {
       const wing = new THREE.Group();
       wing.position.set(side * 0.12, 0.04, 0);
-      wing.add(mesh(box(crane ? 0.6 : 0.42, 0.03, 0.2), dark, side * (crane ? 0.3 : 0.21), 0, 0));
+      wing.add(mesh(box(crane || phoenix ? 0.6 : 0.42, 0.03, phoenix ? 0.28 : 0.2), dark, side * (crane || phoenix ? 0.3 : 0.21), 0, 0, phoenix));
       this.wings.push(wing);
       this.body.add(wing);
     }
@@ -681,7 +685,21 @@ export function createCompanionAvatar(kind: string, color: string, scale: number
     case "crane":
     case "parrot":
     case "songbird":
+    case "phoenix":
       return new ProceduralBird(kind, color, (kind === "songbird" ? 0.75 : 1) * scale);
+    case "demon": {
+      const d = new ProceduralHumanoid({ classId: "minion", flavor: "", color, weapon: "", scale: 0.95 * scale, skin: color });
+      d.root.traverse((o) => {
+        if (o.position.y !== 1.72) return;
+        for (const side of [-1, 1]) {
+          const horn = mesh(new THREE.ConeGeometry(0.06, 0.32, 5), "#1a1414", side * 0.15, 0.3, 0);
+          horn.rotation.z = -side * 0.5;
+          o.add(horn);
+        }
+        o.add(mesh(box(0.07, 0.04, 0.02), "#ffcc33", -0.08, 0.03, 0.18, true), mesh(box(0.07, 0.04, 0.02), "#ffcc33", 0.08, 0.03, 0.18, true));
+      });
+      return d;
+    }
     case "wisp":
       return new ProceduralWisp(color, scale);
     case "skeleton":

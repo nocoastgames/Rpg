@@ -98,10 +98,11 @@ interface CompanionRuntime {
 /** Companion strength relative to its owner, by power. Pet classes' companions are far stronger at 50. */
 const COMPANION_POWER: Record<CompanionPower, { hp: number; damage: number; cooldown: number }> = {
   familiar: { hp: 0.3, damage: 0.3, cooldown: 1.4 },
-  pet: { hp: 0.6, damage: 0.55, cooldown: 1.1 },
+  // Young pets (level 25 on a pet line): a little above a familiar, so the line's non-pet end class doesn't feel a big drop.
+  pet: { hp: 0.4, damage: 0.4, cooldown: 1.25 },
   empowered: { hp: 1.3, damage: 1.15, cooldown: 0.85 },
 };
-const FLYING_KINDS = new Set(["hawk", "raven", "owl", "dove", "crane", "parrot", "songbird", "wisp"]);
+const FLYING_KINDS = new Set(["hawk", "raven", "owl", "dove", "crane", "parrot", "songbird", "phoenix", "wisp"]);
 const COMPANION_SPEED = 6.5;
 const COMPANION_RESPAWN_MS = 12_000;
 

@@ -108,11 +108,20 @@ screen to run full-screen (it ships a web app manifest).
   classes (hybrids blend a second base; every pair of bases has two). Each
   class teaches one ability, so a level-50 character has four plus a basic
   attack. Full tree: [docs/CLASSES.md](docs/CLASSES.md).
-- **Pets and familiars.** One specialisation per base is a pet line
-  (Beastmaster, Necromancer, Wildcaller, Trapper) that brings a pet at 25; its
-  end classes get a much stronger companion at 50 (drake, dire bear, skeletal
-  champion, war falcon…). Every other end class gains a lesser familiar at 50.
-  Companions follow you, fight your target, defend you and return if downed.
+- **Pets and familiars.** Each base has two pet classes on separate lines with
+  different creatures, one traditionally good and one evil:
+
+  | Base | Good | Evil |
+  |---|---|---|
+  | Fighter | Woodsman → **Beastlord** (wolf pup → alpha wolf) | Dark Knight → **Death Knight** (nightmare hound → hellhound) |
+  | Mage | Conjurer → **Phoenix Caller** (firebird → phoenix) | Necromancer → **Lich** (skeletal servant → champion) |
+  | Priest | Wildcaller → **Archdruid** (sapling → ancient treant) | Shaman → **Witch Doctor** (lesser loa → bound loa) |
+  | Thief | Scout → **Falconer** (hawk → war falcon) | Assassin → **Plaguebringer** (plague rat → rat king) |
+
+  The level-25 line brings the young companion; at 50 the pet class grows it
+  into something several times stronger, while every other end class gains a
+  lesser familiar. Companions follow you, fight your target, defend you and
+  return if downed.
 - **Character creation** with name and base class, previewing the whole tree.
 - **The starting valley**: a small forested valley (~100 m × 160 m) walled in by
   mountains. A waterfall in the north cliffs feeds a pool and a winding stream
@@ -158,7 +167,7 @@ screen to run full-screen (it ships a web app manifest).
 
 ![Character creation](docs/images/character-create.png)
 
-| Choosing a path (Character panel) | Companions: familiar wisp, war falcon, skeletal champion, ancestor spirit |
+| Choosing a path (Character panel) | The 8 pet classes at 50: Beastlord, Death Knight, Phoenix Caller, Lich, Archdruid, Witch Doctor, Falconer, Plaguebringer |
 | --- | --- |
 | ![Path](docs/images/path.png) | ![Companions](docs/images/companions.png) |
 
