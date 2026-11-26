@@ -53,6 +53,8 @@ export const Player = schema(
     /** Hidden background (revealed through memories), faith (flavour), and creation point-buy in STAT_IDS order. */
     background: t.string().default(""),
     faith: t.string().default(""),
+    /** Gods this character turned away from by completing another god's epic quest. They never take you back. */
+    abandoned: t.array("string"),
     memories: t.uint8().default(0),
     alloc: t.array("int8"),
     appearance: AppearanceState,

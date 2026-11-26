@@ -279,10 +279,10 @@ export function backgroundBonus(backgroundId: string, type: Passive["type"]): nu
 // alignment matches your god's leaning (good with good, evil with evil,
 // neutral with neutral). If the alignment is one step away (good/neutral or
 // neutral/evil) you can still earn the blessing by completing that god's
-// epic quest. Opposites (good and evil) are never blessed by their own god,
-// but can take a neutral god's epic quest. Completing any god's epic quest
-// makes that god your god. The Faithless may seek any god whose leaning isn't
-// opposed to their path.
+// epic quest. Opposites (good and evil) are never blessed. Completing a god's
+// epic quest makes that god your god; which quests you may take depends on
+// your class's alignment (any god not opposed to it), never on your old god,
+// and a god you have abandoned never takes you back.
 // ---------------------------------------------------------------------------
 
 export interface FaithDef {
@@ -328,15 +328,11 @@ export type BlessingStatus =
   | "active"
   /** Your path is one step from your god's leaning: their epic quest wins their favour. */
   | "needsQuest"
-  /** Your god opposes your path (good vs evil). A neutral god's epic quest can convert you. */
+  /** Your god opposes your path (good vs evil). Another god's epic quest can convert you. */
   | "opposed"
   /** Faithless, or a god without a blessing. */
   | "none";
 
-/** Gods of neutral leaning: the ones an opposed follower can turn to. */
-export function neutralGods(): FaithDef[] {
-  return FAITHS.filter((f) => f.leaning === "Neutral" && f.blessing);
-}
 
 /** Steps between a god's leaning and a class's alignment: 0 same, 1 adjacent, 2 opposite. */
 function leaningDistance(f: FaithDef, classId: string): number {
@@ -353,7 +349,7 @@ export interface BlessingInfo {
  * Your god's blessing:
  *   - same alignment as the god: automatic;
  *   - one step apart (good/neutral, neutral/evil): earned with the god's epic quest;
- *   - opposite (good vs evil): never (but see favorQuestOutcome: a neutral god's quest converts you);
+ *   - opposite (good vs evil): never (another god's epic quest can make them your god: availableFavorQuests);
  *   - Faithless: none.
  */
 export function blessingInfo(faithId: string, classId: string, quests: QuestLog = []): BlessingInfo {
@@ -380,27 +376,37 @@ export function passiveBonus(backgroundId: string, faithId: string, classId: str
   return total;
 }
 
-/** Epic quests a character may undertake right now (each one ends with that god as your god). */
-export function availableFavorQuests(faithId: string, classId: string): FaithDef[] {
-  const own = getFaith(faithId);
-  const open = FAITHS.filter((g) => g.favorQuest && g.blessing && leaningDistance(g, classId) < 2);
-  if (!own || own.leaning === "None") return open; // the Faithless may seek any god that would accept their path
-  const d = leaningDistance(own, classId);
-  if (d === 1) return [own]; // win your own god's favour
-  if (d === 2) return neutralGods(); // your god turned away: a neutral god can take you in
-  return [];
+/**
+ * Epic quests a character may undertake right now. Completing one makes that
+ * god your god. Eligibility depends on your class's alignment, not on your
+ * current god: any god within one step of your path (good/neutral or
+ * neutral/evil), never one opposed to it, never a god you have abandoned, and
+ * not your current god once they already bless you.
+ */
+export function availableFavorQuests(faithId: string, classId: string, quests: QuestLog = [], abandoned: QuestLog = []): FaithDef[] {
+  return FAITHS.filter(
+    (g) =>
+      !!g.favorQuest &&
+      !!g.blessing &&
+      leaningDistance(g, classId) < 2 &&
+      !abandoned.includes(g.id) &&
+      !(g.id === faithId && blessingActive(faithId, classId, quests)),
+  );
 }
 
-/**
- * Result of completing a god's epic quest: that god becomes your god and
- * favours you. Only quests from availableFavorQuests() count.
- */
-export function favorQuestOutcome(faithId: string, classId: string, questId: string): { ok: true; newFaith: FaithDef } | { ok: false; reason: string } {
+/** Result of completing a god's epic quest: that god becomes your god and favours you. */
+export function favorQuestOutcome(
+  faithId: string,
+  classId: string,
+  questId: string,
+  quests: QuestLog = [],
+  abandoned: QuestLog = [],
+): { ok: true; newFaith: FaithDef } | { ok: false; reason: string } {
   const god = FAITHS.find((g) => g.favorQuest?.id === questId);
   if (!god) return { ok: false, reason: "That is not an epic quest of the gods." };
-  if (!availableFavorQuests(faithId, classId).some((g) => g.id === god.id)) {
-    return { ok: false, reason: `${god.name} does not offer you this quest on your current path.` };
-  }
+  if (abandoned.includes(god.id)) return { ok: false, reason: `You turned your back on ${god.name}. They will not take you back.` };
+  if (leaningDistance(god, classId) === 2) return { ok: false, reason: `${god.name} will never bless a ${classAlignment(classId)} path.` };
+  if (god.id === faithId && blessingActive(faithId, classId, quests)) return { ok: false, reason: `${god.name} already blesses you.` };
   return { ok: true, newFaith: god };
 }
 

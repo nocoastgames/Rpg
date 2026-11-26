@@ -344,7 +344,7 @@ export class Game {
     if (faith && info.blessedBy?.id !== blessedBefore) {
       if (info.status === "active") this.events.notice(id, `${faith.name}'s blessing settles on you: ${faith.blessingText}.`);
       else if (info.status === "needsQuest") this.events.notice(id, `${faith.name}'s favour fades from your new path. Complete ${faith.favorQuest?.name ?? "an epic quest"} to win it back.`);
-      else this.events.notice(id, `${faith.name} will never bless a path like yours. A neutral god's epic quest could still take you in.`);
+      else this.events.notice(id, `${faith.name} will never bless a path like yours. Another god's epic quest could make them your god.`);
     }
     this.syncCompanion(id);
     const c = companionFor(classId);
@@ -366,17 +366,17 @@ export class Game {
   completeQuest(id: string, questId: string): boolean {
     const p = this.state.players.get(id);
     if (!p) return false;
-    if (p.quests.includes(questId)) return true;
     // Epic quests of the gods: completing one makes that god your god.
     if (FAITHS.some((f) => f.favorQuest?.id === questId)) {
-      const outcome = favorQuestOutcome(p.faith, p.classId, questId);
+      const outcome = favorQuestOutcome(p.faith, p.classId, questId, p.quests, p.abandoned);
       if (!outcome.ok) {
         this.events.notice(id, outcome.reason);
         return false;
       }
       const previous = getFaith(p.faith);
+      if (previous?.blessing && previous.id !== outcome.newFaith.id) p.abandoned.push(previous.id);
       p.faith = outcome.newFaith.id;
-      p.quests.push(questId);
+      if (!p.quests.includes(questId)) p.quests.push(questId);
       const god = outcome.newFaith;
       this.events.notice(
         id,
@@ -385,7 +385,7 @@ export class Game {
           : `${god.name} accepts your devotion. Blessing: ${god.blessingText}.`,
       );
       if (previous && previous.id !== god.id) this.events.announce(`${p.name} now follows ${god.name}.`);
-    } else {
+    } else if (!p.quests.includes(questId)) {
       p.quests.push(questId);
     }
     const rt = this.players.get(id);

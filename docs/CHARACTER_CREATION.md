@@ -50,31 +50,30 @@ alignment comes from your path (for example Knight and Paladin are good;
 Marauder, Dark Knight and Lich are evil; Archmage is neutral), so a
 blessing can change when you advance.
 
-| Your path vs. your god | Blessing |
+| Your path vs. the god | Blessing |
 | --- | --- |
 | Same (good/good, neutral/neutral, evil/evil) | Automatic |
 | One step apart (good/neutral or neutral/evil) | Earned by completing the god's **epic quest** |
-| Opposite (good/evil) | Never from your own god. A **neutral** god's epic quest (*The Endless Road*, *The Unwritten Page* or *The Far Shore*) is open to you instead |
+| Opposite (good/evil) | Never. A Paladin can never be blessed by an evil god; it's too far apart |
 
 **Completing a god's epic quest makes that god your god.** Your faith
-changes to them and their blessing applies from then on. Which epic quests
-you can take:
+changes to them and their blessing applies from then on.
 
-- **Your god is one step from your path:** your own god's quest. A neutral
-  Archmage of Solenne wins the Dawn Mother's favour through *The Long Dawn*.
-- **Your god opposes your path:** any neutral god's quest. A Lich of Solenne
-  can never be blessed by her, but completing *The Far Shore* makes the
-  Grey Ferryman their god.
-- **Faithless:** the quest of any god whose leaning isn't opposed to your
-  path. Completing it ends your faithlessness.
-- **Your god already blesses you:** none needed.
+- **Which quests you can take depends on your class, not your old god.**
+  Any god within one step of your path's alignment: a good Paladin can seek
+  any good or neutral god, an evil Lich any evil or neutral god, and a
+  neutral Archmage any god at all. Your current god's quest is offered until
+  you've won their favour.
+- **You can switch again** by completing another god's quest.
+- **You can never go back to a god you abandoned.** A Paladin raised to
+  Kaelthar who turns to Solenne, then to Orren, can never return to Solenne
+  or Kaelthar.
+- **The Faithless** follow the same rule; their first quest gives them a god.
 
-Good can never take an evil god's quest and evil can never take a good
-god's, so good and evil never bless each other. Favour stays with the god:
-if your path later drifts one step away from them, the favour you won still
-counts. You are told when a blessing turns on or off or your god changes,
-and the Past section of the character panel shows the status and the quests
-open to you.
+Favour stays with the god: if your path later drifts one step away from
+them, the favour you won still counts. You are told when a blessing turns
+on or off or your god changes. The Past section of the character panel
+shows the status, the quests open to you and the gods you abandoned.
 
 | Faith | Domain | Leaning | Blessing | Epic quest |
 | --- | --- | --- | --- | --- |

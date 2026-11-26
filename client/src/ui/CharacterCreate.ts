@@ -372,7 +372,7 @@ export function showCharacterCreate(root: HTMLElement, error?: string): Promise<
       h(
         "p.cc-desc",
         null,
-        "When you woke, a prayer was already on your lips. Which god did it call to? Each god quietly blesses followers whose path matches theirs: good, neutral or evil. A path one step away can win the blessing with the god's epic quest. Good and evil never bless each other, but a follower whose god opposes their path can turn to a neutral god through that god's quest. Completing a god's epic quest makes them your god. Every calling starts neutral; your path decides later.",
+        "When you woke, a prayer was already on your lips. Which god did it call to? Each god quietly blesses followers whose path matches theirs: good, neutral or evil. A path one step away can win the blessing with the god's epic quest. Good and evil never bless each other. Completing any god's epic quest makes them your god: you can take the quest of any god your path isn't opposed to, but a god you abandon never takes you back. Every calling starts neutral; your path decides later.",
       ),
       h(
         "div.cc-faiths",

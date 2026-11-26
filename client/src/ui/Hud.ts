@@ -456,7 +456,7 @@ export class Hud {
 
   /** Faith and the half-remembered past: memories recovered so far; the background is named once fully remembered. */
   private renderPast(p: PlayerView): void {
-    const key = `${p.faith}|${p.background}|${p.memories}|${p.level}|${p.classId}|${p.quests.length}`;
+    const key = `${p.faith}|${p.background}|${p.memories}|${p.level}|${p.classId}|${p.quests.length}|${p.abandoned.length}`;
     if (key === this.pastKey) return;
     this.pastKey = key;
     const faith = getFaith(p.faith);
@@ -471,7 +471,7 @@ export class Hud {
         h("span.past-label", null, "Faith "),
         faith ? h("span", { style: `color:${faith.color}` }, `${faith.name}${faith.title ? " " + faith.title : ""}`) : "—",
       ),
-      faith?.blessing ? this.blessingLine(p, faith) : null,
+      ...this.blessingLine(p, faith),
       h("div.past-row", null, h("span.past-label", null, "Who you were "), revealed && bg ? h("b", null, bg.name) : h("i", null, "You don't remember yet.")),
       revealed && bg ? h("div.past-passive", null, bg.passiveText) : null,
       h(
@@ -485,19 +485,26 @@ export class Hud {
     this.pastEl.replaceChildren(...parts.filter((n): n is Node => !!n));
   }
 
-  private blessingLine(p: PlayerView, faith: NonNullable<ReturnType<typeof getFaith>>): HTMLElement {
-    const info = blessingInfo(p.faith, p.classId, p.quests);
+  private blessingLine(p: PlayerView, faith: ReturnType<typeof getFaith>): HTMLElement[] {
+    const info = faith?.blessing ? blessingInfo(p.faith, p.classId, p.quests) : undefined;
     const path = classAlignment(p.classId);
-    const options = availableFavorQuests(p.faith, p.classId)
+    const options = availableFavorQuests(p.faith, p.classId, p.quests, p.abandoned)
       .map((g) => `${g.favorQuest?.name} (${g.name})`)
       .join(", ");
-    const text =
-      info.status === "active"
-        ? `Blessing: ${faith.blessingText}.`
-        : info.status === "needsQuest"
-          ? `Blessing not yet earned: ${faith.name} favours ${faith.leaning.toLowerCase()} paths and yours is ${path}. Complete the epic quest ${faith.favorQuest?.name} to win their favour.`
-          : `${faith.name} will never bless a ${path} path. A neutral god's epic quest would make them your god: ${options}.`;
-    return h(`div.past-blessing${info.blessedBy ? ".active" : ""}` as "div", null, text);
+    const status =
+      !faith?.blessing || !info
+        ? "No god watches over you."
+        : info.status === "active"
+          ? `Blessing: ${faith.blessingText}.`
+          : info.status === "needsQuest"
+            ? `Blessing not yet earned: ${faith.name} favours ${faith.leaning.toLowerCase()} paths and yours is ${path}.`
+            : `${faith.name} will never bless a ${path} path.`;
+    const abandoned = Array.from(p.abandoned, (id) => getFaith(id)?.name ?? id);
+    return [
+      h(`div.past-blessing${info?.blessedBy ? ".active" : ""}` as "div", null, status),
+      options ? h("div.past-hint", null, `Epic quests open to you (completing one makes that god your god): ${options}.`) : null,
+      abandoned.length ? h("div.past-hint", null, `Abandoned, never to take you back: ${abandoned.join(", ")}.`) : null,
+    ].filter((n) => n !== null) as HTMLElement[];
   }
 
   /** Path breadcrumb, companion, and the next advancement choice. */

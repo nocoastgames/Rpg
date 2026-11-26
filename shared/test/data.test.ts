@@ -177,20 +177,25 @@ test("adjacent paths can earn a blessing by epic quest; opposites never can", ()
 import { availableFavorQuests, blessingInfo, favorQuestOutcome } from "../src/character.ts";
 
 test("completing a god's epic quest makes them your god; which quests are offered", () => {
-  // Adjacent: only your own god's quest.
-  assert.deepEqual(availableFavorQuests("solenne", "fighter").map((g) => g.id), ["solenne"]);
-  // Matching: nothing needed.
-  assert.deepEqual(availableFavorQuests("solenne", "paladin"), []);
-  // Opposed: the neutral gods.
-  assert.deepEqual(availableFavorQuests("kaelthar", "paladin").map((g) => g.id).sort(), ["ferryman", "mirevel", "orren"]);
-  const conv = favorQuestOutcome("kaelthar", "paladin", "favor_orren");
-  assert.ok(conv.ok && conv.newFaith.id === "orren");
-  assert.equal(blessingInfo("orren", "paladin", ["favor_orren"]).status, "active", "the new god blesses you");
-  // Evil can't get good, good can't get evil, even by quest.
-  assert.equal(favorQuestOutcome("kaelthar", "paladin", "favor_kaelthar").ok, false);
-  assert.equal(favorQuestOutcome("kaelthar", "paladin", "favor_solenne").ok, false);
-  assert.equal(favorQuestOutcome("orren", "lich", "favor_solenne").ok, false);
-  // Faithless can seek any god not opposed to their path.
-  assert.ok(availableFavorQuests("faithless", "lich").every((g) => g.leaning !== "Good"));
+  const ids = (l: { id: string }[]) => l.map((g) => g.id).sort();
+  const good = ["green_mother", "solenne", "valdris"], neutral = ["ferryman", "mirevel", "orren"], evil = ["kaelthar", "rot_below", "veiled_one"];
+  // Eligibility comes from the class, not the current god: a Paladin (good) can seek any good or neutral god, never an evil one.
+  assert.deepEqual(ids(availableFavorQuests("kaelthar", "paladin")), [...good, ...neutral].sort());
+  assert.deepEqual(ids(availableFavorQuests("solenne", "paladin")), ["ferryman", "green_mother", "mirevel", "orren", "valdris"], "not your own god once they bless you");
+  assert.deepEqual(ids(availableFavorQuests("orren", "lich")), [...neutral, ...evil].sort(), "own god still offered until their favour is won");
+  assert.ok(!availableFavorQuests("orren", "lich", ["favor_orren"]).some((g) => g.id === "orren"));
+  // A neutral class can seek anyone, including its own god while unblessed.
+  assert.deepEqual(ids(availableFavorQuests("solenne", "fighter")), [...good, ...neutral, ...evil].sort());
   assert.ok(availableFavorQuests("faithless", "fighter").length === 9);
+
+  const conv = favorQuestOutcome("kaelthar", "paladin", "favor_solenne");
+  assert.ok(conv.ok && conv.newFaith.id === "solenne");
+  assert.equal(blessingInfo("orren", "paladin", ["favor_orren"]).status, "active", "the new god blesses you");
+  // Too far apart, whatever your current god.
+  assert.equal(favorQuestOutcome("orren", "paladin", "favor_kaelthar").ok, false);
+  assert.equal(favorQuestOutcome("orren", "lich", "favor_solenne").ok, false);
+  // Switching again is fine; going back to an abandoned god is not.
+  assert.ok(favorQuestOutcome("orren", "paladin", "favor_mirevel", ["favor_orren"], ["solenne"]).ok);
+  assert.equal(favorQuestOutcome("orren", "paladin", "favor_solenne", ["favor_orren"], ["solenne"]).ok, false);
+  assert.ok(!availableFavorQuests("orren", "paladin", ["favor_orren"], ["solenne"]).some((g) => g.id === "solenne"));
 });

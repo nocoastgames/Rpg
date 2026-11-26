@@ -25,6 +25,8 @@ export interface PlayerView {
   /** Hidden background id (the UI only shows it once remembered). */
   background: string;
   faith: string;
+  /** Gods abandoned by converting; they never take you back. */
+  abandoned: ArrayLike<string> & { includes(id: string): boolean };
   /** Number of memory fragments recovered. */
   memories: number;
   /** Creation point-buy, in STAT_IDS order. */
