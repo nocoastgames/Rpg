@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { generateWorld, isFree, isInWater, type World } from "../src/world.ts";
+import { generateWorld, isFree, isInWater, resolveCollisions, type World } from "../src/world.ts";
+import { DUNGEON_CELL, dungeonSdf, inDungeon } from "../src/valley.ts";
 import { PASS_END, fromUV, landmarks, terrainHeight, valleySdf } from "../src/valley.ts";
 
 const world = generateWorld(1337);
@@ -40,7 +41,19 @@ test("spawn is a dry free spot inside the valley, next to the stream", () => {
 
 test("every landmark can be walked to from the spawn point", () => {
   const canReach = reachable(world);
-  for (const l of landmarks()) assert.ok(canReach(l.x, l.z), `${l.id} is not reachable`);
+  for (const l of landmarks()) if (!inDungeon(l.x, l.z)) assert.ok(canReach(l.x, l.z), `${l.id} is not reachable`);
+});
+
+test("the dungeon cell is far from the valley, walkable inside, and sealed", () => {
+  const w = generateWorld(1337);
+  const canReach = reachable(w);
+  assert.ok(Math.hypot(DUNGEON_CELL.x, DUNGEON_CELL.z) > 400, "far away");
+  assert.ok(isFree(w, DUNGEON_CELL.x, DUNGEON_CELL.z), "you can stand in the cell");
+  assert.equal(canReach(DUNGEON_CELL.x, DUNGEON_CELL.z), false, "no walking there from the valley");
+  // Walls hold: pushing out of the cell ends up back inside.
+  const out = resolveCollisions(w, DUNGEON_CELL.x + DUNGEON_CELL.halfW + 1, DUNGEON_CELL.z);
+  assert.ok(out.x < DUNGEON_CELL.x + DUNGEON_CELL.halfW, "cell wall");
+  for (const l of w.landmarks.filter((m) => inDungeon(m.x, m.z) && m.interactRadius > 0)) assert.ok(dungeonSdf(l.x, l.z) > 0.4, `${l.id} inside the cell`);
 });
 
 test("the pass is sealed while the gate is closed and walkable once opened", () => {

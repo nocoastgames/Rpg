@@ -25,6 +25,18 @@ PlayCanvas (engine is MIT but the editor is hosted/proprietary), Phaser (2D
 only, would mean sprite-based isometric art), Godot web export (large WASM
 download, harder to iterate on web networking).
 
+## Play it
+
+A single-player playtest build (the same game rules, running in your
+browser, no server) is published at
+**<https://claude.ai/artifact/NQf7rgmJppqnD6PubmUHLd>** (private to the owner
+until shared). Dev chat commands are on there for testing: press Enter and
+type e.g. `/quest silent_village`, `/tp vendor` or `/tp cell`.
+
+Build it yourself with `npm run build:offline` (output in `client/dist-offline/`,
+static files you can host anywhere). Multiplayer needs the Node server (see
+below; the Dockerfile runs it on any container host).
+
 ## Quick start
 
 Requires **Node.js 20+**.
@@ -60,7 +72,7 @@ When the server is not running with `NODE_ENV=production`, these chat commands h
 
 | Command | Effect |
 | --- | --- |
-| `/tp <place>` | Teleport to `spawn`, `pool`, `camp`, `vendor`, `village`, `crypt`, `ruins_seal`, `cave_thorns`, `valley_exit`, `signpost`, a shrine (`shrine_<god>`) or a hunting ground (`tusk_meadow`, `greypine_wood`, `webbed_hollow`, `thornbrake`) |
+| `/tp <place>` | Teleport to `spawn`, `pool`, `camp`, `vendor`, `village`, `crypt`, `cell`, `ruins_seal`, `cave_thorns`, `valley_exit`, `signpost`, a shrine (`shrine_<god>`) or a hunting ground (`tusk_meadow`, `greypine_wood`, `webbed_hollow`, `thornbrake`) |
 | `/open <gate>` / `/close <gate>` | Open or seal `valley_exit`, `ruins_seal` or `cave_thorns` for everyone |
 | `/level <n>` | Set your level |
 | `/quest <id\|all\|favor>` | Complete a gate trial (`trial_of_paths`, `trial_of_mastery`), or a god's epic quest (`favor` for your own god's, or `favor_<god>`); completing one makes that god your god |
@@ -73,6 +85,7 @@ When the server is not running with `NODE_ENV=production`, these chat commands h
 
 | Command | What it does |
 | --- | --- |
+| `npm run build:offline` | Single-player build (game rules run in the page) into `client/dist-offline/` |
 | `npm run typecheck` | Type-check all three packages |
 | `npm test` | Unit tests for shared data/world/movement |
 | `npm run docs:classes` | Regenerate [docs/CLASSES.md](docs/CLASSES.md) from the class data |
@@ -146,7 +159,9 @@ screen to run full-screen (it ships a web app manifest).
     about 20 minutes), sends you into **Ashford**, a village overrun by the
     dead (levels 2–3), to face Old Corwin the gravedigger and the Hollow
     Priest. The reward is your calling's first upper-body armour, and the
-    kingdom clears the road out.
+    kingdom clears the road out, where the King's soldiers arrest you and
+    throw you in a castle dungeon cell far from the valley (only the cell is
+    built so far).
   - **Loot, coins and equipment**: creatures drop pelts, hides, meat, silk,
     bones, coins and rusty gear. Equip weapons and armour from your pack
     (armour shows on your character). Food heals over time out of combat,

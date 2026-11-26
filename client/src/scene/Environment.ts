@@ -134,6 +134,12 @@ export class Environment {
     (this.motes.material as THREE.PointsMaterial).color.set("#fff3b0").lerp(new THREE.Color("#d8f07a"), p.fireflies);
   }
 
+  /** Indoors (the dungeon) there's no pollen, fireflies or mist. */
+  setOutdoors(outdoors: boolean): void {
+    this.motes.visible = outdoors;
+    this.mist.visible = outdoors;
+  }
+
   /** Keep the shadow frustum centred on the player; animate water and particles. */
   update(_dt: number, time: number, focus: THREE.Vector3): void {
     this.sun.position.copy(focus).add(this.sunOffset);

@@ -145,6 +145,16 @@ export interface DialogEvent {
   npc: string;
 }
 
+/** A short scripted scene: lines shown in turn over a darkening screen; controls are locked meanwhile. */
+export interface CutsceneEvent {
+  id: string;
+  lines: string[];
+  /** Total length (ms). */
+  ms: number;
+  /** When (ms from the start) the screen is fully black. */
+  blackAt: number;
+}
+
 export const S2C = {
   hit: "hit",
   fx: "fx",
@@ -153,4 +163,5 @@ export const S2C = {
   memory: "memory",
   read: "read",
   dialog: "dialog",
+  cutscene: "cutscene",
 } as const;

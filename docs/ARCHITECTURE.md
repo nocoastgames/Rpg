@@ -99,6 +99,15 @@ whenever the hour changes, so a day/night cycle only needs to call
 **Art is optional.** See [ASSETS.md](ASSETS.md). Procedural placeholders are
 always available; glTF models are layered on through a manifest.
 
+## Room logic and the single-player build
+
+`server/src/rooms/RoomLogic.ts` holds everything a world instance does
+(joining, message handling, dev commands, ticking the `Game`). The Colyseus
+`ForestRoom` is a thin adapter around it. The offline build
+(`npm run build:offline`) bundles the same `RoomLogic` into the client and
+drives it through `client/src/local/LocalRoom.ts`, which looks to the client
+like a Colyseus room. So single-player runs the exact multiplayer rules.
+
 ## Network messages
 
 Defined in `shared/src/protocol.ts`.

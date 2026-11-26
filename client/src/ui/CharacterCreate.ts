@@ -396,7 +396,7 @@ export function showCharacterCreate(root: HTMLElement, error?: string): Promise<
               ? h(
                   "div.cc-faith-blessing",
                   null,
-                  `Blessing for ${f.leaning.toLowerCase()} paths: ${f.blessingText}. ${f.leaning === "Neutral" ? "Good or evil paths" : "Neutral paths"} can earn it through ${f.favorQuest?.name}.`,
+                  `Blessing for ${f.leaning.toLowerCase()} paths: ${f.blessingText}. ${f.leaning === "Neutral" ? "Good or evil paths" : "Neutral paths"} can earn it through an epic quest in their name.`,
                 )
               : h("div.cc-faith-blessing", null, "No blessing."),
           ),

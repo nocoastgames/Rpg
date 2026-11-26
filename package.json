@@ -15,7 +15,8 @@
     "start": "npm run start -w server",
     "typecheck": "npm run typecheck -w shared && npm run typecheck -w server && npm run typecheck -w client",
     "test": "npm run test -w shared",
-    "docs:classes": "node --experimental-strip-types scripts/gen-class-docs.ts"
+    "docs:classes": "node --experimental-strip-types scripts/gen-class-docs.ts",
+    "build:offline": "npm run build:offline -w client"
   },
   "engines": {
     "node": ">=20"

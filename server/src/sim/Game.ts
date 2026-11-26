@@ -50,6 +50,8 @@ import {
   STAT_IDS,
   FAITHS,
   blessingInfo,
+  epicQuestName,
+  loreFlag,
   favorQuestOutcome,
   getFaith,
   getBackground,
@@ -66,6 +68,11 @@ import {
   type QuestEffect,
   type ReadEvent,
   type DialogEvent,
+  type CutsceneEvent,
+  DUNGEON_CELL,
+  GUARD_TRIGGER_U,
+  inDungeon,
+  toUV,
   type LandmarkDef,
   type QuestObjective,
   type StatusId,
@@ -106,6 +113,8 @@ export interface GameEvents {
   read(playerId: string, e: ReadEvent): void;
   /** Open a conversation (and shop) with someone. */
   dialog(playerId: string, e: DialogEvent): void;
+  /** Play a short scripted scene for one player. */
+  cutscene(playerId: string, e: CutsceneEvent): void;
 }
 
 interface PlayerRuntime {
@@ -122,6 +131,10 @@ interface PlayerRuntime {
   /** Timed action in progress (gathering, building); finishes unless interrupted. */
   channel: (() => void) | null;
   nextPotionAt: number;
+  /** In a scripted scene: controls ignored until then. */
+  lockedUntil: number;
+  /** Being arrested at the road out: when you're taken to the cell. */
+  arrestAt: number;
   /** Fighting until this time (food can't be eaten, meals are interrupted). */
   combatUntil: number;
   nextReachCheck: number;
@@ -181,6 +194,16 @@ const POTION_COOLDOWN_MS = 15_000;
 const COMBAT_LINGER_MS = 5_000;
 /** From Haskel's signal fire to the road being dug out. */
 const ROAD_CLEARING_MS = 20_000;
+/** The arrest scene: total length, and when (screen black) you're taken to the cell. */
+const ARREST_MS = 16_000;
+const ARREST_TAKEN_MS = 11_000;
+const ARREST_LINES = [
+  "Beyond the rockslide, a line of soldiers in the King's blue and silver blocks the road.",
+  "\"Halt! You came out of that valley? Out of Ashford?\"",
+  "\"The dead walk down there, and you're the only living soul to walk out. Nobody can explain that. On your knees. By order of the Crown, you're under arrest.\"",
+  "Rough hands. A sack over your head. Days in a jolting cart, then stone, and cold, and dark.",
+  "You wake on wet straw in a cell. Wherever this is, it's a long way from the valley.",
+];
 
 /** Named creatures: where they appear and whether they come back. */
 const SPECIALS: Record<string, { level: number; at: () => { x: number; z: number }; respawnMs: number | null; leash: number }> = {
@@ -271,6 +294,8 @@ export class Game {
       nextPrayAt: 0,
       channel: null,
       nextPotionAt: 0,
+      lockedUntil: 0,
+      arrestAt: 0,
       combatUntil: 0,
       nextReachCheck: 0,
     });
@@ -286,9 +311,15 @@ export class Game {
     for (const e of this.enemies.values()) if (e.targetId === id) e.targetId = null;
   }
 
+  /** Controls are locked during scripted scenes. */
+  private locked(id: string): boolean {
+    const rt = this.players.get(id);
+    return !!rt && this.now < rt.lockedUntil;
+  }
+
   setMoveDir(id: string, x: number, z: number): void {
     const rt = this.players.get(id);
-    if (!rt) return;
+    if (!rt || this.locked(id)) return;
     // Keep analog magnitude (0..1) so a half-pushed stick walks slower.
     let len = Math.hypot(x, z);
     if (len < MOVE_DEADZONE) len = 0;
@@ -304,7 +335,7 @@ export class Game {
 
   setMoveTo(id: string, x: number, z: number): void {
     const rt = this.players.get(id);
-    if (!rt) return;
+    if (!rt || this.locked(id)) return;
     rt.intent.target = { x, z };
     rt.attackTargetId = null;
     this.cancelChannel(id);
@@ -312,7 +343,7 @@ export class Game {
 
   setAttackTarget(id: string, enemyId: string): void {
     const rt = this.players.get(id);
-    if (!rt || !this.state.enemies.has(enemyId)) return;
+    if (!rt || !this.state.enemies.has(enemyId) || this.locked(id)) return;
     rt.attackTargetId = enemyId;
     rt.intent.target = null;
     this.cancelChannel(id);
@@ -321,7 +352,7 @@ export class Game {
   castAbility(id: string, slot: number, x: number, z: number): void {
     const p = this.state.players.get(id);
     const rt = this.players.get(id);
-    if (!p || !rt || p.anim === "dead") return;
+    if (!p || !rt || p.anim === "dead" || this.locked(id)) return;
     const ability = rt.ch.kit.abilities[slot];
     if (!ability) {
       this.events.notice(id, "You haven't learned that ability yet.");
@@ -416,6 +447,12 @@ export class Game {
       }
       case "read": {
         this.events.read(id, { title: use.title, text: use.text });
+        for (const faith of use.reveals ?? []) {
+          if (p.quests.includes(loreFlag(faith))) continue;
+          p.quests.push(loreFlag(faith));
+          const god = getFaith(faith);
+          if (god?.favorQuest) this.events.notice(id, `You have learned of ${god.favorQuest.name}, an epic quest of ${god.name}.`);
+        }
         const flag = `read_${def.id}`;
         if (!p.quests.includes(flag)) {
           p.quests.push(flag);
@@ -514,7 +551,7 @@ export class Game {
   interact(id: string): void {
     const p = this.state.players.get(id);
     const rt = this.players.get(id);
-    if (!p || !rt || p.anim === "dead" || rt.channel) return;
+    if (!p || !rt || p.anim === "dead" || rt.channel || this.locked(id)) return;
     const target = findInteractable(this.world, p.x, p.z, (n) => this.wantsNode(p, n));
     if (!target) {
       this.events.notice(id, "There is nothing here to interact with.");
@@ -618,8 +655,7 @@ export class Game {
     const god = getFaith(l.faith ?? "");
     if (!god) return;
     if (p.faith !== god.id) {
-      const quest = god.favorQuest ? ` Completing ${god.favorQuest.name} would make ${god.name} your god.` : "";
-      this.events.notice(id, `${l.lockedText} It is a shrine to ${god.name}, ${god.title}. It does not answer you.${quest}`);
+      this.events.notice(id, `${l.lockedText} It is a shrine to ${god.name}, ${god.title}. It does not answer you.`);
       return;
     }
     const first = !p.quests.includes(prayedFlag(god.id));
@@ -644,7 +680,7 @@ export class Game {
         info.status === "active"
           ? `You kneel and pray. ${god.name} answers: their blessing settles on you. ${god.blessingText}.`
           : info.status === "needsQuest"
-            ? `You kneel and pray. ${god.name} hears you, but your path is not yet theirs. Complete ${god.favorQuest?.name ?? "their epic quest"} and the blessing will follow.`
+            ? `You kneel and pray. ${god.name} hears you, but your path is not yet theirs. Win their favour with ${epicQuestName(god.id, p.quests)} and the blessing will follow.`
             : `You kneel and pray. ${god.name} hears you, but will never bless a path like yours.`,
       );
     } else {
@@ -1073,7 +1109,7 @@ export class Game {
     if (faith && info.status !== blessingBefore) {
       if (info.status === "active") this.events.notice(id, `${faith.name}'s blessing settles on you: ${faith.blessingText}.`);
       else if (info.status === "awaitsPrayer") this.events.notice(id, `${faith.name} now favours your path. Pray at their shrine to receive the blessing.`);
-      else if (info.status === "needsQuest") this.events.notice(id, `${faith.name}'s favour fades from your new path. Complete ${faith.favorQuest?.name ?? "an epic quest"} to win it back.`);
+      else if (info.status === "needsQuest") this.events.notice(id, `${faith.name}'s favour fades from your new path. Win it back with ${epicQuestName(faith.id, p.quests)}.`);
       else if (info.status === "opposed") this.events.notice(id, `${faith.name} will never bless a path like yours. Another god's epic quest could make them your god.`);
     }
     this.syncCompanion(id);
@@ -1304,16 +1340,46 @@ export class Game {
     const p = this.state.players.get(id);
     const rt = this.players.get(id);
     const pool = poolCenter();
-    const named: Record<string, { x: number; z: number }> = { spawn: this.world.spawn, pool: fromUV(pool.u, pool.v + POOL_RADIUS + 2), camp: this.campPos };
+    const named: Record<string, { x: number; z: number }> = { spawn: this.world.spawn, pool: fromUV(pool.u, pool.v + POOL_RADIUS + 2), camp: this.campPos, cell: DUNGEON_CELL };
     for (const z of ZONES) named[z.id] = fromUV(z.u, z.v);
     const l = named[landmarkId] ?? this.world.landmarks.find((m) => m.id === landmarkId);
     if (!p || !rt || !l) return false;
     const spot = this.findFreeSpotNear(l.x, l.z, 1);
     p.x = spot.x;
     p.z = spot.z;
+    p.region = inDungeon(spot.x, spot.z) ? "dungeon" : "valley";
     rt.intent = { dirX: 0, dirZ: 0, target: null };
     rt.attackTargetId = null;
     return true;
+  }
+
+  // -------------------------------------------------------------------------
+  // The road out: the King's soldiers are waiting
+  // -------------------------------------------------------------------------
+
+  /** Once the road is cleared, walking out through the pass gets you arrested. */
+  private checkRoadOut(id: string, p: Player, rt: PlayerRuntime): void {
+    if (p.region !== "valley" || rt.arrestAt || !this.state.gates.get("valley_exit")) return;
+    if (toUV(p.x, p.z).u < GUARD_TRIGGER_U) return;
+    rt.arrestAt = this.now + ARREST_TAKEN_MS;
+    rt.lockedUntil = this.now + ARREST_MS;
+    rt.intent = { dirX: 0, dirZ: 0, target: null };
+    rt.attackTargetId = null;
+    this.cancelChannel(id);
+    p.anim = "idle";
+    this.events.cutscene(id, { id: "arrest", lines: ARREST_LINES, ms: ARREST_MS, blackAt: 9_000 });
+    this.events.announce(`The King's soldiers have seized ${p.name} at the pass.`);
+  }
+
+  private takeToCell(id: string, p: Player, rt: PlayerRuntime): void {
+    rt.arrestAt = 0;
+    p.region = "dungeon";
+    p.x = DUNGEON_CELL.x - 0.5;
+    p.z = DUNGEON_CELL.z + 0.4;
+    p.facing = Math.PI;
+    p.hp = p.maxHp;
+    p.statuses.clear();
+    for (const e of this.enemies.values()) if (e.targetId === id || e.targetId === `c:${id}`) e.targetId = null;
   }
 
   /** Open or seal a gate (story hook; also exposed as a dev chat command). */
@@ -1375,7 +1441,9 @@ export class Game {
     if (this.now >= rt.nextReachCheck) {
       rt.nextReachCheck = this.now + 400;
       this.checkReach(id, p);
+      this.checkRoadOut(id, p, rt);
     }
+    if (rt.arrestAt && this.now >= rt.arrestAt) this.takeToCell(id, p, rt);
 
     // Chase-and-attack takes priority over plain movement.
     let intent = rt.intent;
@@ -1680,7 +1748,7 @@ export class Game {
 
   /** You come back by the stream, or at the camp fire once it is built. */
   private respawn(p: Player, rt: PlayerRuntime): void {
-    const home = this.state.campBuilt ? this.campPos : this.world.spawn;
+    const home = p.region === "dungeon" ? DUNGEON_CELL : this.state.campBuilt ? this.campPos : this.world.spawn;
     const spot = this.findFreeSpotNear(home.x, home.z, 3);
     p.x = spot.x;
     p.z = spot.z;

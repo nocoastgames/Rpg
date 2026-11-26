@@ -292,6 +292,7 @@ function sightlineCap(u: number, v: number): number {
 }
 
 export function terrainHeight(x: number, z: number): number {
+  if (inDungeon(x, z)) return 0;
   const { u, v } = toUV(x, z);
   const sdf = valleySdf(x, z);
   const base = valleyBase(v);
@@ -327,6 +328,28 @@ export function terrainHeight(x: number, z: number): number {
   }
   return h;
 }
+
+// ---------------------------------------------------------------------------
+// The castle dungeon: far from the valley. Only one cell is built.
+// ---------------------------------------------------------------------------
+
+/** Centre of the cell (world x/z), well outside the valley's map. */
+export const DUNGEON_CELL = { x: 640, z: 40, halfW: 3.2, halfD: 2.6 };
+
+/** Anywhere in the dungeon's patch of the world. */
+export function inDungeon(x: number, z: number): boolean {
+  return Math.abs(x - DUNGEON_CELL.x) < 40 && Math.abs(z - DUNGEON_CELL.z) < 40;
+}
+
+/** Signed distance to the cell walls (positive inside). */
+export function dungeonSdf(x: number, z: number): number {
+  return Math.min(DUNGEON_CELL.halfW - Math.abs(x - DUNGEON_CELL.x), DUNGEON_CELL.halfD - Math.abs(z - DUNGEON_CELL.z));
+}
+
+/** Past this point on the road out (u, beyond the rockslide), the King's soldiers are waiting. */
+export const GUARD_TRIGGER_U = 60;
+/** Where the soldiers stand, in the pass beyond the rockslide (u, v offsets along it). */
+export const GUARD_POST = { u: 68, v: -26.5 };
 
 // ---------------------------------------------------------------------------
 // Landmarks & sealed gates
@@ -461,6 +484,39 @@ export function landmarks(): LandmarkDef[] {
       interactRadius: 2.8,
       verb: "Inspect the crypt",
       lockedText: "Stone steps lead down under the chapel to an iron door. Black thorns have pushed up between the flagstones.",
+      discoverRadius: 0,
+    },
+    {
+      id: "dungeon_cell",
+      kind: "inspect",
+      name: "The Castle Dungeon",
+      x: DUNGEON_CELL.x,
+      z: DUNGEON_CELL.z,
+      interactRadius: 0,
+      verb: "",
+      lockedText: "",
+      discoverRadius: 6,
+    },
+    {
+      id: "cell_door",
+      kind: "inspect",
+      name: "Cell Door",
+      x: DUNGEON_CELL.x,
+      z: DUNGEON_CELL.z - DUNGEON_CELL.halfD + 0.7,
+      interactRadius: 1.6,
+      verb: "Try the door",
+      lockedText: "Iron-banded oak, locked fast. Somewhere beyond it, keys jingle, and someone is weeping.",
+      discoverRadius: 0,
+    },
+    {
+      id: "cell_scratches",
+      kind: "inspect",
+      name: "Scratched Wall",
+      x: DUNGEON_CELL.x - DUNGEON_CELL.halfW + 0.7,
+      z: DUNGEON_CELL.z + 0.6,
+      interactRadius: 1.5,
+      verb: "Read the scratches",
+      lockedText: "Hundreds of tally marks, and words gouged deep into the stone: \"THEY BROUGHT ME OUT OF THE VALLEY TOO.\"",
       discoverRadius: 0,
     },
     ...SHRINES.map((s): LandmarkDef => {

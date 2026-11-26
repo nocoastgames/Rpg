@@ -14,8 +14,11 @@ export type ItemUse =
   | { type: "restoreResource"; amount: number; becomes?: string }
   /** Throw at the nearest enemy in range. */
   | { type: "throw"; damage: [number, number]; range: number }
-  /** A book: shows its text; the first reading teaches you something (experience). */
-  | { type: "read"; title: string; text: string[]; xp: number }
+  /**
+   * A book: shows its text; the first reading teaches you something
+   * (experience), and may tell of gods' epic quests (`reveals`: faith ids).
+   */
+  | { type: "read"; title: string; text: string[]; xp: number; reveals?: string[] }
   /** A map: reveals a region on your map for good. */
   | { type: "map"; region: string };
 

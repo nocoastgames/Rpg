@@ -11,6 +11,8 @@ import {
   getBackground,
   getFaith,
   availableFavorQuests,
+  epicQuestName,
+  loreFlag,
   blessingInfo,
   classAlignment,
   memoriesAt,
@@ -22,6 +24,7 @@ import {
   VALLEY_LEVELS,
   type MemoryEvent,
   type ReadEvent,
+  type CutsceneEvent,
   type ResolvedKit,
 } from "@rpg/shared";
 import type { PlayerView } from "../types.ts";
@@ -539,20 +542,22 @@ export class Hud {
   private blessingLine(p: PlayerView, faith: ReturnType<typeof getFaith>): HTMLElement[] {
     const info = faith?.blessing ? blessingInfo(p.faith, p.classId, p.quests) : undefined;
     const path = classAlignment(p.classId);
+    // Epic quests are only named once you've learned of them from lore.
     const options = availableFavorQuests(p.faith, p.classId, p.quests, p.abandoned)
+      .filter((g) => p.quests.includes(loreFlag(g.id)))
       .map((g) => `${g.favorQuest?.name} (${g.name})`)
       .join(", ");
     const status = !faith?.blessing || !info ? "No god watches over you." : {
       active: `Blessing: ${faith.blessingText}.`,
       awaitsPrayer: `${faith.name} favours your path. Pray at their shrine (marked on your map) to receive the blessing: ${faith.blessingText}.`,
-      needsQuest: `Blessing not yet earned: ${faith.name} favours ${faith.leaning.toLowerCase()} paths and yours is ${path}.`,
+      needsQuest: `Blessing not yet earned: ${faith.name} favours ${faith.leaning.toLowerCase()} paths and yours is ${path}. ${faith.name} would accept ${epicQuestName(faith.id, p.quests)}.`,
       opposed: `${faith.name} will never bless a ${path} path.`,
       none: "No god watches over you.",
     }[info.status];
     const abandoned = Array.from(p.abandoned, (id) => getFaith(id)?.name ?? id);
     return [
       h(`div.past-blessing${info?.blessedBy ? ".active" : ""}` as "div", null, status),
-      options ? h("div.past-hint", null, `Epic quests open to you (completing one makes that god your god): ${options}.`) : null,
+      options ? h("div.past-hint", null, `Epic quests you have heard of (completing one makes that god your god): ${options}.`) : null,
       abandoned.length ? h("div.past-hint", null, `Abandoned, never to take you back: ${abandoned.join(", ")}.`) : null,
     ].filter((n) => n !== null) as HTMLElement[];
   }
@@ -669,6 +674,19 @@ export class Hud {
 
   closeBook(): void {
     this.bookEl.classList.add("hidden");
+  }
+
+  /** A scripted scene: the screen darkens, lines appear one by one, then it clears. */
+  cutscene(e: CutsceneEvent): void {
+    const lines = e.lines.map((t) => h("p.cutscene-line", null, t));
+    const el = h("div.cutscene", null, h("div.cutscene-lines", null, ...lines));
+    this.root.append(el);
+    requestAnimationFrame(() => el.classList.add("dim"));
+    const step = (e.ms - 2500) / lines.length;
+    lines.forEach((l, i) => window.setTimeout(() => l.classList.add("show"), 600 + i * step));
+    window.setTimeout(() => el.classList.add("black"), e.blackAt);
+    window.setTimeout(() => el.classList.add("out"), e.ms - 1200);
+    window.setTimeout(() => el.remove(), e.ms + 400);
   }
 
   get bookOpen(): boolean {

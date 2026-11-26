@@ -61,6 +61,13 @@ the starting valley that calls to its followers. The first prayer there
 receives the blessing (once the rules above allow it); later prayers cure
 status effects and heal you. See [VALLEY.md](VALLEY.md).
 
+**Epic quests are discovered, not handed out.** You learn of a god's epic
+quest from lore: books and other world items (a book's `reveals` list in
+`shared/src/items.ts` records it as `lore_<god>`). Until then the game never
+names the quest: shrines don't mention it, and the character panel only says
+a god "would accept some great deed in their name". No book reveals one yet;
+that comes with the lore.
+
 **Completing a god's epic quest makes that god your god.** Your faith
 changes to them; pray at their shrine to receive their blessing.
 

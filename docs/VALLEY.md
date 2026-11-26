@@ -68,7 +68,8 @@ Deep Rot's stump is split by black thorns near the cave.
 - **Every prayer after that cures all status effects and fully heals you.**
   The shrine needs 30 seconds before it answers again.
 - **Other gods' shrines don't answer you.** Inspecting one tells you whose it
-  is and whether its epic quest would make that god your god.
+  is, nothing more: the gods' epic quests have to be discovered through lore
+  books and other world items.
 - After you convert to a new god, pray at their shrine to receive their
   blessing.
 
@@ -190,7 +191,22 @@ Hollow Priest is a level 4 boss.
 
 **When you report back, Haskel lights a signal fire on the rockslide. Twenty
 seconds later the kingdom's men clear the road and the pass opens for everyone
-in that world.** Beyond the pass isn't built yet.
+in that world.**
+
+## The road out: arrested
+
+Soldiers in the King's blue and silver wait in the pass beyond the rockslide.
+Walk out through it and they arrest you: you're the only living soul to come
+out of the valley where the dead walk, and nobody can explain that. A short
+scene plays (controls are locked), the screen goes black, and you wake in a
+cell in **the castle dungeon**, far from the valley.
+
+- The cell is all that's built: straw, a bucket, chains, a barred slit of
+  moonlight, a torch outside, a locked door, and scratches on the wall.
+- Your map can't help you there ("You don't know where you are").
+- You keep your gear. If you die in the dungeon you wake in the cell.
+- `/tp cell` goes there directly; `/tp spawn` (or any valley place) brings you
+  back.
 
 The crypt is shared world state like the camp: once someone unlocks it the
 door stays open, and once the thorns are burned they stay burned. If you

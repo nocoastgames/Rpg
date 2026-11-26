@@ -336,6 +336,20 @@ export type BlessingStatus =
   | "none";
 
 
+/**
+ * Recorded when you learn of a god's epic quest from lore (books, inscriptions
+ * and other world items). Until then the quest is never named to you.
+ */
+export function loreFlag(faithId: string): string {
+  return `lore_${faithId}`;
+}
+
+/** The god's epic quest, by name if you've learned of it, otherwise only as a rumour. */
+export function epicQuestName(faithId: string, quests: QuestLog): string {
+  const f = getFaith(faithId);
+  return f?.favorQuest && quests.includes(loreFlag(faithId)) ? f.favorQuest.name : "some great deed in their name";
+}
+
 /** Recorded (in the quest log) the first time you pray at a god's shrine. */
 export function prayedFlag(faithId: string): string {
   return `prayed_${faithId}`;

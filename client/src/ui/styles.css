@@ -2096,3 +2096,49 @@ body[data-input="gamepad"] .interact-hint {
   color: #ffe07a;
   font-weight: 700;
 }
+
+/* Scripted scenes (the arrest at the pass) */
+.cutscene {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 14vh;
+  background: rgba(0, 0, 0, 0);
+  transition: background 1.6s ease;
+  pointer-events: all;
+}
+.cutscene.dim {
+  background: rgba(0, 0, 0, 0.45);
+}
+.cutscene.black {
+  background: rgba(0, 0, 0, 1);
+}
+.cutscene.out {
+  background: rgba(0, 0, 0, 0);
+  transition: background 1.2s ease;
+}
+.cutscene-lines {
+  width: min(720px, calc(100vw - 40px));
+  text-align: center;
+}
+.cutscene-line {
+  margin: 0 0 12px;
+  font-family: Georgia, serif;
+  font-size: 1.1rem;
+  line-height: 1.45;
+  color: #f0e6d0;
+  text-shadow: 0 2px 6px #000;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.9s ease, transform 0.9s ease;
+}
+.cutscene-line.show {
+  opacity: 1;
+  transform: none;
+}
+.cutscene.out .cutscene-line {
+  opacity: 0;
+}

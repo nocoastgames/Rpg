@@ -11,6 +11,9 @@ import { mulberry32, randRange } from "./rng.ts";
 import {
   CAMP,
   CAMP_CLEARING_RADIUS,
+  DUNGEON_CELL,
+  dungeonSdf,
+  inDungeon,
   VENDOR,
   VILLAGE,
   VILLAGE_CLEARING_RADIUS,
@@ -82,6 +85,8 @@ export type StructureKind =
   | "camp"
   /** Haskel's covered cart. */
   | "vendor_cart"
+  /** The castle dungeon cell you're thrown into. */
+  | "cell"
   /** Ashford's buildings and yard (see VILLAGE_PIECES). */
   | VillagePieceKind;
 
@@ -345,6 +350,11 @@ function buildStructures(): { structures: Structure[]; colliders: Collider[] } {
     }
   }
 
+  // The dungeon cell, far away: a cot and a bucket to bump into.
+  add({ kind: "cell", x: DUNGEON_CELL.x, z: DUNGEON_CELL.z, rotation: 0, scale: 1 });
+  colliders.push({ x: DUNGEON_CELL.x + 2.2, z: DUNGEON_CELL.z + 1.2, r: 0.7 });
+  colliders.push({ x: DUNGEON_CELL.x + 2.6, z: DUNGEON_CELL.z - 1.9, r: 0.3 });
+
   // A few big boulders strewn on the valley floor.
   const boulders: Array<[number, number, number]> = [
     [-20, -25, 1.8],
@@ -566,11 +576,11 @@ export function resolveCollisions(world: World, x: number, z: number, radius = P
       }
     }
     // Valley walls (signed distance field): slide along the cliffs.
-    const sdf = valleySdf(x, z);
+    const sdf = walkableSdf(x, z);
     if (sdf < radius) {
       const e = 0.2;
-      let gx = valleySdf(x + e, z) - valleySdf(x - e, z);
-      let gz = valleySdf(x, z + e) - valleySdf(x, z - e);
+      let gx = walkableSdf(x + e, z) - walkableSdf(x - e, z);
+      let gz = walkableSdf(x, z + e) - walkableSdf(x, z - e);
       const gl = Math.hypot(gx, gz) || 1;
       gx /= gl;
       gz /= gl;
@@ -581,13 +591,19 @@ export function resolveCollisions(world: World, x: number, z: number, radius = P
     }
     if (!moved) break;
   }
+  if (inDungeon(x, z)) return { x, z };
   const lim = WORLD_HALF - 1;
   return { x: Math.max(-lim, Math.min(lim, x)), z: Math.max(-lim, Math.min(lim, z)) };
 }
 
+/** Where you can walk: the valley, or (far away) the dungeon cell. */
+export function walkableSdf(x: number, z: number): number {
+  return inDungeon(x, z) ? dungeonSdf(x, z) : valleySdf(x, z);
+}
+
 /** True if a circle at (x,z) overlaps no collider and is inside the valley. */
 export function isFree(world: World, x: number, z: number, radius = PLAYER_RADIUS): boolean {
-  if (valleySdf(x, z) < radius) return false;
+  if (walkableSdf(x, z) < radius) return false;
   for (const c of collidersNear(world, x, z, radius + 1)) {
     if (Math.hypot(x - c.x, z - c.z) < radius + c.r) return false;
   }

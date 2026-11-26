@@ -24,7 +24,8 @@ async function boot(): Promise<void> {
     loading("Waking up…");
     try {
       await assetsReady;
-      room = await joinWorld(options);
+      // The offline build runs the game rules in the page (single player); otherwise join the server.
+      room = import.meta.env.MODE === "offline" ? (await import("./local/LocalRoom.ts")).joinLocal(options) : await joinWorld(options);
       // Wait for the first full state so the world seed is known.
       await new Promise<void>((resolve) => {
         if (room!.state && room!.state.players?.has(room!.sessionId)) resolve();

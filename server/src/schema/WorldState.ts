@@ -88,6 +88,8 @@ export const Player = schema(
     alloc: t.array("int8"),
     appearance: AppearanceState,
 
+    /** Where in the world: "valley" or "dungeon" (the castle cell, far away). */
+    region: t.string().default("valley"),
     x: t.float32().default(0),
     z: t.float32().default(0),
     facing: t.float32().default(0),

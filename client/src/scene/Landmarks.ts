@@ -45,6 +45,7 @@ export class Landmarks {
   private campBuilt = false;
   private glowMul = 1;
   private crypt: { door: THREE.Object3D; thorns: THREE.Object3D; light: THREE.PointLight } | null = null;
+  private cellTorch: { light: THREE.PointLight; flame: THREE.Mesh } | null = null;
   private cryptKey = "";
   private readonly gated = new Map<GateId, THREE.Object3D[]>();
   private readonly runeMat: THREE.MeshToonMaterial;
@@ -148,6 +149,11 @@ export class Landmarks {
       const base = mine ? (this.calling!.prayed ? 10 : 16 + pulse * 10) : 3;
       sh.light.intensity = base * Math.max(0.35, this.glowMul);
       if (sh.beacon.visible) (sh.beacon.material as THREE.MeshBasicMaterial).opacity = 0.12 + pulse * 0.14;
+    }
+    if (this.cellTorch) {
+      const f = 1 + Math.sin(time * 8.3) * 0.1 + Math.sin(time * 4.1) * 0.08;
+      this.cellTorch.light.intensity = 16 * f;
+      this.cellTorch.flame.scale.set(1, f, 1);
     }
     if (this.camp && this.campBuilt) {
       const f = 1 + Math.sin(time * 9.1) * 0.08 + Math.sin(time * 5.3) * 0.06;
@@ -382,6 +388,9 @@ export class Landmarks {
       case "crypt":
         this.buildCrypt(g, rng);
         break;
+      case "cell":
+        this.buildCell(g, rng);
+        break;
       default:
         return null;
     }
@@ -565,6 +574,64 @@ export class Landmarks {
     g.add(light);
     this.glows.push({ light, base: 14 });
     this.crypt = { door: hinge, thorns, light };
+  }
+
+  /**
+   * The castle dungeon cell: stone walls (the two facing the camera cut low,
+   * isometric style), an iron-banded door, a barred slit of moonlight, a
+   * torch outside the bars, straw, a bucket, chains. Darkness all around.
+   */
+  private buildCell(g: THREE.Group, rng: () => number): void {
+    const W = 3.2;
+    const D = 2.6;
+    const stone = mat("#5a5650");
+    const dark = new THREE.Mesh(new THREE.PlaneGeometry(90, 90), new THREE.MeshBasicMaterial({ color: "#050404" }));
+    dark.rotation.x = -Math.PI / 2;
+    dark.position.y = -0.02;
+    g.add(dark);
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(W * 2, D * 2), mat("#4a4640"));
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = 0.01;
+    floor.receiveShadow = true;
+    g.add(floor);
+    for (let i = 0; i < 14; i++) g.add(mesh(new THREE.BoxGeometry(0.9 + rng() * 0.5, 0.03, 0.6 + rng() * 0.4), mat(i % 2 ? "#55504a" : "#423e38"), (rng() - 0.5) * W * 1.8, 0.02, (rng() - 0.5) * D * 1.8));
+    // Back walls (far from the camera): full height.
+    g.add(mesh(new THREE.BoxGeometry(W * 2 + 0.8, 3.2, 0.4), stone, 0, 1.6, -D - 0.2));
+    g.add(mesh(new THREE.BoxGeometry(0.4, 3.2, D * 2 + 0.8), stone, -W - 0.2, 1.6, 0));
+    // Near walls: cut low so you can see in.
+    g.add(mesh(new THREE.BoxGeometry(W * 2 + 0.8, 0.6, 0.4), stone, 0, 0.3, D + 0.2));
+    g.add(mesh(new THREE.BoxGeometry(0.4, 0.6, D * 2 + 0.8), stone, W + 0.2, 0.3, 0));
+    // Door in the back wall.
+    g.add(mesh(new THREE.BoxGeometry(1.2, 2.1, 0.12), mat("#4a3424"), 0, 1.05, -D + 0.02));
+    for (const y of [0.4, 1.05, 1.7]) g.add(mesh(new THREE.BoxGeometry(1.25, 0.08, 0.14), mat("#2a2a2e"), 0, y, -D + 0.04));
+    g.add(mesh(new THREE.BoxGeometry(0.3, 0.3, 0.06), mat("#1a1a1c"), 0, 1.6, -D + 0.08));
+    // A barred slit of a window, high on the side wall, with moonlight.
+    g.add(mesh(new THREE.BoxGeometry(0.1, 0.5, 0.9), mat("#0c1018", "#2a3a5a"), -W + 0.01, 2.6, 0));
+    for (let i = -1; i <= 1; i++) g.add(mesh(new THREE.BoxGeometry(0.06, 0.56, 0.04), mat("#2a2a2e"), -W + 0.05, 2.6, i * 0.25));
+    const moon = new THREE.SpotLight("#8aa0d8", 18, 9, 0.5, 0.6, 1.5);
+    moon.position.set(-W + 0.3, 2.6, 0);
+    moon.target.position.set(0.6, 0, 0.4);
+    g.add(moon, moon.target);
+    // Torch on the wall beside the door.
+    g.add(mesh(new THREE.BoxGeometry(0.08, 0.5, 0.08), mat("#5e4329"), 1.2, 1.9, -D + 0.12));
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.32, 6), new THREE.MeshBasicMaterial({ color: "#ffb040" }));
+    flame.geometry.translate(0, 0.16, 0);
+    flame.position.set(1.2, 2.15, -D + 0.12);
+    g.add(flame);
+    const torch = new THREE.PointLight("#ff9a3a", 16, 9, 2);
+    torch.position.set(1.2, 2.3, -D + 0.5);
+    g.add(torch);
+    this.cellTorch = { light: torch, flame };
+    // Straw bed, bucket, shackles, scratches.
+    const straw = mesh(new THREE.BoxGeometry(1.6, 0.2, 1.1), mat("#8a7a48"), 2.2, 0.1, 1.2);
+    straw.rotation.y = 0.2;
+    g.add(straw);
+    g.add(mesh(new THREE.CylinderGeometry(0.22, 0.18, 0.36, 8), mat("#5e4329"), 2.6, 0.18, -1.9));
+    for (const z of [-0.8, 0.8]) {
+      g.add(mesh(new THREE.TorusGeometry(0.1, 0.025, 4, 8), mat("#3a3a40"), -W + 0.06, 1.3, z));
+      g.add(mesh(new THREE.BoxGeometry(0.03, 0.5, 0.03), mat("#3a3a40"), -W + 0.06, 1.6, z));
+    }
+    for (let i = 0; i < 18; i++) g.add(mesh(new THREE.BoxGeometry(0.01, 0.18, 0.015), mat("#8a857c"), -W + 0.02, 1.0 + (i % 3) * 0.22, 0.2 + Math.floor(i / 3) * 0.08));
   }
 
   /** The clearing before and after you build your camp. */

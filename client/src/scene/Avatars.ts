@@ -762,6 +762,15 @@ export function createPlayerAvatar(assets: AssetLibrary, classId: string, weapon
   });
 }
 
+/** One of the King's soldiers: helmet, blue tabard, spear. */
+export function createGuardAvatar(): Avatar {
+  const g = new ProceduralHumanoid({ classId: "warrior", flavor: "", color: "#2e4a8a", weapon: "splintered_spear", scale: 1.05 });
+  g.root.traverse((o) => {
+    if (o.position.y === 1.15 && (o as THREE.Mesh).isMesh) o.add(mesh(box(0.2, 0.2, 0.02), "#c8ccd4", 0, 0.1, 0.17));
+  });
+  return g;
+}
+
 /** People in the world. Haskel: grey-bearded, in a travel-stained coat and a wide hat. */
 export function createNpcAvatar(npc: string): Avatar {
   const h = new ProceduralHumanoid({

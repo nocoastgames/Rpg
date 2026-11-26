@@ -42,6 +42,8 @@ export interface MapContext {
   objectiveZones?: string[];
   /** Owns a map of the valley: no fog. */
   hasMap?: boolean;
+  /** Somewhere the map doesn't cover (the castle dungeon). */
+  unknown?: boolean;
 }
 
 /** How far around you the map fills in as you explore (m). */
@@ -152,6 +154,16 @@ export class Minimap {
     }
     const ctx = this.ctx;
     ctx.clearRect(0, 0, W, H);
+    if (ctxInfo?.unknown) {
+      ctx.fillStyle = "#14110e";
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "#8a7a60";
+      ctx.font = `italic ${Math.round(12 * dpr)}px Georgia, serif`;
+      ctx.textAlign = "center";
+      ctx.fillText("You don't know", W / 2, H / 2 - 7 * dpr);
+      ctx.fillText("where you are.", W / 2, H / 2 + 9 * dpr);
+      return;
+    }
 
     // Large map shows the whole valley; the corner map follows the player.
     const self = markers.find((m) => m.kind === "self");

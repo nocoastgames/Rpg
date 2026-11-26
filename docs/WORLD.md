@@ -85,13 +85,22 @@ elder ruins and monsters.
   Hollow Priest is the vault's old caretaker, rebuilt by the swarm. The black
   thorns in the well and the crypt are the same as the cave's.
 - **Ends at about level 5:** Haskel's signal fire brings the kingdom's
-  diggers and the road out opens. The cave and the ruins stay sealed for
-  later (a return trip, once the story needs them).
+  diggers and the road out opens, and the King's soldiers arrest you as you
+  walk through it: the only living thing to come out of a valley full of
+  walking dead. You wake in a cell in the castle dungeon, far away. The cave
+  and the ruins stay sealed for later (a return trip, once the story needs
+  them).
+- **Secretly, the arrest:** the scratches in your cell read "THEY BROUGHT ME
+  OUT OF THE VALLEY TOO". You are not the first Returned the Crown has
+  locked away.
+
+### The castle dungeon (start of Act II; only the cell exists so far)
 - **No overt hints yet**, only seeds that make sense later: ruins built with
   impossibly straight lines, and runes that look like circuitry once you know.
   Each shrine stands on the same worn eight-sided plinth, whatever the god.
 
 ### Act II: The Known Lands (levels 5–25)
+- Begins in the castle dungeon cell (see above).
 - Kingdoms, temples, guilds and faith factions. The Blight spreads along the
   frontiers. First dungeons.
 - **Trial of Paths (level 25)** in a temple's inner sanctum gives the first

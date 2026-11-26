@@ -14,6 +14,9 @@ import {
   TRADE_RANGE,
   VILLAGE_QUEST,
   type DialogEvent,
+  type CutsceneEvent,
+  GUARD_POST,
+  fromUV,
   type ReadEvent,
   type GatherNode,
   type Interactable,
@@ -39,9 +42,9 @@ import { MenuNav } from "../controls/MenuNav.ts";
 import { TouchControls } from "../controls/TouchControls.ts";
 import type { GameRoom } from "../net.ts";
 import type { AssetLibrary } from "../scene/Assets.ts";
-import { createCompanionAvatar, createEnemyAvatar, createNpcAvatar, createPlayerAvatar, type Avatar } from "../scene/Avatars.ts";
+import { createCompanionAvatar, createEnemyAvatar, createGuardAvatar, createNpcAvatar, createPlayerAvatar, type Avatar } from "../scene/Avatars.ts";
 import { CelPost } from "../scene/CelPost.ts";
-import { DEFAULT_HOUR, lightingAt, type LightingPreset } from "../scene/Lighting.ts";
+import { DEFAULT_HOUR, dungeonLighting, lightingAt, type LightingPreset } from "../scene/Lighting.ts";
 import { Environment, groundHeight } from "../scene/Environment.ts";
 import { FxSystem } from "../scene/Fx.ts";
 import { IsoCamera } from "../scene/IsoCamera.ts";
@@ -96,6 +99,11 @@ export class GameClient {
   private readonly vendor: VendorPanel;
   /** People standing in the world (Haskel), by landmark id. */
   private readonly npcs = new Map<string, { avatar: Avatar; pos: THREE.Vector3; name: string }>();
+  /** The King's soldiers waiting beyond the rockslide (shown once the road is clear). */
+  private readonly guards: Avatar[] = [];
+  /** Controls are locked until then (scripted scenes). */
+  private cutsceneUntil = 0;
+  private region = "valley";
   /** Hunting ground the player is in (for the zone banner). */
   private zone: string | null = null;
   private readonly fx: FxSystem;
@@ -170,6 +178,17 @@ export class GameClient {
     this.scene.add(this.landmarks.group);
     this.questNodes = new QuestNodes(this.world);
     this.scene.add(this.questNodes.group);
+    // Soldiers across the pass, facing the valley.
+    for (let i = 0; i < 4; i++) {
+      const g = createGuardAvatar();
+      const p = fromUV(GUARD_POST.u + (i % 2) * 1.6, GUARD_POST.v + (i - 1.5) * 1.5);
+      g.root.position.set(p.x, groundHeight(p.x, p.z), p.z);
+      const back = fromUV(GUARD_POST.u - 10, GUARD_POST.v + 3);
+      g.root.rotation.y = Math.atan2(back.x - p.x, back.z - p.z);
+      g.root.visible = false;
+      this.scene.add(g.root);
+      this.guards.push(g);
+    }
     for (const l of this.world.landmarks) {
       if (l.kind !== "npc") continue;
       const avatar = createNpcAvatar(l.id);
@@ -243,7 +262,7 @@ export class GameClient {
   private updateLighting(): void {
     if (this.hour === this.appliedHour) return;
     this.appliedHour = this.hour;
-    this.lighting = lightingAt(this.hour);
+    this.lighting = this.region === "dungeon" ? dungeonLighting() : lightingAt(this.hour);
     this.env.applyLighting(this.lighting, this.scene);
     this.post.setGrade(this.lighting);
     this.landmarks.setGlow(this.lighting.glow);
@@ -261,6 +280,16 @@ export class GameClient {
     this.room.onMessage(S2C.notice, (text: string) => this.hud.notice(text));
     this.room.onMessage(S2C.memory, (e: MemoryEvent) => this.hud.memory(e));
     this.room.onMessage(S2C.read, (e: ReadEvent) => this.hud.read(e));
+    this.room.onMessage(S2C.cutscene, (e: CutsceneEvent) => {
+      this.cutsceneUntil = performance.now() + e.ms;
+      this.intent.dirX = 0;
+      this.intent.dirZ = 0;
+      this.intent.target = null;
+      this.attackTarget = null;
+      this.vendor.close();
+      this.hud.closePanels();
+      this.hud.cutscene(e);
+    });
     this.room.onMessage(S2C.dialog, (e: DialogEvent) => {
       if (e.npc === "vendor") {
         this.hud.closePanels();
@@ -414,6 +443,15 @@ export class GameClient {
     if (this.pad.active) this.setMode("gamepad");
     else if (inp.mouseActive) this.setMode("kbm");
     inp.mouseActive = false;
+    if (now < this.cutsceneUntil) {
+      // A scripted scene is playing: swallow input.
+      inp.consumePressed();
+      this.touch.consumeActions();
+      this.touch.consumeAbilityReleases();
+      this.touch.consumeTaps();
+      this.sendMoveDir({ x: 0, z: 0 }, now);
+      return;
+    }
 
     // Touch: world taps behave like mouse clicks at that point.
     const taps = this.touch.consumeTaps();
@@ -635,6 +673,12 @@ export class GameClient {
     const err = Math.hypot(ex, ez);
     let rate = moving ? (err > 1.2 ? 2 : 0) : 6;
     if (err > 4 || me.anim === "dead") rate = 14;
+    if (err > 40) {
+      // Taken somewhere far away (arrest, teleport): jump, don't slide.
+      this.pred.x = me.x;
+      this.pred.z = me.z;
+      return;
+    }
     const k = 1 - Math.exp(-dt * rate);
     this.pred.x += ex * k;
     this.pred.z += ez * k;
@@ -906,6 +950,18 @@ export class GameClient {
     this.landmarks.setCampBuilt(!!state.campBuilt);
     this.landmarks.setCrypt(!!state.cryptOpen, !!state.cryptBurned);
     for (const npc of this.npcs.values()) npc.avatar.update(dt, 0);
+    const roadOpen = this.world.openGates.has("valley_exit");
+    for (const g of this.guards) {
+      g.root.visible = roadOpen;
+      if (roadOpen) g.update(dt, 0);
+    }
+    // Arriving somewhere new (the dungeon): its own light and a title.
+    if (me && me.region && me.region !== this.region) {
+      this.region = me.region;
+      this.appliedHour = -1;
+      this.env.setOutdoors(this.region !== "dungeon");
+      if (this.region === "dungeon") window.setTimeout(() => this.hud.banner("The Castle Dungeon", "Far from the valley"), 400);
+    }
     if (me) {
       this.landmarks.setCalling(me.faith, me.quests.includes(prayedFlag(me.faith)));
       this.questNodes.update(time, (n) => this.wantsNode(me, n));
@@ -955,7 +1011,7 @@ export class GameClient {
         if (Math.hypot(e.x - this.pred.x, e.z - this.pred.z) < 30) markers.push({ x: e.x, z: e.z, kind: "enemy" });
       });
       // Quest markers: pick-ups you still need, places steps point to, hunting grounds to search.
-      const mapInfo: MapContext = { faith: me.faith, objectiveZones: [], hasMap: me.quests.includes(MAP_FLAG) };
+      const mapInfo: MapContext = { faith: me.faith, objectiveZones: [], hasMap: me.quests.includes(MAP_FLAG), unknown: me.region === "dungeon" };
       for (const n of this.world.nodes) if (this.wantsNode(me, n)) markers.push({ x: n.x, z: n.z, kind: "node" });
       me.active.forEach((qs) => {
         const quest = getQuest(qs.id);

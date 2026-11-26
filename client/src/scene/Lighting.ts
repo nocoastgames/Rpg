@@ -213,5 +213,24 @@ export function sunDirection(p: LightingPreset): THREE.Vector3 {
   return new THREE.Vector3(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
 }
 
+/** Underground: no sky, no sun; only torches and your lantern. */
+export function dungeonLighting(): LightingPreset {
+  return toPreset({
+    ...DEFS.night,
+    sky: "#030303",
+    fogNear: 60,
+    fogFar: 140,
+    hemiSky: "#5a4a3a",
+    hemiGround: "#0a0806",
+    hemiIntensity: 0.55,
+    sunColor: "#6a7aa0",
+    sunIntensity: 0.15,
+    lantern: 10,
+    glow: 1,
+    fireflies: 0,
+    vignette: 0.7,
+  });
+}
+
 /** Default hour until the server drives a real cycle (mid-morning). */
 export const DEFAULT_HOUR = 10;
