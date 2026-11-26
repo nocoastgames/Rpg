@@ -40,6 +40,17 @@ export const StatusEffect = schema(
 );
 export type StatusEffect = SchemaType<typeof StatusEffect>;
 
+/** Progress on one active quest. */
+export const QuestState = schema(
+  {
+    id: t.string().default(""),
+    step: t.uint8().default(0),
+    count: t.uint8().default(0),
+  },
+  "QuestState",
+);
+export type QuestState = SchemaType<typeof QuestState>;
+
 /** Indices into APPEARANCE_OPTIONS (shared/src/character.ts). */
 export const AppearanceState = schema(
   {
@@ -61,10 +72,11 @@ export const Player = schema(
     classId: t.string().default(""),
     /** Completed quests and milestones (trial_of_paths, make_camp, favor_<god>, prayed_<god>). */
     quests: t.array("string"),
-    /** Quest in progress (shared/src/quests.ts), its current step and progress toward that step's count. */
-    activeQuest: t.string().default(""),
-    questStep: t.uint8().default(0),
-    questCount: t.uint8().default(0),
+    /** Quests in progress (shared/src/quests.ts): current step and progress toward that step's count. */
+    active: t.array(QuestState),
+    /** The odd job Haskel is offering this character right now. */
+    fetchOffer: t.string().default(""),
+    coins: t.uint32().default(0),
     /** Quest pick-ups (world node ids) this player has already taken during the active quest. */
     gathered: t.array("string"),
     /** Hidden background (revealed through memories), faith (flavour), and creation point-buy in STAT_IDS order. */
@@ -159,6 +171,9 @@ export const WorldState = schema(
     gates: t.map("boolean"),
     /** The campsite has been built (by anyone in this world). */
     campBuilt: t.boolean().default(false),
+    /** Ashford's crypt: unlocked, and its black thorns burned. */
+    cryptOpen: t.boolean().default(false),
+    cryptBurned: t.boolean().default(false),
   },
   "WorldState",
 );

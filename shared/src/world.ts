@@ -11,6 +11,13 @@ import { mulberry32, randRange } from "./rng.ts";
 import {
   CAMP,
   CAMP_CLEARING_RADIUS,
+  VENDOR,
+  VILLAGE,
+  VILLAGE_CLEARING_RADIUS,
+  VILLAGE_CLUES,
+  VILLAGE_PIECES,
+  villagePoint,
+  type VillagePieceKind,
   CAVE_ALCOVE_START,
   CAVE_MOUTH,
   FORD_V,
@@ -72,7 +79,11 @@ export type StructureKind =
   /** A god's shrine (`faith` says whose). */
   | "shrine"
   /** The campsite: drawn as an empty clearing or a built camp, from synced state. */
-  | "camp";
+  | "camp"
+  /** Haskel's covered cart. */
+  | "vendor_cart"
+  /** Ashford's buildings and yard (see VILLAGE_PIECES). */
+  | VillagePieceKind;
 
 export interface Structure {
   kind: StructureKind;
@@ -88,19 +99,23 @@ export interface Structure {
   faith?: string;
 }
 
-/** Things you can pick up for quests: dry branches in the woods, smooth stones on the stream bank. */
-export type NodeKind = "deadfall" | "river_stone";
+/** Quest pick-ups: dry branches in the woods, smooth stones on the stream bank, clues in Ashford. */
+export type NodeKind = "deadfall" | "river_stone" | "clue";
 
 export interface GatherNode {
   id: string;
   kind: NodeKind;
   x: number;
   z: number;
+  /** Clues: the prompt and what you find. */
+  verb?: string;
+  text?: string;
 }
 
 export const NODE_NAMES: Record<NodeKind, { name: string; verb: string }> = {
   deadfall: { name: "Dry branches", verb: "Gather branches" },
   river_stone: { name: "River stone", verb: "Pick up the stone" },
+  clue: { name: "Something odd", verb: "Search" },
 };
 
 /** How close you must be to pick up a node. */
@@ -294,6 +309,42 @@ function buildStructures(): { structures: Structure[]; colliders: Collider[] } {
   const camp = fromUV(CAMP.u, CAMP.v);
   add({ kind: "camp", ...camp, rotation: 0.6, scale: 1 });
 
+  // Haskel's covered cart, just behind him.
+  const vend = fromUV(VENDOR.u + 2.6, VENDOR.v - 1.4);
+  add({ kind: "vendor_cart", ...vend, rotation: 0.4, scale: 1 }, 1.3);
+
+  // Ashford: cottages, the headman's house, the chapel and its crypt, the graveyard.
+  for (const piece of VILLAGE_PIECES) {
+    const p = villagePoint(piece.du, piece.dv);
+    const rot = piece.rot;
+    switch (piece.kind) {
+      case "cottage":
+        add({ kind: "cottage", ...p, rotation: rot, scale: 1 });
+        line(p.x, p.z, rot + Math.PI / 2, 3.4, 1.2);
+        break;
+      case "headman_house":
+        add({ kind: "headman_house", ...p, rotation: rot, scale: 1 });
+        line(p.x, p.z, rot + Math.PI / 2, 4.6, 1.5);
+        break;
+      case "chapel":
+        add({ kind: "chapel", ...p, rotation: rot, scale: 1 });
+        line(p.x, p.z, rot, 6.5, 1.7);
+        break;
+      case "well":
+        add({ kind: "well", ...p, rotation: rot, scale: 1 }, 0.8);
+        break;
+      case "cart":
+        add({ kind: "cart", ...p, rotation: rot, scale: 1 }, 0.9);
+        break;
+      case "fence":
+        add({ kind: "fence", ...p, rotation: rot, scale: 1, size: piece.size ?? 4 });
+        line(p.x, p.z, rot + Math.PI / 2, piece.size ?? 4, 0.2);
+        break;
+      default:
+        add({ kind: piece.kind, ...p, rotation: rot, scale: 1 }, piece.kind === "headstone" ? 0.3 : piece.kind === "crypt" ? 0.9 : undefined);
+    }
+  }
+
   // A few big boulders strewn on the valley floor.
   const boulders: Array<[number, number, number]> = [
     [-20, -25, 1.8],
@@ -323,6 +374,8 @@ export function generateWorld(seed: number): World {
   const marks = landmarks();
   const rc = fromUV(RUINS_CENTER.u, RUINS_CENTER.v);
   const campPos = fromUV(CAMP.u, CAMP.v);
+  const villagePos = fromUV(VILLAGE.u, VILLAGE.v);
+  const vendorPos = fromUV(VENDOR.u, VENDOR.v);
 
   const step = 3.1;
   const half = WORLD_HALF + 20;
@@ -359,7 +412,9 @@ export function generateWorld(seed: number): World {
       const inAlcove = segPointDist(x, z, CAVE_ALCOVE_START, CAVE_MOUTH) < 6;
       const nearMark = marks.some((m) => Math.hypot(x - m.x, z - m.z) < m.interactRadius + 2);
       const campDist = Math.hypot(x - campPos.x, z - campPos.z);
-      const open = water < 1.3 || spawnDist < SPAWN_CLEARING_RADIUS || campDist < CAMP_CLEARING_RADIUS || trail < 2 || ruinsDist < 14 || inPass || inAlcove || nearMark;
+      const villageDist = Math.hypot(x - villagePos.x, z - villagePos.z);
+      const vendorDist = Math.hypot(x - vendorPos.x, z - vendorPos.z);
+      const open = water < 1.3 || spawnDist < SPAWN_CLEARING_RADIUS || campDist < CAMP_CLEARING_RADIUS || villageDist < VILLAGE_CLEARING_RADIUS || vendorDist < 7 || trail < 2 || ruinsDist < 14 || inPass || inAlcove || nearMark;
 
       // Rocks: everywhere, more along the banks.
       if (roll < (water < 1.5 ? 0.08 : 0.022) && spawnDist > 3 && trail > 1.2 && ruinsDist > 12) {
@@ -452,6 +507,8 @@ function placeNodes(world: World): GatherNode[] {
     const u = streamU(v) + side * (streamHalfWidth(v) + randRange(rng, 0.5, 1.3));
     return fromUV(u, v);
   });
+  // Clues in Ashford: fixed spots.
+  for (const c of VILLAGE_CLUES) nodes.push({ id: c.id, kind: "clue", ...villagePoint(c.du, c.dv), verb: c.verb, text: c.text });
   return nodes;
 }
 

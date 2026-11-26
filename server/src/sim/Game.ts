@@ -8,7 +8,16 @@
  */
 import {
   CAMP,
+  FETCH_QUESTS,
   FIRST_QUEST,
+  MAP_FLAG,
+  TRADE_RANGE,
+  VENDOR,
+  VENDOR_NPC,
+  VILLAGE_CRYPT,
+  VILLAGE_GRAVEYARD,
+  canEquip,
+  villagePoint,
   REST,
   ZONES,
   enemyStats,
@@ -52,6 +61,11 @@ import {
   type CompanionPower,
   type EnemyDef,
   type GatherNode,
+  type ItemDef,
+  type QuestDef,
+  type QuestEffect,
+  type ReadEvent,
+  type DialogEvent,
   type LandmarkDef,
   type QuestObjective,
   type StatusId,
@@ -64,7 +78,7 @@ import {
   type MoveIntent,
   type World,
 } from "@rpg/shared";
-import { Buff, Companion, Enemy, InventorySlot, Player, StatusEffect, WorldState } from "../schema/WorldState.ts";
+import { Buff, Companion, Enemy, InventorySlot, Player, QuestState, StatusEffect, WorldState } from "../schema/WorldState.ts";
 import {
   applyDerived,
   armorFraction,
@@ -88,6 +102,10 @@ export interface GameEvents {
   announce(text: string): void;
   /** A recovered memory, sent only to that player. */
   memory(playerId: string, e: MemoryEvent): void;
+  /** A book's text, for the player reading it. */
+  read(playerId: string, e: ReadEvent): void;
+  /** Open a conversation (and shop) with someone. */
+  dialog(playerId: string, e: DialogEvent): void;
 }
 
 interface PlayerRuntime {
@@ -103,11 +121,24 @@ interface PlayerRuntime {
   nextPrayAt: number;
   /** Timed action in progress (gathering, building); finishes unless interrupted. */
   channel: (() => void) | null;
+  nextPotionAt: number;
+  /** Fighting until this time (food can't be eaten, meals are interrupted). */
+  combatUntil: number;
+  nextReachCheck: number;
 }
 
 interface EnemyRuntime {
   def: EnemyDef;
-  zone: ZoneDef;
+  /** Hunting ground it belongs to (missing for named creatures and summons). */
+  zone?: ZoneDef;
+  /** Named creature id (gravedigger, hollow_priest). */
+  special?: string;
+  /** Boss timers. */
+  nextNovaAt: number;
+  summoned: boolean;
+  /** Passive creatures run from whoever hurt them until this time. */
+  fleeUntil: number;
+  fleeFrom: { x: number; z: number } | null;
   level: number;
   damage: [number, number];
   xp: number;
@@ -145,6 +176,17 @@ const SPAWN_SAFE_RADIUS = 16;
 const PRAY_COOLDOWN_MS = 30_000;
 /** Nothing spawns this close to a shrine. */
 const SHRINE_SANCTUARY = 12;
+const POTION_COOLDOWN_MS = 15_000;
+/** How long after a blow you still count as fighting. */
+const COMBAT_LINGER_MS = 5_000;
+/** From Haskel's signal fire to the road being dug out. */
+const ROAD_CLEARING_MS = 20_000;
+
+/** Named creatures: where they appear and whether they come back. */
+const SPECIALS: Record<string, { level: number; at: () => { x: number; z: number }; respawnMs: number | null; leash: number }> = {
+  gravedigger: { level: 3, at: () => villagePoint(VILLAGE_GRAVEYARD.du, VILLAGE_GRAVEYARD.dv), respawnMs: 45_000, leash: 16 },
+  hollow_priest: { level: 4, at: () => villagePoint(VILLAGE_CRYPT.du + 1.5, VILLAGE_CRYPT.dv + 2), respawnMs: null, leash: 22 },
+};
 /** Enemies this close and chasing you stop you from resting. */
 const REST_DANGER_RADIUS = 16;
 
@@ -162,7 +204,11 @@ export class Game {
   private readonly rng: () => number;
   private nextEnemyId = 1;
   private pendingSpawns: Array<{ at: number; zone: ZoneDef }> = [];
+  private pendingSpecials: Array<{ at: number; kind: string }> = [];
   private readonly campPos: { x: number; z: number };
+  private readonly vendorPos: { x: number; z: number };
+  private roadClearingAt = 0;
+  private roadGate: GateId | null = null;
   private now = 0;
 
   constructor(
@@ -175,7 +221,9 @@ export class Game {
     this.rng = mulberry32(seed ^ 0x9e3779b9);
     for (const l of this.world.landmarks) if (l.gate) state.gates.set(l.gate, false);
     this.campPos = fromUV(CAMP.u, CAMP.v);
+    this.vendorPos = fromUV(VENDOR.u, VENDOR.v);
     this.repopulate();
+    this.spawnSpecial("gravedigger");
   }
 
   // -------------------------------------------------------------------------
@@ -222,8 +270,12 @@ export class Game {
       nextDotAt: 0,
       nextPrayAt: 0,
       channel: null,
+      nextPotionAt: 0,
+      combatUntil: 0,
+      nextReachCheck: 0,
     });
-    p.activeQuest = FIRST_QUEST;
+    this.startQuest(id, p, FIRST_QUEST, false);
+    p.fetchOffer = this.randomFetch("");
     return p;
   }
 
@@ -289,30 +341,175 @@ export class Game {
     p.actionSeq = (p.actionSeq + 1) % 65535;
   }
 
+  // -------------------------------------------------------------------------
+  // Items and equipment
+  // -------------------------------------------------------------------------
+
   useItem(id: string, slot: number): void {
     const p = this.state.players.get(id);
-    if (!p || p.anim === "dead") return;
+    const rt = this.players.get(id);
+    if (!p || !rt || p.anim === "dead") return;
     const inv = p.inventory[slot];
     if (!inv) return;
     const def = getItem(inv.itemId);
-    if (!def?.use) {
-      this.events.notice(id, def ? `${def.name} can't be used.` : "Nothing there.");
+    if (!def) return;
+    if (def.kind === "weapon" || def.kind === "armor") {
+      this.equip(id, p, rt, slot, def);
       return;
     }
-    if (def.use.type === "heal") {
-      const amount = Math.round(p.maxHp * def.use.fraction * (1 + bonus(p, "foodHealing")));
-      p.hp = Math.min(p.maxHp, p.hp + amount);
-      this.events.hit({ targetId: id, sourceId: id, amount, heal: true });
-    } else if (def.use.type === "restoreResource") {
-      p.resource = Math.min(p.maxResource, p.resource + def.use.amount);
+    if (def.cooksInto) {
+      this.cook(id, p, slot, def);
+      return;
     }
-    if (def.use.type === "restoreResource" && def.use.becomes) {
-      inv.itemId = def.use.becomes;
-    } else {
-      this.takeFromSlot(p, slot, 1);
+    const use = def.use;
+    if (!use) {
+      this.events.notice(id, def.kind === "ammo" ? `${def.name} are used automatically.` : `${def.name} can't be used.`);
+      return;
     }
-    this.events.notice(id, `You use the ${def.name}.`);
+    switch (use.type) {
+      case "food": {
+        if (this.inCombat(id, rt)) {
+          this.events.notice(id, "You can't eat in the middle of a fight. A healing draught works in combat.");
+          return;
+        }
+        for (let i = p.buffs.length - 1; i >= 0; i--) if (p.buffs[i]!.stat === "food") p.buffs.splice(i, 1);
+        const b = new Buff();
+        b.stat = "food";
+        b.amount = (p.maxHp * use.fraction * (1 + bonus(p, "foodHealing"))) / use.seconds;
+        b.expiresAt = this.now + use.seconds * 1000;
+        p.buffs.push(b);
+        this.takeFromSlot(p, slot, 1);
+        this.events.notice(id, `You eat the ${def.name}.`);
+        return;
+      }
+      case "potion": {
+        if (this.now < rt.nextPotionAt) {
+          this.events.notice(id, `You can drink another draught in ${Math.ceil((rt.nextPotionAt - this.now) / 1000)}s.`);
+          return;
+        }
+        rt.nextPotionAt = this.now + POTION_COOLDOWN_MS;
+        this.takeFromSlot(p, slot, 1);
+        this.healPlayer(id, p, p.maxHp * use.fraction, id);
+        this.events.fx({ kind: "heal", sourceId: id, fromX: p.x, fromZ: p.z, toX: p.x, toZ: p.z, radius: 1.2, color: "#e8453a" });
+        return;
+      }
+      case "restoreResource":
+        p.resource = Math.min(p.maxResource, p.resource + use.amount);
+        if (use.becomes) inv.itemId = use.becomes;
+        else this.takeFromSlot(p, slot, 1);
+        this.events.notice(id, `You use the ${def.name}.`);
+        return;
+      case "throw": {
+        const target = this.nearestEnemy(p.x, p.z, use.range, p.x, p.z, use.range)[0];
+        if (!target) {
+          this.events.notice(id, "Nothing in range to throw at.");
+          return;
+        }
+        const [eid, e] = target;
+        p.facing = Math.atan2(e.x - p.x, e.z - p.z);
+        p.anim = "attack";
+        p.actionSeq = (p.actionSeq + 1) % 65535;
+        this.takeFromSlot(p, slot, 1);
+        this.events.fx({ kind: "projectile", sourceId: id, fromX: p.x, fromZ: p.z, toX: e.x, toZ: e.z, variant: "dagger", color: "#c8ccd4" });
+        this.damageEnemy(eid, e, Math.round(randRange(this.rng, use.damage[0], use.damage[1])), id);
+        return;
+      }
+      case "read": {
+        this.events.read(id, { title: use.title, text: use.text });
+        const flag = `read_${def.id}`;
+        if (!p.quests.includes(flag)) {
+          p.quests.push(flag);
+          this.grantXp(id, p, use.xp, false);
+          this.events.notice(id, `You learn something from ${use.title}. (+${use.xp} experience)`);
+        }
+        return;
+      }
+      case "map":
+        if (!p.quests.includes(MAP_FLAG)) p.quests.push(MAP_FLAG);
+        this.events.notice(id, "You study the map. The whole valley is on yours now.");
+        return;
+    }
   }
+
+  /** Quick-use: "heal" eats out of combat and drinks a draught in it; "drink" uses the waterskin. */
+  quickUse(id: string, kind: "heal" | "drink"): void {
+    const p = this.state.players.get(id);
+    const rt = this.players.get(id);
+    if (!p || !rt) return;
+    const find = (type: string) => p.inventory.findIndex((s) => getItem(s.itemId)?.use?.type === type);
+    let slot = -1;
+    if (kind === "drink") slot = find("restoreResource");
+    else if (this.inCombat(id, rt)) slot = find("potion");
+    else slot = find("food") >= 0 ? find("food") : find("potion");
+    if (slot >= 0) this.useItem(id, slot);
+    else this.events.notice(id, kind === "drink" ? "You have nothing to drink. Fill your waterskin at the stream." : this.inCombat(id, rt) ? "No healing draughts left." : "You have no food left.");
+  }
+
+  /** Equip a weapon or armour from the bag; whatever you wore goes back in its place. */
+  private equip(id: string, p: Player, rt: PlayerRuntime, slot: number, def: ItemDef): void {
+    if (!canEquip(def, rt.ch.kit.base.id)) {
+      this.events.notice(id, `Your calling can't make use of the ${def.name}.`);
+      return;
+    }
+    const field = def.kind === "weapon" ? "weapon" : "armor";
+    const old = p[field];
+    p[field] = def.id;
+    if (old) {
+      p.inventory[slot]!.itemId = old;
+      p.inventory[slot]!.qty = 1;
+    } else this.takeFromSlot(p, slot, 1);
+    this.refreshCharacter(p, rt);
+    this.events.notice(id, `You equip the ${def.name}.`);
+  }
+
+  unequip(id: string, field: "weapon" | "armor"): void {
+    const p = this.state.players.get(id);
+    const rt = this.players.get(id);
+    if (!p || !rt || !p[field]) return;
+    if (!this.giveItem(p, p[field], 1)) {
+      this.events.notice(id, "Your pack is full.");
+      return;
+    }
+    p[field] = "";
+    this.refreshCharacter(p, rt);
+  }
+
+  /** Equipment can change stats: rebuild the character sheet. */
+  private refreshCharacter(p: Player, rt: PlayerRuntime): void {
+    rt.ch = resolveCharacter(p);
+    applyDerived(p, rt.ch);
+  }
+
+  private cook(id: string, p: Player, slot: number, def: ItemDef): void {
+    const atFire = this.state.campBuilt && Math.hypot(p.x - this.campPos.x, p.z - this.campPos.z) < 6;
+    if (!atFire) {
+      this.events.notice(id, `You need a campfire to cook the ${def.name.toLowerCase()}.`);
+      return;
+    }
+    const s = p.inventory[slot]!;
+    const qty = s.qty;
+    const cooked = getItem(def.cooksInto!)!;
+    this.takeFromSlot(p, slot, qty);
+    this.giveItem(p, cooked.id, qty);
+    this.events.notice(id, `You cook ${qty} ${cooked.name} over the fire.`);
+  }
+
+  /** In combat: hit or been hit recently, or something is chasing you. */
+  private inCombat(id: string, rt: PlayerRuntime): boolean {
+    if (this.now < rt.combatUntil) return true;
+    for (const e of this.enemies.values()) if (e.targetId === id) return true;
+    return false;
+  }
+
+  private enterCombat(p: Player, rt: PlayerRuntime): void {
+    rt.combatUntil = this.now + COMBAT_LINGER_MS;
+    // Fighting interrupts a meal.
+    for (let i = p.buffs.length - 1; i >= 0; i--) if (p.buffs[i]!.stat === "food") p.buffs.splice(i, 1);
+  }
+
+  // -------------------------------------------------------------------------
+  // Interacting with the world
+  // -------------------------------------------------------------------------
 
   interact(id: string): void {
     const p = this.state.players.get(id);
@@ -329,8 +526,21 @@ export class Game {
     }
     if (target.kind === "landmark") {
       const l = target.landmark;
+      // A quest step that wants this place comes first.
+      const work = this.interactStep(p, l.id);
+      if (work) {
+        const { qs, objective } = work;
+        this.startChannel(id, p, rt, objective.seconds ?? 0, objective.verb ?? l.verb, () => {
+          if (objective.effect) this.applyEffect(id, p, objective.effect, l);
+          this.advanceQuest(id, p, qs, 1);
+          if (l.kind === "npc") this.events.dialog(id, { npc: l.id });
+        });
+        return;
+      }
       if (l.kind === "shrine") this.pray(id, p, rt, l);
       else if (l.kind === "camp") this.useCamp(id, p, rt, l);
+      else if (l.kind === "npc") this.events.dialog(id, { npc: l.id });
+      else if (l.id === "crypt") this.inspectCrypt(id, p, l);
       else {
         const open = l.gate ? this.state.gates.get(l.gate) === true : false;
         this.events.notice(id, open && l.openText ? l.openText : l.lockedText);
@@ -347,6 +557,53 @@ export class Game {
     rt.nextDrinkAt = this.now + 5000;
     p.resource = Math.min(p.maxResource, p.resource + 10);
     this.events.notice(id, "You cup your hands and drink from the stream. Refreshing.");
+  }
+
+  /** The active quest step (if any) that wants you to use this landmark. */
+  private interactStep(p: Player, landmark: string): { qs: QuestState; objective: Extract<QuestObjective, { type: "interact" }> } | null {
+    for (const qs of p.active) {
+      const o = getQuest(qs.id)?.steps[qs.step]?.objective;
+      if (o?.type === "interact" && o.landmark === landmark) return { qs, objective: o };
+    }
+    return null;
+  }
+
+  private inspectCrypt(id: string, p: Player, l: LandmarkDef): void {
+    // Waiting to fight the Hollow Priest, but it's gone (someone else killed it): it rises again.
+    const waiting = p.active.some((qs) => {
+      const o = getQuest(qs.id)?.steps[qs.step]?.objective;
+      return o?.type === "kill" && o.enemies.includes("hollow_priest");
+    });
+    if (waiting && !this.specialAlive("hollow_priest")) {
+      this.spawnSpecial("hollow_priest");
+      this.events.notice(id, "Something stirs again in the crypt below, and climbs toward you.");
+      return;
+    }
+    if (this.state.cryptBurned) this.events.notice(id, "The crypt door stands open. Ash covers the steps where the thorns burned.");
+    else if (this.state.cryptOpen) this.events.notice(id, "The crypt door stands open. Black thorns writhe on the steps below.");
+    else this.events.notice(id, l.lockedText);
+  }
+
+  /** What finishing certain quest steps does to the world. */
+  private applyEffect(id: string, p: Player, effect: QuestEffect, l: LandmarkDef): void {
+    switch (effect) {
+      case "build_camp": {
+        const already = this.state.campBuilt;
+        this.state.campBuilt = true;
+        this.events.fx({ kind: "levelup", sourceId: id, fromX: l.x, fromZ: l.z, toX: l.x, toZ: l.z, color: "#ff9a3a" });
+        if (already) this.events.notice(id, "You add your wood, stones and hides to the camp. It's sturdier for it.");
+        else this.events.announce(`${p.name} has made camp in the clearing.`);
+        return;
+      }
+      case "unseal_crypt":
+        this.state.cryptOpen = true;
+        if (!this.specialAlive("hollow_priest")) this.spawnSpecial("hollow_priest");
+        return;
+      case "burn_thorns":
+        this.state.cryptBurned = true;
+        this.events.fx({ kind: "nova", sourceId: id, fromX: l.x, fromZ: l.z, toX: l.x, toZ: l.z, radius: 3, color: "#ff7a2a" });
+        return;
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -400,27 +657,11 @@ export class Game {
   // -------------------------------------------------------------------------
 
   private useCamp(id: string, p: Player, rt: PlayerRuntime, l: LandmarkDef): void {
-    const step = this.currentStep(p);
-    if (step?.objective.type === "interact" && step.objective.landmark === l.id) {
-      const o = step.objective;
-      this.startChannel(id, p, rt, o.seconds ?? 0, this.state.campBuilt ? "Adding to the camp" : "Building your camp", () => this.buildCamp(id, p, l, o));
-      return;
-    }
     if (!this.state.campBuilt) {
-      this.events.notice(id, p.activeQuest === "make_camp" ? `${l.lockedText} You'll need firewood, stones and hides first.` : l.lockedText);
+      this.events.notice(id, p.active.some((q) => q.id === "make_camp") ? `${l.lockedText} You'll need firewood, stones and hides first.` : l.lockedText);
       return;
     }
     this.rest(id, p, rt);
-  }
-
-  private buildCamp(id: string, p: Player, l: LandmarkDef, o: QuestObjective): void {
-    const already = this.state.campBuilt;
-    this.state.campBuilt = true;
-    this.events.fx({ kind: "levelup", sourceId: id, fromX: l.x, fromZ: l.z, toX: l.x, toZ: l.z, color: "#ff9a3a" });
-    if (already) this.events.notice(id, "You add your wood, stones and hides to the camp. It's sturdier for it.");
-    else this.events.announce(`${p.name} has made camp in the clearing.`);
-    this.progressQuest(id, p, o, 1);
-    if (!p.activeQuest) this.events.notice(id, "Rest by the fire (interact) to recover and become Well Rested. Resting stirs the valley's creatures back to life.");
   }
 
   /** Rest at the camp: heal, cure, Well Rested, and every creature in the valley returns. */
@@ -443,10 +684,12 @@ export class Game {
     p.buffs.push(b);
     this.events.fx({ kind: "buff", sourceId: id, fromX: p.x, fromZ: p.z, toX: p.x, toZ: p.z, radius: 2, variant: REST.buffStat, color: "#ffb35a" });
     const returned = this.repopulate();
+    const cookable = p.inventory.some((s) => getItem(s.itemId)?.cooksInto);
     this.events.notice(
       id,
       `You rest by the fire and wake Well Rested: +${Math.round(REST.xpBonus * 100)}% experience and faster healing for ${REST.durationSec / 60} minutes.` +
-        (returned > 0 ? " Out in the valley, creatures stir." : ""),
+        (returned > 0 ? " Out in the valley, creatures stir." : "") +
+        (cookable ? " (Use raw meat here to cook it.)" : ""),
     );
   }
 
@@ -454,26 +697,272 @@ export class Game {
   // Quests
   // -------------------------------------------------------------------------
 
-  private currentStep(p: Player) {
-    return getQuest(p.activeQuest)?.steps[p.questStep];
+  /** Start a quest (no checks: the caller decides who may). */
+  startQuest(id: string, p: Player, questId: string, announce = true): boolean {
+    const q = getQuest(questId);
+    if (!q || p.active.some((a) => a.id === questId)) return false;
+    const qs = new QuestState();
+    qs.id = questId;
+    p.active.push(qs);
+    if (announce) this.events.notice(id, `New quest: ${q.name}. ${q.steps[0]!.text}`);
+    return true;
   }
 
-  /** Can this player pick up this node right now? (Their current step wants it and they haven't taken it.) */
+  private stepOf(qs: QuestState) {
+    return getQuest(qs.id)?.steps[qs.step];
+  }
+
+  /** Can this player pick up this node right now? (An active step wants it and they haven't taken it.) */
   private wantsNode(p: Player, n: GatherNode): boolean {
-    const o = this.currentStep(p)?.objective;
-    return o?.type === "gather" && o.node === n.kind && !p.gathered.includes(n.id);
+    if (p.gathered.includes(n.id)) return false;
+    return p.active.some((qs) => {
+      const o = this.stepOf(qs)?.objective;
+      return o?.type === "gather" && o.node === n.kind;
+    });
   }
 
   private gather(id: string, p: Player, rt: PlayerRuntime, n: GatherNode): void {
-    const o = this.currentStep(p)?.objective;
-    if (!o || o.type !== "gather" || !this.wantsNode(p, n)) return;
+    const qs = p.active.find((q) => {
+      const o = this.stepOf(q)?.objective;
+      return o?.type === "gather" && o.node === n.kind;
+    });
+    const o = qs ? this.stepOf(qs)?.objective : undefined;
+    if (!qs || o?.type !== "gather" || !this.wantsNode(p, n)) return;
     p.facing = Math.atan2(n.x - p.x, n.z - p.z);
-    this.startChannel(id, p, rt, o.seconds ?? 0, n.kind === "deadfall" ? "Gathering branches" : "Prying the stone loose", () => {
+    const label = n.kind === "deadfall" ? "Gathering branches" : n.kind === "river_stone" ? "Prying the stone loose" : "Searching";
+    this.startChannel(id, p, rt, o.seconds ?? 0, label, () => {
       if (!this.wantsNode(p, n)) return;
       p.gathered.push(n.id);
       this.events.fx({ kind: "buff", sourceId: id, fromX: n.x, fromZ: n.z, toX: n.x, toZ: n.z, radius: 0.8, variant: "gather", color: "#e8d28a" });
-      this.progressQuest(id, p, o, 1);
+      if (n.text) this.events.notice(id, n.text);
+      this.advanceQuest(id, p, qs, 1);
     });
+  }
+
+  /** A creature died near this player: count it toward any kill step that wants it. */
+  private creditKill(id: string, p: Player, kind: string): void {
+    for (const qs of [...p.active]) {
+      const o = this.stepOf(qs)?.objective;
+      if (o?.type !== "kill" || !o.enemies.includes(kind)) continue;
+      if (o.chance !== undefined && this.rng() >= o.chance) {
+        if (o.failText) this.events.notice(id, o.failText);
+        continue;
+      }
+      this.advanceQuest(id, p, qs, 1);
+    }
+  }
+
+  /** Arrived somewhere a quest sent you? (Checked a few times a second.) */
+  private checkReach(id: string, p: Player): void {
+    for (const qs of [...p.active]) {
+      const o = this.stepOf(qs)?.objective;
+      if (o?.type !== "reach") continue;
+      const l = this.world.landmarks.find((m) => m.id === o.landmark);
+      if (l && Math.hypot(p.x - l.x, p.z - l.z) < o.radius) this.advanceQuest(id, p, qs, 1);
+    }
+  }
+
+  /** Add progress to a quest's current step; finish steps and the quest. */
+  private advanceQuest(id: string, p: Player, qs: QuestState, amount: number): void {
+    const quest = getQuest(qs.id);
+    const step = quest?.steps[qs.step];
+    if (!quest || !step) return;
+    const o = step.objective;
+    const need = o.type === "gather" || o.type === "kill" || o.type === "deliver" ? o.count : 1;
+    qs.count = Math.min(need, qs.count + amount);
+    if (qs.count < need) return;
+    this.events.notice(id, `${step.title}: ${step.doneText}`);
+    // Pick-ups of this kind are done with: forget which ones were taken.
+    if (o.type === "gather") {
+      for (let i = p.gathered.length - 1; i >= 0; i--) {
+        if (this.world.nodes.find((n) => n.id === p.gathered[i])?.kind === o.node) p.gathered.splice(i, 1);
+      }
+    }
+    qs.step += 1;
+    qs.count = 0;
+    this.grantXp(id, p, step.xp, false);
+    if (qs.step < quest.steps.length) {
+      this.events.notice(id, `Next: ${quest.steps[qs.step]!.text}`);
+      return;
+    }
+    this.finishQuest(id, p, qs, quest);
+  }
+
+  private finishQuest(id: string, p: Player, qs: QuestState, quest: QuestDef): void {
+    const i = p.active.indexOf(qs);
+    if (i >= 0) p.active.splice(i, 1);
+    if (!quest.repeatable && !p.quests.includes(quest.id)) p.quests.push(quest.id);
+    this.events.fx({ kind: "levelup", sourceId: id, fromX: p.x, fromZ: p.z, toX: p.x, toZ: p.z, color: "#ffd54a" });
+    const got: string[] = [];
+    const r = quest.reward;
+    if (r?.coins) {
+      p.coins += r.coins;
+      got.push(`${r.coins} coins`);
+    }
+    if (r?.xp) this.grantXp(id, p, r.xp, false);
+    const rt = this.players.get(id);
+    const itemId = r?.classItem && rt ? r.classItem[rt.ch.kit.base.id] : undefined;
+    if (itemId) {
+      const item = getItem(itemId)!;
+      if (this.giveItem(p, itemId, 1)) got.push(item.name);
+      else this.events.notice(id, `Your pack is full: the ${item.name} is waiting with ${quest.giver ? "Haskel" : "you"}. Make room and talk again.`);
+    }
+    this.events.notice(id, `Quest complete: ${quest.name}.${got.length ? ` You receive ${got.join(" and ")}.` : ""}`);
+    if (quest.repeatable && quest.giver === "vendor") p.fetchOffer = this.randomFetch(p.fetchOffer);
+    if (r?.opensGate && !this.state.gates.get(r.opensGate)) this.scheduleRoadClearing(r.opensGate);
+  }
+
+  private randomFetch(except: string): string {
+    const pool = FETCH_QUESTS.filter((q) => q.id !== except);
+    return pool[Math.floor(this.rng() * pool.length)]!.id;
+  }
+
+  /** The kingdom's men answer Haskel's signal fire and dig the road out. */
+  private scheduleRoadClearing(gate: GateId): void {
+    if (this.roadClearingAt) return;
+    this.roadClearingAt = this.now + ROAD_CLEARING_MS;
+    this.roadGate = gate;
+    this.events.announce("Haskel's signal fire burns on the rockslide. Faint shouts answer from beyond the pass.");
+  }
+
+  /** Dev helper: finish the current step of a quest (starting it if needed), or the whole quest. */
+  devQuest(id: string, questId: string | null, all: boolean): boolean {
+    const p = this.state.players.get(id);
+    if (!p) return false;
+    if (questId && !p.active.some((q) => q.id === questId) && !this.startQuest(id, p, questId)) return false;
+    const qs = questId ? p.active.find((q) => q.id === questId) : p.active[0];
+    if (!qs) return false;
+    do {
+      const step = this.stepOf(qs);
+      if (!step) break;
+      const o = step.objective;
+      if (o.type === "interact" && o.effect) {
+        const l = this.world.landmarks.find((m) => m.id === o.landmark)!;
+        this.applyEffect(id, p, o.effect, l);
+      }
+      this.advanceQuest(id, p, qs, 255);
+    } while (all && p.active.includes(qs));
+    return true;
+  }
+
+  // -------------------------------------------------------------------------
+  // Trading with Haskel
+  // -------------------------------------------------------------------------
+
+  private nearNpc(p: Player, npc: string): boolean {
+    const l = this.world.landmarks.find((m) => m.id === npc);
+    return !!l && Math.hypot(p.x - l.x, p.z - l.z) <= TRADE_RANGE;
+  }
+
+  buy(id: string, index: number): void {
+    const p = this.state.players.get(id);
+    const entry = VENDOR_NPC.shop[index];
+    if (!p || !entry || !this.nearNpc(p, VENDOR_NPC.id)) return;
+    const item = getItem(entry.item)!;
+    if (p.coins < entry.price) {
+      this.events.notice(id, `"That's ${entry.price} coins, friend. You're short."`);
+      return;
+    }
+    if (!this.giveItem(p, entry.item, entry.qty)) {
+      this.events.notice(id, "Your pack is full.");
+      return;
+    }
+    p.coins -= entry.price;
+    this.events.notice(id, `You buy ${entry.qty > 1 ? `${entry.qty} ` : ""}${item.name} for ${entry.price} coins.`);
+  }
+
+  sell(id: string, slot: number, all: boolean): void {
+    const p = this.state.players.get(id);
+    const s = p?.inventory[slot];
+    const item = s ? getItem(s.itemId) : undefined;
+    if (!p || !s || !item || !this.nearNpc(p, VENDOR_NPC.id)) return;
+    if (!item.value) {
+      this.events.notice(id, `"I've no use for that, friend."`);
+      return;
+    }
+    const qty = all ? s.qty : 1;
+    this.takeFromSlot(p, slot, qty);
+    p.coins += item.value * qty;
+    this.events.notice(id, `You sell ${qty > 1 ? `${qty} ` : ""}${item.name} for ${item.value * qty} coins.`);
+  }
+
+  /** Sell every piece of loot (materials) in the bag. */
+  sellJunk(id: string): void {
+    const p = this.state.players.get(id);
+    if (!p || !this.nearNpc(p, VENDOR_NPC.id)) return;
+    let total = 0;
+    for (let i = p.inventory.length - 1; i >= 0; i--) {
+      const s = p.inventory[i]!;
+      const item = getItem(s.itemId);
+      if (item?.kind === "material" && item.value) {
+        total += item.value * s.qty;
+        p.inventory.splice(i, 1);
+      }
+    }
+    this.events.notice(id, total ? `Haskel buys your loot for ${total} coins.` : "You have nothing Haskel wants to buy.");
+    p.coins += total;
+  }
+
+  acceptQuest(id: string, questId: string): void {
+    const p = this.state.players.get(id);
+    const q = getQuest(questId);
+    if (!p || !q?.giver || !this.nearNpc(p, q.giver) || p.active.some((a) => a.id === questId)) return;
+    if (q.repeatable) {
+      if (p.fetchOffer !== questId || p.active.some((a) => getQuest(a.id)?.repeatable)) return;
+    } else if (p.quests.includes(questId)) return;
+    this.startQuest(id, p, questId);
+  }
+
+  /** Hand over the items a delivery step asks for. */
+  turnIn(id: string, questId: string): void {
+    const p = this.state.players.get(id);
+    const qs = p?.active.find((a) => a.id === questId);
+    const quest = getQuest(questId);
+    const o = qs ? this.stepOf(qs)?.objective : undefined;
+    if (!p || !qs || !quest?.giver || o?.type !== "deliver" || !this.nearNpc(p, quest.giver)) return;
+    if (this.countItem(p, o.item) < o.count) {
+      this.events.notice(id, `You need ${o.count} ${getItem(o.item)?.name ?? o.item}.`);
+      return;
+    }
+    this.removeItem(p, o.item, o.count);
+    this.advanceQuest(id, p, qs, o.count);
+  }
+
+  /** Lost your weapon? Haskel gives you a plain one for your calling. */
+  requestWeapon(id: string): void {
+    const p = this.state.players.get(id);
+    const rt = this.players.get(id);
+    if (!p || !rt || !this.nearNpc(p, VENDOR_NPC.id) || !this.needsWeapon(p, rt)) return;
+    p.weapon = rt.ch.kit.base.starterWeapon;
+    this.refreshCharacter(p, rt);
+    this.events.notice(id, `Haskel hands you a ${getItem(p.weapon)?.name ?? "weapon"}.`);
+  }
+
+  private needsWeapon(p: Player, rt: PlayerRuntime): boolean {
+    if (p.weapon) return false;
+    const base = rt.ch.kit.base.id;
+    return !p.inventory.some((s) => {
+      const d = getItem(s.itemId);
+      return d?.kind === "weapon" && canEquip(d, base);
+    });
+  }
+
+  private countItem(p: Player, itemId: string): number {
+    let n = 0;
+    p.inventory.forEach((s) => {
+      if (s.itemId === itemId) n += s.qty;
+    });
+    return n;
+  }
+
+  private removeItem(p: Player, itemId: string, qty: number): void {
+    for (let i = p.inventory.length - 1; i >= 0 && qty > 0; i--) {
+      const s = p.inventory[i]!;
+      if (s.itemId !== itemId) continue;
+      const take = Math.min(qty, s.qty);
+      this.takeFromSlot(p, i, take);
+      qty -= take;
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -515,48 +1004,6 @@ export class Game {
     p.channelEnd = 0;
     p.anim = "idle";
     done();
-  }
-
-  /** Count progress toward the current step if `o` matches it; finish steps and quests. */
-  private progressQuest(id: string, p: Player, o: QuestObjective, amount: number): void {
-    const quest = getQuest(p.activeQuest);
-    const step = quest?.steps[p.questStep];
-    if (!quest || !step || !sameObjective(step.objective, o)) return;
-    const so = step.objective;
-    if (so.type === "kill" && so.chance !== undefined && amount < 255 && this.rng() >= so.chance) {
-      if (so.failText) this.events.notice(id, so.failText);
-      return;
-    }
-    const need = step.objective.type === "interact" ? 1 : step.objective.count;
-    p.questCount = Math.min(need, p.questCount + amount);
-    if (p.questCount < need) return;
-    this.events.notice(id, `${step.title}: ${step.doneText}`);
-    p.questStep += 1;
-    p.questCount = 0;
-    this.grantXp(id, p, step.xp, false);
-    if (p.questStep >= quest.steps.length) {
-      p.activeQuest = "";
-      p.questStep = 0;
-      p.gathered.clear();
-      if (!p.quests.includes(quest.id)) p.quests.push(quest.id);
-      this.events.fx({ kind: "levelup", sourceId: id, fromX: p.x, fromZ: p.z, toX: p.x, toZ: p.z, color: "#ffd54a" });
-      this.events.notice(id, `Quest complete: ${quest.name}.`);
-    } else {
-      this.events.notice(id, `Next: ${quest.steps[p.questStep]!.text}`);
-    }
-  }
-
-  /** Dev helper: finish the current quest step (or the whole quest). */
-  devFinishQuestStep(id: string, all = false): boolean {
-    const p = this.state.players.get(id);
-    if (!p || !p.activeQuest) return false;
-    do {
-      const step = this.currentStep(p);
-      if (!step) break;
-      if (step.objective.type === "interact" && step.objective.landmark === "campsite") this.state.campBuilt = true;
-      this.progressQuest(id, p, step.objective, 255);
-    } while (all && p.activeQuest);
-    return true;
   }
 
   // -------------------------------------------------------------------------
@@ -891,6 +1338,17 @@ export class Game {
     while (this.pendingSpawns.length && this.pendingSpawns[0]!.at <= nowMs) {
       this.spawnEnemy(this.pendingSpawns.shift()!.zone);
     }
+    for (let i = this.pendingSpecials.length - 1; i >= 0; i--) {
+      const ps = this.pendingSpecials[i]!;
+      if (ps.at > nowMs) continue;
+      this.pendingSpecials.splice(i, 1);
+      if (!this.specialAlive(ps.kind)) this.spawnSpecial(ps.kind);
+    }
+    if (this.roadClearingAt && nowMs >= this.roadClearingAt && this.roadGate) {
+      this.roadClearingAt = 0;
+      this.setGate(this.roadGate, true);
+      this.events.announce("The ring of picks, a horn, and cheering from beyond the pass: the kingdom's men have cleared the road!");
+    }
   }
 
   private updatePlayer(id: string, p: Player, dt: number): void {
@@ -911,7 +1369,13 @@ export class Game {
     const res = RESOURCES[rt.ch.kit.base.resource];
     p.resource = Math.max(0, Math.min(p.maxResource, p.resource + res.regenPerSecond * dt));
     const rested = p.buffs.some((b) => b.stat === REST.buffStat) ? REST.regenMultiplier : 1;
-    p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.005 * (1 + bonus(p, "hpRegen")) * rested * dt);
+    let meal = 0;
+    for (const b of p.buffs) if (b.stat === "food") meal += b.amount;
+    p.hp = Math.min(p.maxHp, p.hp + (p.maxHp * 0.005 * (1 + bonus(p, "hpRegen")) * rested + meal) * dt);
+    if (this.now >= rt.nextReachCheck) {
+      rt.nextReachCheck = this.now + 400;
+      this.checkReach(id, p);
+    }
 
     // Chase-and-attack takes priority over plain movement.
     let intent = rt.intent;
@@ -949,7 +1413,15 @@ export class Game {
     p.anim = "attack";
     p.actionSeq = (p.actionSeq + 1) % 65535;
 
-    const base = randRange(this.rng, atk.damage[0], atk.damage[1]) + weaponBonus(p);
+    let arrowBonus = 0;
+    if (atk.projectile === "arrow") {
+      const quiver = p.inventory.findIndex((s) => s.itemId === "arrows");
+      if (quiver >= 0) {
+        this.takeFromSlot(p, quiver, 1);
+        arrowBonus = 2;
+      }
+    }
+    const base = randRange(this.rng, atk.damage[0], atk.damage[1]) + weaponBonus(p) + arrowBonus;
     const crit = this.rng() < critChance(p, rt.ch);
     const amount = Math.round(base * damageMultiplier(p, rt.ch, this.now) * (crit ? 1.5 : 1));
 
@@ -1087,24 +1559,59 @@ export class Game {
     if (src && leech > 0 && src.anim !== "dead") src.hp = Math.min(src.maxHp, src.hp + amount * leech);
     e.hp = Math.max(0, e.hp - amount);
     this.events.hit({ targetId: enemyId, sourceId, amount, crit });
+    // Whoever (or whose companion) struck the blow is now fighting.
+    const killerId = sourceId.startsWith("c:") ? sourceId.slice(2) : sourceId;
+    const kp = this.state.players.get(killerId);
+    const krt = this.players.get(killerId);
+    if (kp && krt) this.enterCombat(kp, krt);
     const ert = this.enemies.get(enemyId);
-    if (ert && !ert.returning) ert.targetId = sourceId;
-    if (e.hp <= 0) this.killEnemy(enemyId, e);
+    if (ert?.def.passive) {
+      ert.fleeUntil = this.now + 4000;
+      ert.fleeFrom = { x: kp?.x ?? e.x, z: kp?.z ?? e.z };
+    } else if (ert && !ert.returning) ert.targetId = sourceId;
+    if (e.hp <= 0) this.killEnemy(enemyId, e, kp ? killerId : null);
   }
 
-  private killEnemy(enemyId: string, e: Enemy): void {
+  private killEnemy(enemyId: string, e: Enemy, killerId: string | null = null): void {
     const ert = this.enemies.get(enemyId);
     this.events.fx({ kind: "death", sourceId: enemyId, fromX: e.x, fromZ: e.z, toX: e.x, toZ: e.z });
     this.state.enemies.delete(enemyId);
     this.enemies.delete(enemyId);
+    for (const rt of this.players.values()) if (rt.attackTargetId === enemyId) rt.attackTargetId = null;
     if (!ert) return;
-    this.pendingSpawns.push({ at: this.now + ENEMY_RESPAWN_MS, zone: ert.zone });
-    this.pendingSpawns.sort((a, b) => a.at - b.at);
+    if (ert.zone) {
+      this.pendingSpawns.push({ at: this.now + ENEMY_RESPAWN_MS, zone: ert.zone });
+      this.pendingSpawns.sort((a, b) => a.at - b.at);
+    } else if (ert.special && SPECIALS[ert.special]?.respawnMs) {
+      this.pendingSpecials.push({ at: this.now + SPECIALS[ert.special]!.respawnMs!, kind: ert.special });
+    }
     for (const [pid, p] of this.playersInRadius(e.x, e.z, XP_SHARE_RADIUS)) {
       this.grantXp(pid, p, ert.xp);
-      this.progressQuest(pid, p, { type: "kill", enemy: e.kind, count: 0 }, 1);
+      this.creditKill(pid, p, e.kind);
     }
-    for (const rt of this.players.values()) if (rt.attackTargetId === enemyId) rt.attackTargetId = null;
+    const killer = killerId ? this.state.players.get(killerId) : undefined;
+    if (killer && killerId) this.dropLoot(killerId, killer, ert.def);
+  }
+
+  /** Loot goes straight into the killer's pack. */
+  private dropLoot(id: string, p: Player, def: EnemyDef): void {
+    const got: string[] = [];
+    const lost: string[] = [];
+    for (const drop of def.loot ?? []) {
+      if (this.rng() >= drop.chance) continue;
+      const qty = drop.qty ? drop.qty[0] + Math.floor(this.rng() * (drop.qty[1] - drop.qty[0] + 1)) : 1;
+      const item = getItem(drop.item);
+      if (!item) continue;
+      if (this.giveItem(p, drop.item, qty)) got.push(qty > 1 ? `${qty} ${item.name}` : item.name);
+      else lost.push(item.name);
+    }
+    if (def.coins && this.rng() < def.coins.chance) {
+      const n = def.coins.range[0] + Math.floor(this.rng() * (def.coins.range[1] - def.coins.range[0] + 1));
+      p.coins += n;
+      got.push(`${n} coin${n === 1 ? "" : "s"}`);
+    }
+    if (got.length) this.events.notice(id, `Looted: ${got.join(", ")}.`);
+    if (lost.length) this.events.notice(id, `Your pack is full. Left behind: ${lost.join(", ")}.`);
   }
 
   /** `pierce`: ignores armour (damage over time from statuses). */
@@ -1112,7 +1619,11 @@ export class Game {
     if (p.anim === "dead") return;
     const amount = Math.max(1, Math.round(raw * (pierce ? 1 : 1 - armorFraction(p, this.now))));
     p.hp = Math.max(0, p.hp - amount);
-    if (!pierce) this.cancelChannel(id, "Interrupted!");
+    if (!pierce) {
+      this.cancelChannel(id, "Interrupted!");
+      const prt = this.players.get(id);
+      if (prt) this.enterCombat(p, prt);
+    }
     this.events.hit({ targetId: id, sourceId, amount });
     const rt = this.players.get(id)!;
     const res = RESOURCES[rt.ch.kit.base.resource];
@@ -1207,6 +1718,7 @@ export class Game {
       const pos = fromUV(zone.u + Math.cos(a) * r, zone.v + Math.sin(a) * r);
       if (Math.hypot(pos.x - this.world.spawn.x, pos.z - this.world.spawn.z) < SPAWN_SAFE_RADIUS) continue;
       if (Math.hypot(pos.x - this.campPos.x, pos.z - this.campPos.z) < SPAWN_SAFE_RADIUS) continue;
+      if (Math.hypot(pos.x - this.vendorPos.x, pos.z - this.vendorPos.z) < SPAWN_SAFE_RADIUS) continue;
       if (this.world.landmarks.some((l) => l.kind === "shrine" && Math.hypot(pos.x - l.x, pos.z - l.z) < SHRINE_SANCTUARY)) continue;
       let roll = this.rng() * totalWeight;
       const pick = zone.enemies.find((e) => (roll -= e.weight) <= 0) ?? zone.enemies[0]!;
@@ -1214,34 +1726,84 @@ export class Game {
       if (!def) return false;
       if (isInWater(pos.x, pos.z) || !isFree(this.world, pos.x, pos.z, Math.max(0.8, def.radius))) continue;
       const level = zone.levels[0] + Math.floor(this.rng() * (zone.levels[1] - zone.levels[0] + 1));
-      const st = enemyStats(def, level);
-      const id = `e${this.nextEnemyId++}`;
-      const e = new Enemy();
-      e.kind = def.id;
-      e.level = level;
-      e.x = pos.x;
-      e.z = pos.z;
-      e.facing = randRange(this.rng, 0, Math.PI * 2);
-      e.hp = st.maxHp;
-      e.maxHp = st.maxHp;
-      this.state.enemies.set(id, e);
-      this.enemies.set(id, {
-        def,
-        zone,
-        level,
-        damage: st.damage,
-        xp: st.xp,
-        homeX: pos.x,
-        homeZ: pos.z,
-        targetId: null,
-        nextAttackAt: 0,
-        wander: null,
-        nextWanderAt: 0,
-        returning: false,
-      });
+      this.createEnemy(def, level, pos, { zone });
       return true;
     }
     return false;
+  }
+
+  private createEnemy(def: EnemyDef, level: number, pos: { x: number; z: number }, opts: { zone?: ZoneDef; special?: string; leash?: number } = {}): string {
+    const st = enemyStats(def, level);
+    const id = `e${this.nextEnemyId++}`;
+    const e = new Enemy();
+    e.kind = def.id;
+    e.level = level;
+    e.x = pos.x;
+    e.z = pos.z;
+    e.facing = randRange(this.rng, 0, Math.PI * 2);
+    e.hp = st.maxHp;
+    e.maxHp = st.maxHp;
+    this.state.enemies.set(id, e);
+    this.enemies.set(id, {
+      def: opts.leash ? { ...def, leashRange: opts.leash } : def,
+      zone: opts.zone,
+      special: opts.special,
+      level,
+      damage: st.damage,
+      xp: st.xp,
+      homeX: pos.x,
+      homeZ: pos.z,
+      targetId: null,
+      nextAttackAt: 0,
+      wander: null,
+      nextWanderAt: 0,
+      returning: false,
+      nextNovaAt: 0,
+      summoned: false,
+      fleeUntil: 0,
+      fleeFrom: null,
+    });
+    return id;
+  }
+
+  private specialAlive(kind: string): boolean {
+    for (const rt of this.enemies.values()) if (rt.special === kind) return true;
+    return false;
+  }
+
+  /** Bring out a named creature (Old Corwin, the Hollow Priest) at its spot. */
+  private spawnSpecial(kind: string): void {
+    const sp = SPECIALS[kind];
+    const def = getEnemy(kind);
+    if (!sp || !def) return;
+    const at = sp.at();
+    this.createEnemy(def, sp.level, this.findFreeSpotNear(at.x, at.z, 1), { special: kind, leash: sp.leash });
+  }
+
+  /** Bosses: a blast around them every few seconds, and minions once badly hurt. */
+  private bossMoves(id: string, e: Enemy, rt: EnemyRuntime): void {
+    const sp = rt.def.special;
+    if (!sp) return;
+    if (sp.nova) {
+      if (!rt.nextNovaAt) rt.nextNovaAt = this.now + sp.nova.every * 1000;
+      if (this.now >= rt.nextNovaAt) {
+        rt.nextNovaAt = this.now + sp.nova.every * 1000;
+        this.events.fx({ kind: "nova", sourceId: id, fromX: e.x, fromZ: e.z, toX: e.x, toZ: e.z, radius: sp.nova.radius, color: "#7a4fa0" });
+        const avg = (rt.damage[0] + rt.damage[1]) / 2;
+        for (const [pid, p] of this.playersInRadius(e.x, e.z, sp.nova.radius)) {
+          this.damagePlayer(pid, p, avg * sp.nova.multiplier, id);
+          if (sp.nova.status && p.anim !== "dead") this.inflict(p, sp.nova.status);
+        }
+      }
+    }
+    if (sp.summon && !rt.summoned && e.hp <= e.maxHp * sp.summon.atHpFraction) {
+      rt.summoned = true;
+      const minion = getEnemy(sp.summon.kind);
+      if (minion) {
+        for (let i = 0; i < sp.summon.count; i++) this.createEnemy(minion, Math.max(1, rt.level - 2), this.findFreeSpotNear(e.x, e.z, 2.5));
+        this.events.fx({ kind: "nova", sourceId: id, fromX: e.x, fromZ: e.z, toX: e.x, toZ: e.z, radius: 2.5, color: "#c8c0a8" });
+      }
+    }
   }
 
   private updateEnemy(id: string, e: Enemy, dt: number): void {
@@ -1249,6 +1811,18 @@ export class Game {
     if (!rt) return;
     const def = rt.def;
     const homeDist = Math.hypot(e.x - rt.homeX, e.z - rt.homeZ);
+
+    // Passive creatures (hares) never fight: they bolt from whatever hurt them.
+    if (def.passive) {
+      if (this.now < rt.fleeUntil && rt.fleeFrom) {
+        const dx = e.x - rt.fleeFrom.x;
+        const dz = e.z - rt.fleeFrom.z;
+        const d = Math.hypot(dx, dz) || 1;
+        this.moveEnemy(e, def, { x: e.x + (dx / d) * 3, z: e.z + (dz / d) * 3 }, def.moveSpeed, dt);
+        return;
+      }
+      rt.targetId = null;
+    }
 
     // Leash: give up and walk home, healing on the way.
     if (homeDist > def.leashRange) {
@@ -1263,7 +1837,7 @@ export class Game {
     }
 
     // Acquire a target.
-    if (!rt.targetId) {
+    if (!rt.targetId && !def.passive) {
       let best: string | null = null;
       let bestDist = def.aggroRange;
       for (const [pid, p] of this.state.players) {
@@ -1281,6 +1855,7 @@ export class Game {
     if (rt.targetId && (!target || target.anim === "dead")) rt.targetId = null;
 
     if (target && target.anim !== "dead") {
+      this.bossMoves(id, e, rt);
       const dist = Math.hypot(target.x - e.x, target.z - e.z);
       if (dist > def.attackRange) {
         this.moveEnemy(e, def, { x: target.x, z: target.z }, def.moveSpeed, dt);
@@ -1308,7 +1883,7 @@ export class Game {
     // Idle wandering around home.
     if (!rt.wander && this.now >= rt.nextWanderAt) {
       const a = randRange(this.rng, 0, Math.PI * 2);
-      const r = randRange(this.rng, 2, 7);
+      const r = rt.special ? randRange(this.rng, 0.5, 2.5) : randRange(this.rng, 2, 7);
       rt.wander = { x: rt.homeX + Math.cos(a) * r, z: rt.homeZ + Math.sin(a) * r };
     }
     if (rt.wander) {
@@ -1381,6 +1956,7 @@ export class Game {
   private giveItem(p: Player, itemId: string, qty: number): boolean {
     const def = getItem(itemId);
     if (!def) return false;
+    if (def.use?.type === "map" && !p.quests.includes(MAP_FLAG)) p.quests.push(MAP_FLAG);
     if (def.stackable) {
       const existing = p.inventory.find((s) => s.itemId === itemId);
       if (existing) {
@@ -1402,11 +1978,4 @@ export class Game {
     s.qty -= qty;
     if (s.qty <= 0) p.inventory.splice(slot, 1);
   }
-}
-
-function sameObjective(a: QuestObjective, b: QuestObjective): boolean {
-  if (a.type !== b.type) return false;
-  if (a.type === "gather") return a.node === (b as typeof a).node;
-  if (a.type === "kill") return a.enemy === (b as typeof a).enemy;
-  return a.landmark === (b as typeof a).landmark;
 }

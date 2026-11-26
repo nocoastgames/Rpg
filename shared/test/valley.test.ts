@@ -73,7 +73,7 @@ test("starting zone content: a shrine per god, campsite, quest nodes, hunting gr
   for (const step of CAMP_QUEST.steps) {
     const o = step.objective;
     if (o.type === "gather") assert.ok(w.nodes.filter((n) => n.kind === o.node).length >= o.count * 1.5, o.node);
-    if (o.type === "kill") assert.ok(ZONES.some((z) => z.enemies.some((e) => e.id === o.enemy)), o.enemy);
+    if (o.type === "kill") assert.ok(o.enemies.every((k) => ZONES.some((z) => z.enemies.some((e) => e.id === k))), o.enemies.join());
   }
   for (const n of w.nodes) assert.ok(isFree(w, n.x, n.z, 0.6) && !isInWater(n.x, n.z), n.id);
   // Zones cover levels 1-5 in order, with known enemies, and get tougher.

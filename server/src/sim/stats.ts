@@ -38,6 +38,8 @@ export function resolveCharacter(p: Player): ResolvedCharacter {
   stats = addStats(stats, getBackground(p.background)?.statBonus ?? {});
   STAT_IDS.forEach((id, i) => (stats[id] += p.alloc[i] ?? 0));
   for (const n of kit.path) stats = addStats(stats, n.statBonus);
+  // Equipment can carry attribute bonuses.
+  for (const id of [p.weapon, p.armor]) stats = addStats(stats, getItem(id)?.stats ?? {});
   return { kit, stats };
 }
 

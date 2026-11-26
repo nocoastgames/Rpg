@@ -60,12 +60,13 @@ When the server is not running with `NODE_ENV=production`, these chat commands h
 
 | Command | Effect |
 | --- | --- |
-| `/tp <place>` | Teleport to `spawn`, `pool`, `camp`, `ruins_seal`, `cave_thorns`, `valley_exit`, `signpost`, a shrine (`shrine_<god>`) or a hunting ground (`tusk_meadow`, `greypine_wood`, `webbed_hollow`, `thornbrake`) |
+| `/tp <place>` | Teleport to `spawn`, `pool`, `camp`, `vendor`, `village`, `crypt`, `ruins_seal`, `cave_thorns`, `valley_exit`, `signpost`, a shrine (`shrine_<god>`) or a hunting ground (`tusk_meadow`, `greypine_wood`, `webbed_hollow`, `thornbrake`) |
 | `/open <gate>` / `/close <gate>` | Open or seal `valley_exit`, `ruins_seal` or `cave_thorns` for everyone |
 | `/level <n>` | Set your level |
 | `/quest <id\|all\|favor>` | Complete a gate trial (`trial_of_paths`, `trial_of_mastery`), or a god's epic quest (`favor` for your own god's, or `favor_<god>`); completing one makes that god your god |
-| `/step` | Finish the current step of your active quest |
-| `/quest make_camp` | Finish the whole first quest (builds the camp) |
+| `/step [quest]` | Finish the current step of a quest |
+| `/quest make_camp` / `/quest silent_village` | Start (if needed) and finish a whole quest |
+| `/coins <n>` | Set your coins |
 | `/class <id>` | Jump down your tree to a class (sets level 50, completes trials), e.g. `/class dragon_knight` |
 
 ### Other scripts
@@ -138,6 +139,20 @@ screen to run full-screen (it ships a web app manifest).
   - **A shrine to each god.** Your god's shrine calls to you with a pillar of
     light. The first prayer receives your blessing; after that it cures every
     status effect and heals you.
+  - **Haskel the Peddler**, stranded by the rockfall at the road out: buys
+    your loot, sells rations, healing draughts, throwing knives, arrows,
+    books and a map, hands out repeatable odd jobs, and gives a plain weapon
+    to anyone who's lost theirs. His quest, *The Silent Village* (8 steps,
+    about 20 minutes), sends you into **Ashford**, a village overrun by the
+    dead (levels 2–3), to face Old Corwin the gravedigger and the Hollow
+    Priest. The reward is your calling's first upper-body armour, and the
+    kingdom clears the road out.
+  - **Loot, coins and equipment**: creatures drop pelts, hides, meat, silk,
+    bones, coins and rusty gear. Equip weapons and armour from your pack
+    (armour shows on your character). Food heals over time out of combat,
+    draughts heal at once in it, and raw meat cooks at the camp fire.
+  - **No map until you find one**: the map fills in as you explore, or buy
+    Haskel's.
   - **A campsite** you build in the first quest, *Shelter* (gather firewood
     and river stones, hunt boars for hides, make camp; about ten minutes).
     Resting there heals you, makes you Well Rested (+15% XP) and brings every
@@ -165,7 +180,7 @@ screen to run full-screen (it ships a web app manifest).
   low and anything between the camera and your character fades out, so you are
   never hidden.
 - **Minimal starting supplies**: class-flavoured crude weapon, tattered clothes,
-  stale bread (heal) and an empty waterskin you can fill at the stream (`F`) and
+  stale bread (food) and an empty waterskin you can fill at the stream (`F`) and
   drink to restore your resource.
 - **Server-authoritative multiplayer** (up to 16 per world instance): movement,
   combat, abilities, buffs, enemy AI, XP sharing, levelling, death and respawn.
@@ -181,6 +196,10 @@ screen to run full-screen (it ships a web app manifest).
 | ![Camp](docs/images/camp.png) | ![Shrine](docs/images/shrine.png) |
 
 ![Webbed Hollow](docs/images/hollow.png)
+
+| Haskel the Peddler | Ashford, overrun by the dead |
+| --- | --- |
+| ![Haskel](docs/images/haskel.png) | ![Ashford](docs/images/ashford.png) |
 
 ![Unknown ruins](docs/images/ruins.png)
 

@@ -38,9 +38,14 @@ export interface MapMarker {
 export interface MapContext {
   /** Your god: their shrine is always marked, even before you find it. */
   faith: string;
-  /** Hunting ground the current quest step sends you to. */
-  objectiveZone?: string;
+  /** Hunting grounds the current quest steps send you to. */
+  objectiveZones?: string[];
+  /** Owns a map of the valley: no fog. */
+  hasMap?: boolean;
 }
+
+/** How far around you the map fills in as you explore (m). */
+const EXPLORE_RADIUS = 24;
 
 /**
  * Corner minimap (M toggles a large view). The background is rendered once
@@ -51,10 +56,20 @@ export class Minimap {
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
   private readonly bg: HTMLCanvasElement;
+  /** What you've explored (alpha), and the background cut to it. */
+  private readonly mask: HTMLCanvasElement;
+  private readonly explored: HTMLCanvasElement;
+  private lastExplore: { u: number; v: number } | null = null;
   private large = false;
 
   constructor(private readonly world: World) {
     this.bg = this.renderBackground();
+    this.mask = document.createElement("canvas");
+    this.mask.width = this.bg.width;
+    this.mask.height = this.bg.height;
+    this.explored = document.createElement("canvas");
+    this.explored.width = this.bg.width;
+    this.explored.height = this.bg.height;
     this.canvas = h("canvas.minimap-canvas");
     this.ctx = this.canvas.getContext("2d")!;
     this.el = h("div.minimap", { title: "Map (M)" }, this.canvas);
@@ -101,6 +116,30 @@ export class Minimap {
     return c;
   }
 
+  /** Fill in the map around where you are (without a map, that's all you see). */
+  explore(x: number, z: number): void {
+    const { u, v } = toUV(x, z);
+    if (this.lastExplore && Math.hypot(u - this.lastExplore.u, v - this.lastExplore.v) < 3) return;
+    this.lastExplore = { u, v };
+    const m = this.mask.getContext("2d")!;
+    const px = (u - U0) / RES;
+    const py = (v - V0) / RES;
+    const r = EXPLORE_RADIUS / RES;
+    const grad = m.createRadialGradient(px, py, r * 0.55, px, py, r);
+    grad.addColorStop(0, "rgba(0,0,0,1)");
+    grad.addColorStop(1, "rgba(0,0,0,0)");
+    m.fillStyle = grad;
+    m.beginPath();
+    m.arc(px, py, r, 0, Math.PI * 2);
+    m.fill();
+    const e = this.explored.getContext("2d")!;
+    e.globalCompositeOperation = "copy";
+    e.drawImage(this.bg, 0, 0);
+    e.globalCompositeOperation = "destination-in";
+    e.drawImage(this.mask, 0, 0);
+    e.globalCompositeOperation = "source-over";
+  }
+
   draw(markers: MapMarker[], discovered: Set<string>, openGates: Set<string>, ctxInfo?: MapContext): void {
     const size = this.el.clientWidth;
     if (!size) return;
@@ -134,13 +173,19 @@ export class Minimap {
 
     ctx.imageSmoothingEnabled = true;
     const tl = { px: W / 2 + (U0 - cu) * scale, py: H / 2 + (V0 - cv) * scale };
-    ctx.drawImage(this.bg, tl.px, tl.py, (U1 - U0) * scale, (V1 - V0) * scale);
+    if (ctxInfo?.hasMap) ctx.drawImage(this.bg, tl.px, tl.py, (U1 - U0) * scale, (V1 - V0) * scale);
+    else {
+      // Unexplored land is blank parchment.
+      ctx.fillStyle = "#2a2620";
+      ctx.fillRect(0, 0, W, H);
+      ctx.drawImage(this.explored, tl.px, tl.py, (U1 - U0) * scale, (V1 - V0) * scale);
+    }
 
     // Hunting grounds: named on the large map once found; the quest's target ground is ringed.
     ctx.textAlign = "center";
     for (const zn of ZONES) {
       const c = toPx(...xz(zn.u, zn.v));
-      const target = ctxInfo?.objectiveZone === zn.id;
+      const target = !!ctxInfo?.objectiveZones?.includes(zn.id);
       if (target) {
         ctx.save();
         ctx.setLineDash([4 * dpr, 4 * dpr]);

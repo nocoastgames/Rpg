@@ -211,3 +211,37 @@ test("a blessing is received by praying at the god's shrine", () => {
   // Praying doesn't reopen your own god's quest.
   assert.ok(!availableFavorQuests("solenne", "paladin").some((g) => g.id === "solenne"));
 });
+
+import { CAMP_QUEST, ENEMIES, FETCH_QUESTS, ITEMS as ALL_ITEMS, QUESTS, VENDOR_NPC, VILLAGE_QUEST, canEquip, getEnemy, getItem as itemById, landmarks } from "../src/index.ts";
+
+test("items, loot, shop and quests reference things that exist", () => {
+  for (const e of ENEMIES) for (const d of e.loot ?? []) assert.ok(itemById(d.item), `${e.id} drops ${d.item}`);
+  for (const i of ALL_ITEMS) if (i.cooksInto) assert.equal(itemById(i.cooksInto)?.use?.type, "food", i.id);
+  for (const entry of VENDOR_NPC.shop) assert.ok(itemById(entry.item) && entry.price > 0, entry.item);
+  const marks = new Set(landmarks().map((l) => l.id));
+  for (const q of QUESTS) {
+    if (q.giver) assert.ok(marks.has(q.giver), `${q.id} giver`);
+    for (const s of q.steps) {
+      const o = s.objective;
+      if (o.type === "interact" || o.type === "reach") assert.ok(marks.has(o.landmark), `${q.id}: ${o.landmark}`);
+      if (o.type === "kill") for (const k of o.enemies) assert.ok(getEnemy(k), `${q.id}: ${k}`);
+      if (o.type === "deliver") assert.ok(itemById(o.item)?.value, `${q.id}: ${o.item} is something you can loot and sell`);
+    }
+  }
+  assert.ok(FETCH_QUESTS.length >= 4 && FETCH_QUESTS.every((q) => q.repeatable));
+  assert.ok(VILLAGE_QUEST.steps.length >= 5 && VILLAGE_QUEST.steps.length <= 10, "village quest has 5-10 steps");
+  assert.equal(CAMP_QUEST.steps.length, 4);
+});
+
+test("every calling gets its own upper-body armour from Haskel, and its starter weapon fits", () => {
+  for (const [base, def] of Object.entries(BASE_CLASSES)) {
+    const armor = itemById(VILLAGE_QUEST.reward!.classItem![base as keyof typeof BASE_CLASSES])!;
+    assert.equal(armor.kind, "armor");
+    assert.ok(canEquip(armor, base), `${base} can wear ${armor.id}`);
+    for (const other of Object.keys(BASE_CLASSES)) if (other !== base) assert.ok(!canEquip(armor, other), `${other} can't wear ${armor.id}`);
+    assert.ok(canEquip(itemById(def.starterWeapon)!, base), `${base} starter weapon`);
+  }
+  // Healing draughts cost more than food (they work in combat).
+  const price = (id: string) => VENDOR_NPC.shop.find((e) => e.item === id)!.price;
+  assert.ok(price("healing_draught") > price("trail_ration") * 5);
+});

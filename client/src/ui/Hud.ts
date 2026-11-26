@@ -21,6 +21,7 @@ import {
   REST,
   VALLEY_LEVELS,
   type MemoryEvent,
+  type ReadEvent,
   type ResolvedKit,
 } from "@rpg/shared";
 import type { PlayerView } from "../types.ts";
@@ -35,6 +36,8 @@ export interface HudCallbacks {
   onInteract(): void;
   /** Permanently advance into a class (child of the current class). */
   onAdvance(classId: string): void;
+  /** Take off the equipped weapon or armour. */
+  onUnequip(slot: "weapon" | "armor"): void;
 }
 
 interface Slot {
@@ -86,6 +89,7 @@ export class Hud {
   private readonly party: HTMLElement;
   private readonly tracker: HTMLElement;
   private readonly channel: HTMLElement;
+  private readonly bookEl: HTMLElement;
   private readonly channelFill: HTMLElement;
   private readonly channelText: HTMLElement;
   private trackerKey = "";
@@ -183,6 +187,7 @@ export class Hud {
     this.target = h("div.target.hidden", null, this.targetName, h("div.target-bar", null, this.targetFill));
     this.party = h("div.party");
     this.tracker = h("div.tracker.hidden");
+    this.bookEl = h("div.book.hidden", { onpointerdown: stop });
     this.channelFill = h("div.channel-fill");
     this.channelText = h("div.channel-text");
     this.channel = h("div.channel.hidden", null, this.channelText, h("div.channel-bar", null, this.channelFill));
@@ -208,6 +213,7 @@ export class Hud {
       this.memoryEl,
       this.interactHint,
       this.channel,
+      this.bookEl,
       this.death,
       minimap,
       this.chat,
@@ -428,8 +434,8 @@ export class Hud {
       const left = Math.max(0, (b.expiresAt - serverTime) / 1000);
       if (left <= 0) return;
       const rested = b.stat === REST.buffStat;
-      const label = rested ? "Well Rested" : b.stat;
-      const title = rested ? `+${Math.round(b.amount * 100)}% experience, faster healing` : `+${Math.round(b.amount * 100)}% ${b.stat}`;
+      const label = rested ? "Well Rested" : b.stat === "food" ? "Eating" : b.stat;
+      const title = rested ? `+${Math.round(b.amount * 100)}% experience, faster healing` : b.stat === "food" ? "Recovering health; fighting interrupts it" : `+${Math.round(b.amount * 100)}% ${b.stat}`;
       buffNodes.push(h("div.buff", { title }, `${label} ${time(left)}`));
     });
     p.statuses?.forEach((st) => {
@@ -458,7 +464,7 @@ export class Hud {
   }
 
   private renderBag(p: PlayerView): void {
-    const parts: string[] = [p.weapon, p.armor, String(p.level)];
+    const parts: string[] = [p.weapon, p.armor, String(p.level), String(p.coins)];
     p.inventory.forEach((s) => parts.push(`${s.itemId}:${s.qty}`));
     const key = parts.join("|");
     if (key === this.bagKey) return;
@@ -468,20 +474,28 @@ export class Hud {
     this.charInfo.replaceChildren(
       h("div.char-name", null, p.name),
       h("div.char-class", { style: `color:${node?.color}` }, `Level ${p.level} ${node?.name ?? ""}`),
+      h("div.char-coins", null, `🪙 ${p.coins} coins`),
     );
 
     const itemCell = (itemId: string, qty: number, onClick?: () => void) => {
       const def = getItem(itemId);
       const cell = h("button.bag-cell", { type: "button", onclick: onClick }, def ? def.icon : "", qty > 1 ? h("span.qty", null, String(qty)) : null);
       if (def) {
-        cell.addEventListener("pointerenter", () => this.showTooltip(cell, def.name, def.kind, def.description));
+        const extra = [
+          def.armor ? `Armour ${Math.round(def.armor * 100)}%` : "",
+          def.damageBonus ? `+${def.damageBonus} damage` : "",
+          def.stats ? Object.entries(def.stats).map(([k, v]) => `+${v} ${k}`).join(", ") : "",
+          def.classes ? `${def.classes.map((c) => c[0]!.toUpperCase() + c.slice(1)).join("/")} only` : "",
+          def.value ? `Sells for ${def.value}🪙` : "",
+        ].filter(Boolean);
+        cell.addEventListener("pointerenter", () => this.showTooltip(cell, def.name, def.kind, `${def.description}${extra.length ? `\n${extra.join(" · ")}` : ""}`));
         cell.addEventListener("pointerleave", () => this.tooltip.classList.remove("show"));
       }
       return cell;
     };
     this.equip.replaceChildren(
-      h("div.equip-slot", null, h("span", null, "Weapon"), itemCell(p.weapon, 1)),
-      h("div.equip-slot", null, h("span", null, "Armor"), itemCell(p.armor, 1)),
+      h("div.equip-slot", null, h("span", null, "Weapon"), itemCell(p.weapon, 1, p.weapon ? () => this.cb.onUnequip("weapon") : undefined)),
+      h("div.equip-slot", null, h("span", null, "Armor"), itemCell(p.armor, 1, p.armor ? () => this.cb.onUnequip("armor") : undefined)),
     );
     const cells: HTMLElement[] = [];
     for (let i = 0; i < INVENTORY_SLOTS; i++) {
@@ -605,23 +619,60 @@ export class Hud {
     this.pathEl.replaceChildren(...children.filter((c): c is HTMLElement => !!c));
   }
 
-  /** Quest tracker: the active quest, the step you're on and your progress. */
+  /** Quest tracker: every active quest, the step you're on and your progress. */
   private renderTracker(p: PlayerView): void {
-    const quest = getQuest(p.activeQuest ?? "");
-    const step = quest?.steps[p.questStep];
-    const key = quest && step ? `${quest.id}|${p.questStep}|${p.questCount}` : "";
+    const parts: string[] = [];
+    p.active.forEach((q) => parts.push(`${q.id}|${q.step}|${q.count}`));
+    p.inventory.forEach((s) => parts.push(`${s.itemId}:${s.qty}`));
+    const key = parts.join(",");
     if (key === this.trackerKey) return;
     this.trackerKey = key;
-    this.tracker.classList.toggle("hidden", !quest || !step);
-    if (!quest || !step) return;
-    const o = step.objective;
-    const count = o.type === "interact" ? "" : ` (${p.questCount}/${o.count})`;
-    this.tracker.replaceChildren(
-      h("div.tracker-quest", null, quest.name),
-      h("div.tracker-step", null, `${step.title}${count}`),
-      h("div.tracker-text", null, step.text),
-      h("div.tracker-pips", null, ...quest.steps.map((_, i) => h(`span.pip${i < p.questStep ? ".done" : i === p.questStep ? ".now" : ""}` as "span"))),
+    const blocks: HTMLElement[] = [];
+    p.active.forEach((qs) => {
+      const quest = getQuest(qs.id);
+      const step = quest?.steps[qs.step];
+      if (!quest || !step) return;
+      const o = step.objective;
+      let count = "";
+      if (o.type === "gather" || o.type === "kill") count = ` (${qs.count}/${o.count})`;
+      if (o.type === "deliver") {
+        let have = 0;
+        p.inventory.forEach((s) => {
+          if (s.itemId === o.item) have += s.qty;
+        });
+        count = ` (${Math.min(have, o.count)}/${o.count})`;
+      }
+      blocks.push(
+        h(
+          "div.tracker-entry",
+          null,
+          h("div.tracker-quest", null, quest.name),
+          h("div.tracker-step", null, `${step.title}${count}`),
+          h("div.tracker-text", null, step.text),
+          quest.steps.length > 1 ? h("div.tracker-pips", null, ...quest.steps.map((_, i) => h(`span.pip${i < qs.step ? ".done" : i === qs.step ? ".now" : ""}` as "span"))) : null,
+        ),
+      );
+    });
+    this.tracker.classList.toggle("hidden", blocks.length === 0);
+    this.tracker.replaceChildren(...blocks);
+  }
+
+  /** A book you're reading: title and pages, until you close it. */
+  read(e: ReadEvent): void {
+    this.bookEl.replaceChildren(
+      h("div.book-title", null, e.title),
+      ...e.text.map((t) => h("p.book-text", null, t)),
+      h("button.btn.book-close", { type: "button", onclick: () => this.closeBook() }, "Close"),
     );
+    this.bookEl.classList.remove("hidden");
+  }
+
+  closeBook(): void {
+    this.bookEl.classList.add("hidden");
+  }
+
+  get bookOpen(): boolean {
+    return !this.bookEl.classList.contains("hidden");
   }
 
   private renderParty(others: PartyMember[]): void {

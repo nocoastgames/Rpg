@@ -123,6 +123,22 @@ function buildWeapon(weaponId: string, classColor: string): THREE.Object3D | nul
     case "rusty_shortsword":
       g.add(mesh(box(0.06, 0.8, 0.12), "#a08c76", 0, -0.45, 0.05), mesh(box(0.28, 0.06, 0.08), "#5b4636", 0, -0.05, 0.05));
       break;
+    case "rusted_longsword":
+      g.add(mesh(box(0.07, 1.1, 0.13), "#9a6e4e", 0, -0.6, 0.05), mesh(box(0.34, 0.07, 0.09), "#4a3a2c", 0, -0.05, 0.05));
+      break;
+    case "rusted_flail": {
+      g.add(mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.6, 6), wood, 0, -0.25, 0.05));
+      const ball = mesh(new THREE.DodecahedronGeometry(0.12, 0), "#8a6048", 0.1, -0.85, 0.05);
+      g.add(ball, mesh(box(0.03, 0.3, 0.03), "#6a5a4a", 0.05, -0.65, 0.05));
+      break;
+    }
+    case "rusted_dirk":
+      g.add(mesh(box(0.05, 0.5, 0.08), "#9a7a5e", 0, -0.3, 0.05), mesh(box(0.18, 0.04, 0.06), "#4a3a2c", 0, -0.03, 0.05));
+      break;
+    case "gravewood_wand":
+      g.add(mesh(new THREE.CylinderGeometry(0.025, 0.04, 1.5, 5), "#3a3030", 0, -0.3, 0.05));
+      g.add(mesh(new THREE.OctahedronGeometry(0.09, 0), "#8affc8", 0, 0.5, 0.05, true));
+      break;
     case "dented_mace":
     case "oak_cudgel":
       g.add(mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.7, 6), wood, 0, -0.3, 0.05));
@@ -301,7 +317,34 @@ function buildHumanoid(opts: {
  * ragged clothes as everyone else. Visible equipment will layer on later; for
  * now only the weapon in hand shows.
  */
-function buildPlayerBody(app: Appearance, weaponId: string): { root: THREE.Group; rig: Rig } {
+/** Body armour shapes layered over the ragged clothes. */
+function addArmor(body: THREE.Group, armL: THREE.Group, armR: THREE.Group, armorId: string, w: number): void {
+  const look: Record<string, { color: string; trim: string; robe?: boolean; studs?: boolean; hood?: boolean; quilted?: boolean }> = {
+    militia_brigandine: { color: "#4a3a2e", trim: "#a8acb4", studs: true },
+    hedge_robe: { color: "#2e3e6e", trim: "#d8c890", robe: true },
+    chapel_vestments: { color: "#ece6d6", trim: "#d9b44a", robe: true },
+    poacher_leathers: { color: "#5a4030", trim: "#2e2a22", hood: true },
+    peddler_coat: { color: "#5e6a3e", trim: "#7a5a3a", quilted: true },
+    moth_eaten_gambeson: { color: "#b09a74", trim: "#8a7656", quilted: true },
+  };
+  const a = look[armorId];
+  if (!a) return;
+  body.add(mesh(box(0.58 * w, 0.66, 0.36), a.color, 0, 1.17, 0));
+  if (a.robe) {
+    body.add(mesh(new THREE.CylinderGeometry(0.3 * w, 0.42 * w, 0.72, 8), a.color, 0, 0.5, 0));
+    body.add(mesh(box(0.1, 1.2, 0.02), a.trim, 0, 0.85, 0.19));
+  }
+  if (a.studs) {
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) body.add(mesh(box(0.05, 0.05, 0.02), a.trim, (i - 1) * 0.16 * w, 1.0 + j * 0.17, 0.185));
+    body.add(mesh(box(0.2, 0.1, 0.24), a.trim, -(0.3 * w), 1.48, 0), mesh(box(0.2, 0.1, 0.24), a.trim, 0.3 * w, 1.48, 0));
+  }
+  if (a.quilted) for (let j = 0; j < 4; j++) body.add(mesh(box(0.59 * w, 0.02, 0.37), a.trim, 0, 0.92 + j * 0.16, 0));
+  if (a.hood) body.add(mesh(box(0.4, 0.3, 0.12), a.color, 0, 1.62, -0.2));
+  body.add(mesh(box(0.6 * w, 0.06, 0.38), a.trim, 0, 0.88, 0));
+  for (const arm of [armL, armR]) arm.add(mesh(box(0.19, 0.4, 0.2), a.color, 0, -0.18, 0));
+}
+
+function buildPlayerBody(app: Appearance, weaponId: string, armorId = ""): { root: THREE.Group; rig: Rig } {
   const o = APPEARANCE_OPTIONS;
   const build = o.build[app.build] ?? o.build[1];
   const skin = o.skin[app.skin] ?? o.skin[2];
@@ -369,6 +412,8 @@ function buildPlayerBody(app: Appearance, weaponId: string): { root: THREE.Group
   }
   body.add(armL.pivot, armR.pivot);
 
+  addArmor(body, armL.pivot, armR.pivot, armorId, w);
+
   const weapon = buildWeapon(weaponId, "#8a8a8a");
   if (weapon) {
     if (weaponId === "makeshift_bow") armL.end.add(weapon);
@@ -393,13 +438,21 @@ class ProceduralHumanoid implements Avatar {
   private action: { kind: "attack" | "cast"; t: number } | null = null;
   private deadT = 0;
   private readonly ranged: boolean;
+  /** "shamble": the walking dead lurch with arms outstretched. */
+  private readonly pose: string;
 
-  constructor(opts: Parameters<typeof buildHumanoid>[0] & { ranged?: boolean; appearance?: Appearance }) {
-    const built = opts.appearance ? buildPlayerBody(opts.appearance, opts.weapon) : buildHumanoid(opts);
+  constructor(opts: Parameters<typeof buildHumanoid>[0] & { ranged?: boolean; appearance?: Appearance; armor?: string; pose?: string }) {
+    const built = opts.appearance ? buildPlayerBody(opts.appearance, opts.weapon, opts.armor) : buildHumanoid(opts);
     this.root = built.root;
     this.rig = built.rig;
     this.height = 2.1 * (opts.scale ?? 1);
     this.ranged = !!opts.ranged;
+    this.pose = opts.pose ?? "";
+  }
+
+  /** The head group, for adding hats and crowns after construction. */
+  get head(): THREE.Object3D {
+    return this.rig.head;
   }
 
   setAnim(anim: string, actionSeq: number): void {
@@ -423,6 +476,12 @@ class ProceduralHumanoid implements Avatar {
     r.armL.rotation.z = 0.05;
     r.armR.rotation.z = -0.05;
     r.body.position.y = walking ? Math.abs(Math.sin(this.phase)) * 0.06 : Math.sin(this.phase) * 0.012;
+    if (this.pose === "shamble") {
+      r.armL.rotation.x = -1.35 + swing * 0.15;
+      r.armR.rotation.x = -1.25 - swing * 0.15;
+      r.legL.rotation.x = swing * 0.5;
+      r.legR.rotation.x = -swing * 0.5;
+    }
 
     if (this.action) {
       this.action.t += dt / 0.35;
@@ -447,7 +506,7 @@ class ProceduralHumanoid implements Avatar {
 
     // Death: topple backwards.
     this.deadT = THREE.MathUtils.clamp(this.deadT + (this.anim === "dead" ? dt * 3 : -dt * 3), 0, 1);
-    r.body.rotation.x = -this.deadT * Math.PI * 0.48;
+    r.body.rotation.x = -this.deadT * Math.PI * 0.48 + (this.pose === "shamble" ? 0.22 * (1 - this.deadT) : 0);
     r.body.position.z = -this.deadT * 0.3;
   }
 
@@ -481,6 +540,7 @@ class ProceduralBeast implements Avatar {
     const drake = kind === "drake";
     const rat = kind === "rat";
     const cat = kind === "cat";
+    const hare = kind === "hare";
     const len = boar ? 1.0 : bear ? 1.25 : drake ? 1.2 : 1.1;
     const h = boar ? 0.55 : bear ? 0.72 : 0.5;
     const w = bear ? 0.72 : 0.5;
@@ -510,6 +570,14 @@ class ProceduralBeast implements Avatar {
       const tr = mesh(new THREE.ConeGeometry(0.03, 0.18, 4), "#f2ead8", 0.12, -0.05, 0.42);
       tl.rotation.x = tr.rotation.x = -1.1;
       this.head.add(tl, tr);
+    } else if (hare) {
+      // Long upright ears and a white tuft of a tail.
+      for (const side of [-1, 1]) {
+        const ear = mesh(box(0.08, 0.42, 0.05), color, side * 0.09, 0.36, -0.06);
+        ear.rotation.z = side * -0.15;
+        this.head.add(ear);
+      }
+      this.body.add(mesh(box(0.18, 0.18, 0.12), "#f2ede2", 0, 0.8, -len / 2 - 0.05));
     } else if (bear || rat) {
       // Round ears.
       this.head.add(mesh(box(0.1, 0.1, 0.06), dark, -0.16, 0.2, -0.05), mesh(box(0.1, 0.1, 0.06), dark, 0.16, 0.2, -0.05));
@@ -678,7 +746,7 @@ function weaponVisual(path: string[], projectile: string | undefined, item: stri
   return item;
 }
 
-export function createPlayerAvatar(assets: AssetLibrary, classId: string, weapon: string, appearance: Appearance = DEFAULT_APPEARANCE): Avatar {
+export function createPlayerAvatar(assets: AssetLibrary, classId: string, weapon: string, appearance: Appearance = DEFAULT_APPEARANCE, armor = ""): Avatar {
   const kit = resolveKit(classId);
   const path = kit?.path.map((n) => n.id) ?? [classId];
   const gltf = assets.character(classId, kit?.base.id ?? classId);
@@ -690,7 +758,26 @@ export function createPlayerAvatar(assets: AssetLibrary, classId: string, weapon
     weapon: weaponVisual(path, kit?.basicAttack.projectile, weapon),
     ranged: kit?.basicAttack.kind === "ranged",
     appearance,
+    armor,
   });
+}
+
+/** People in the world. Haskel: grey-bearded, in a travel-stained coat and a wide hat. */
+export function createNpcAvatar(npc: string): Avatar {
+  const h = new ProceduralHumanoid({
+    classId: "player",
+    flavor: "",
+    color: "#6a7a4a",
+    weapon: "",
+    appearance: { build: 2, skin: 2, hair: 1, hairColor: 5, beard: 3, dye: 3 },
+    armor: npc === "vendor" ? "peddler_coat" : "",
+  });
+  const hat = new THREE.Group();
+  hat.add(mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.04, 12), "#4a3a2a", 0, 0.2, 0));
+  hat.add(mesh(new THREE.CylinderGeometry(0.2, 0.23, 0.22, 10), "#4a3a2a", 0, 0.3, 0));
+  hat.add(mesh(new THREE.CylinderGeometry(0.235, 0.235, 0.05, 10), "#8a3a2a", 0, 0.22, 0));
+  h.head.add(hat);
+  return h;
 }
 
 // ---------------------------------------------------------------------------
@@ -894,6 +981,50 @@ export function createEnemyAvatar(assets: AssetLibrary, kind: string): Avatar {
   const scale = def?.scale ?? 1;
   if (kind === "wolf" || kind === "boar") return new ProceduralBeast(kind, color, scale);
   if (kind === "spider") return new ProceduralSpider(color, scale);
+  if (kind === "hare") return new ProceduralBeast("hare", color, scale);
+  if (kind === "skeleton") {
+    const sk = new ProceduralHumanoid({ classId: "minion", flavor: "", color: "#d8d2c0", weapon: "rusty_shortsword", scale: 0.92 * scale, skin: "#e8e2cc" });
+    // Hollow ribs and a jaw: dark bars across the chest.
+    sk.root.traverse((o) => {
+      if (o.position.y === 1.15 && (o as THREE.Mesh).isMesh) {
+        for (let i = 0; i < 3; i++) o.add(mesh(box(0.56, 0.05, 0.02), "#3a362e", 0, 0.18 - i * 0.14, 0.165));
+      }
+    });
+    return sk;
+  }
+  if (kind === "risen" || kind === "gravedigger") {
+    const r = new ProceduralHumanoid({
+      classId: "minion",
+      flavor: "",
+      color: kind === "gravedigger" ? "#4a4436" : "#6a5a48",
+      weapon: "",
+      scale,
+      skin: "#8a9a78",
+      pose: "shamble",
+    });
+    if (kind === "gravedigger") {
+      // A battered hat, and a shovel slung across his back.
+      r.head.add(mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.04, 10), "#2e2a22", 0, 0.2, 0), mesh(new THREE.CylinderGeometry(0.17, 0.2, 0.22, 8), "#2e2a22", 0, 0.32, 0));
+      const shovel = new THREE.Group();
+      shovel.add(mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.4, 5), "#6a4a2a", 0, 0, 0), mesh(box(0.25, 0.32, 0.04), "#7a7a72", 0, -0.8, 0));
+      shovel.position.set(0, 1.25, -0.22);
+      shovel.rotation.z = 0.7;
+      r.root.children[0]!.add(shovel);
+    }
+    return r;
+  }
+  if (kind === "hollow_priest") {
+    const pr = new ProceduralHumanoid({ classId: "cleric", flavor: "", color, weapon: "", scale, skin: "#2a2430" });
+    pr.head.add(mesh(new THREE.ConeGeometry(0.28, 0.5, 6), "#2e2838", 0, 0.2, -0.04));
+    pr.head.add(mesh(box(0.06, 0.05, 0.03), "#b07aff", -0.08, 0.03, 0.18, true), mesh(box(0.06, 0.05, 0.03), "#b07aff", 0.08, 0.03, 0.18, true));
+    // Thorns growing out of its back.
+    for (let i = 0; i < 6; i++) {
+      const t = mesh(new THREE.ConeGeometry(0.05, 0.5, 4), "#1c1620", (i - 2.5) * 0.12, 1.35 + (i % 2) * 0.2, -0.2);
+      t.rotation.x = -0.9;
+      pr.root.children[0]!.add(t);
+    }
+    return pr;
+  }
   // Thornling: a small, spiky, bark-skinned humanoid.
   const h = new ProceduralHumanoid({ classId: "thornling", flavor: "", color, weapon: "", scale: scale * 0.75, skin: "#5a7a3a" });
   h.root.traverse((o) => {

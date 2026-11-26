@@ -68,23 +68,30 @@ elder ruins and monsters.
 
 ## Story by level
 
-### Act I: The Valley (levels 1–10)
+### Act I: The Valley (levels 1–5)
 - You wake by the stream with no memory. You survive, find the unknown
   ruins, the thorn-choked cave and the blocked pass.
 - **Secretly:** the valley is a restoration site. The sealed stairway leads to
   one of the Ferryman's cradles, where you were rebuilt. The cave is a
-  cracked Rot vault leaking thornlings. Valdris's quarantine rockslide seals
-  the valley.
-- **Ends at about level 10:** you burn back the thorns. The quarantine lifts,
-  the pass opens and you leave for the Known Lands.
+  cracked Rot vault leaking thornlings. The rockfall that buried the road may
+  be no accident: Valdris sealing a quarantine.
 - **What you do there:** build a camp (the first quest, *Shelter*), find your
-  god's shrine, and hunt the valley's four grounds up to level 5. See
-  [VALLEY.md](VALLEY.md).
+  god's shrine, and hunt the valley's grounds up to level 5. Haskel, a peddler
+  stranded by the rockfall, sends you to **Ashford**, a village overrun by the
+  dead. See [VALLEY.md](VALLEY.md).
+- **Secretly, Ashford:** Corwin the gravedigger broke into an old Maker vault
+  under the chapel. The Rot's swarm had grown up through it; it reanimates the
+  dead the way it builds thornlings, and the "singing" was its signal. The
+  Hollow Priest is the vault's old caretaker, rebuilt by the swarm. The black
+  thorns in the well and the crypt are the same as the cave's.
+- **Ends at about level 5:** Haskel's signal fire brings the kingdom's
+  diggers and the road out opens. The cave and the ruins stay sealed for
+  later (a return trip, once the story needs them).
 - **No overt hints yet**, only seeds that make sense later: ruins built with
   impossibly straight lines, and runes that look like circuitry once you know.
   Each shrine stands on the same worn eight-sided plinth, whatever the god.
 
-### Act II: The Known Lands (levels 10–25)
+### Act II: The Known Lands (levels 5–25)
 - Kingdoms, temples, guilds and faith factions. The Blight spreads along the
   frontiers. First dungeons.
 - **Trial of Paths (level 25)** in a temple's inner sanctum gives the first

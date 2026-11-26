@@ -44,6 +44,8 @@ export class Landmarks {
   private camp: { site: THREE.Group; built: THREE.Group; flames: THREE.Mesh[]; fire: THREE.PointLight } | null = null;
   private campBuilt = false;
   private glowMul = 1;
+  private crypt: { door: THREE.Object3D; thorns: THREE.Object3D; light: THREE.PointLight } | null = null;
+  private cryptKey = "";
   private readonly gated = new Map<GateId, THREE.Object3D[]>();
   private readonly runeMat: THREE.MeshToonMaterial;
   private readonly seals: THREE.Object3D[] = [];
@@ -105,6 +107,16 @@ export class Landmarks {
     if (this.calling?.faith === faith && this.calling.prayed === prayed) return;
     this.calling = { faith, prayed };
     for (const [id, sh] of this.shrines) sh.beacon.visible = id === faith && !prayed;
+  }
+
+  /** Ashford's crypt: the door swings open once unlocked; the thorns burn away. */
+  setCrypt(open: boolean, burned: boolean): void {
+    const key = `${open}|${burned}`;
+    if (!this.crypt || key === this.cryptKey) return;
+    this.cryptKey = key;
+    this.crypt.door.rotation.y = open ? -1.9 : 0;
+    this.crypt.thorns.visible = !burned;
+    this.crypt.light.color.set(burned ? "#ff9a4a" : "#8a5cff");
   }
 
   // --- Campsite ---------------------------------------------------------------
@@ -294,6 +306,82 @@ export class Landmarks {
       case "camp":
         this.buildCamp(g, rng);
         break;
+      case "vendor_cart":
+        this.buildVendorCart(g);
+        break;
+      case "cottage":
+      case "headman_house":
+        this.buildCottage(g, s.kind === "headman_house", rng);
+        break;
+      case "chapel":
+        this.buildChapel(g);
+        break;
+      case "well": {
+        g.add(mesh(new THREE.CylinderGeometry(0.8, 0.85, 0.8, 10, 1, true), mat(STONE), 0, 0.4, 0));
+        g.add(mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.05, 10), mat("#1c1620"), 0, 0.6, 0));
+        for (const side of [-1, 1]) g.add(mesh(new THREE.BoxGeometry(0.1, 1.5, 0.1), mat("#5e4329"), side * 0.75, 1.15, 0));
+        g.add(mesh(new THREE.BoxGeometry(1.7, 0.1, 0.12), mat("#5e4329"), 0, 1.9, 0));
+        // Black thorns spilling over the lip.
+        for (let i = 0; i < 4; i++) {
+          const t = mesh(new THREE.ConeGeometry(0.05, 0.6, 4), mat("#1c1620"), (rng() - 0.5) * 0.8, 0.85, (rng() - 0.5) * 0.8);
+          t.rotation.set((rng() - 0.5) * 1.4, 0, (rng() - 0.5) * 1.4);
+          g.add(t);
+        }
+        break;
+      }
+      case "cart": {
+        g.add(mesh(new THREE.BoxGeometry(1.2, 0.5, 2), mat("#7a5a3a"), 0, 0.75, 0));
+        for (const [x, z] of [[-0.7, 0.6], [0.7, 0.6], [-0.7, -0.6]] as const) {
+          const wheel = mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.08, 10), mat("#5e4329"), x, 0.42, z);
+          wheel.rotation.z = Math.PI / 2;
+          g.add(wheel);
+        }
+        // One wheel off, lying in the grass; the cart tilts.
+        const off = mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.08, 10), mat("#5e4329"), 1.3, 0.05, -0.9);
+        g.add(off);
+        g.children[0]!.rotation.z = 0.12;
+        g.add(mesh(new THREE.BoxGeometry(0.5, 0.35, 0.5), mat("#8a6a42"), 0.1, 1.15, 0.4), mesh(new THREE.SphereGeometry(0.25, 6, 5), mat("#9a8a6a"), -0.2, 1.1, -0.4));
+        break;
+      }
+      case "fence": {
+        const len = s.size ?? 4;
+        const posts = Math.max(2, Math.round(len / 1.4) + 1);
+        for (let i = 0; i < posts; i++) {
+          const t = i / (posts - 1) - 0.5;
+          const post = mesh(new THREE.BoxGeometry(0.12, 0.9 + (i % 2) * 0.1, 0.12), mat("#6b4e33"), t * len, 0.45, 0);
+          post.rotation.z = (rng() - 0.5) * 0.25;
+          g.add(post);
+        }
+        for (const y of [0.35, 0.7]) {
+          if (rng() < 0.2) continue;
+          g.add(mesh(new THREE.BoxGeometry(len, 0.08, 0.06), mat("#7a5a3a"), 0, y, 0));
+        }
+        g.rotation.y = Math.PI / 2;
+        const holder = new THREE.Group();
+        holder.add(g);
+        return holder;
+      }
+      case "headstone": {
+        const stone = mesh(new THREE.BoxGeometry(0.6, 0.8, 0.15), mat(rng() < 0.5 ? STONE : STONE_DARK), 0, 0.4, 0);
+        stone.rotation.z = (rng() - 0.5) * 0.3;
+        g.add(stone);
+        // An open grave in front of most of them.
+        if (rng() < 0.7) {
+          const pit = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 1.6), mat("#2a2018"));
+          pit.rotation.x = -Math.PI / 2;
+          pit.position.set(0, 0.04, 1.05);
+          g.add(pit, mesh(new THREE.DodecahedronGeometry(0.35, 0), mat("#5a4632"), 0.65, 0.12, 1.1));
+        }
+        break;
+      }
+      case "gate_posts":
+        for (const side of [-1, 1]) g.add(mesh(new THREE.BoxGeometry(0.25, 2.2, 0.25), mat("#5e4329"), side * 2, 1.1, 0));
+        g.add(mesh(new THREE.BoxGeometry(4.4, 0.25, 0.25), mat("#5e4329"), 0, 2.1, 0));
+        g.add(mesh(new THREE.BoxGeometry(1.4, 0.4, 0.06), mat("#8a6a42"), 0, 1.75, 0.15));
+        break;
+      case "crypt":
+        this.buildCrypt(g, rng);
+        break;
       default:
         return null;
     }
@@ -393,6 +481,90 @@ export class Landmarks {
         break;
       }
     }
+  }
+
+  /** Haskel's covered cart: a canvas hood, crates and a hanging lantern. */
+  private buildVendorCart(g: THREE.Group): void {
+    g.add(mesh(new THREE.BoxGeometry(1.6, 0.5, 2.6), mat("#7a5a3a"), 0, 0.8, 0));
+    for (const [x, z] of [[-0.9, 0.85], [0.9, 0.85], [-0.9, -0.85], [0.9, -0.85]] as const) {
+      const wheel = mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.1, 12), mat("#5e4329"), x, 0.5, z);
+      wheel.rotation.z = Math.PI / 2;
+      g.add(wheel);
+    }
+    const hood = mesh(new THREE.CylinderGeometry(0.85, 0.85, 2.5, 12, 1, true, 0, Math.PI), mat("#d8ccb0"), 0, 1.05, 0);
+    hood.rotation.x = Math.PI / 2;
+    hood.rotation.y = Math.PI / 2;
+    g.add(hood);
+    g.add(mesh(new THREE.BoxGeometry(0.6, 0.5, 0.6), mat("#8a6a42"), 1.3, 0.25, 0.9), mesh(new THREE.BoxGeometry(0.5, 0.4, 0.5), mat("#9a7a4a"), 1.35, 0.7, 0.85));
+    g.add(mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.5, 8), mat("#6b4e33"), 1.3, 0.25, -0.2));
+    g.add(mesh(new THREE.BoxGeometry(0.06, 1.2, 0.06), mat("#5e4329"), -0.8, 1.6, 1.3));
+    const lamp = mesh(new THREE.BoxGeometry(0.18, 0.24, 0.18), mat("#ffd27a", "#ffb030"), -0.8, 2.05, 1.45);
+    g.add(lamp);
+    this.glow(g, "#ffb35a", 10, 8, 2.1);
+  }
+
+  /** A farmhouse: plank walls, a sagging thatch roof with a hole, a dark doorway. */
+  private buildCottage(g: THREE.Group, big: boolean, rng: () => number): void {
+    const w = big ? 4.6 : 3.4;
+    const d = big ? 3.6 : 2.8;
+    const wall = mat(big ? "#a89474" : "#9a8a6e");
+    g.add(mesh(new THREE.BoxGeometry(w, 2, d), wall, 0, 1, 0));
+    g.add(mesh(new THREE.BoxGeometry(w + 0.1, 0.2, d + 0.1), mat("#6b4e33"), 0, 0.1, 0));
+    for (const x of [-w / 2, w / 2]) g.add(mesh(new THREE.BoxGeometry(0.2, 2.1, 0.2), mat("#5e4329"), x, 1.05, d / 2));
+    // Roof: two slopes, one with a hole torn in it.
+    for (const side of [-1, 1]) {
+      const slope = mesh(new THREE.BoxGeometry(w + 0.5, 0.18, d * 0.62), mat(side > 0 ? "#8a7448" : "#7a6640"), 0, 2.55, side * d * 0.25);
+      slope.rotation.x = side * 0.62;
+      g.add(slope);
+    }
+    g.add(mesh(new THREE.BoxGeometry(0.9, 0.2, 0.7), mat("#2a2018"), w * 0.2, 2.62, d * 0.22));
+    // Door hanging open, a dark window.
+    g.add(mesh(new THREE.BoxGeometry(0.8, 1.4, 0.05), mat("#1c1814"), -w * 0.18, 0.7, d / 2 + 0.01));
+    const door = mesh(new THREE.BoxGeometry(0.8, 1.4, 0.08), mat("#6b4e33"), -w * 0.18 - 0.55, 0.7, d / 2 + 0.35);
+    door.rotation.y = 1.2;
+    g.add(door);
+    g.add(mesh(new THREE.BoxGeometry(0.6, 0.5, 0.05), mat("#1c1814"), w * 0.22, 1.3, d / 2 + 0.01));
+    if (big) g.add(mesh(new THREE.BoxGeometry(0.5, 1.2, 0.5), mat(STONE_DARK), w / 2 - 0.4, 3.0, -d * 0.2));
+    if (rng() < 0.6) g.add(mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), mat("#8a6a42"), w / 2 + 0.5, 0.25, d / 2 - 0.3));
+  }
+
+  /** Ashford's chapel: stone walls, a broken bell tower, eight-sided like the shrines. */
+  private buildChapel(g: THREE.Group): void {
+    g.add(mesh(new THREE.BoxGeometry(4, 3, 6.5), mat(STONE), 0, 1.5, 0));
+    for (const side of [-1, 1]) {
+      const slope = mesh(new THREE.BoxGeometry(2.7, 0.2, 6.9), mat("#5a5048"), side * 1.05, 3.6, 0);
+      slope.rotation.z = -side * 0.62;
+      g.add(slope);
+    }
+    g.add(mesh(new THREE.CylinderGeometry(1, 1.1, 5, 8), mat(STONE_DARK), 0, 2.5, -3.6));
+    g.add(mesh(new THREE.CylinderGeometry(1.05, 1.05, 0.3, 8), mat("#6a6058"), 0, 5.1, -3.6));
+    g.add(mesh(new THREE.BoxGeometry(1.1, 1.8, 0.08), mat("#1c1814"), 0, 0.9, 3.26));
+    g.add(mesh(new THREE.CircleGeometry(0.55, 8), mat("#6a3a8a", "#3a1a5a"), 0, 2.3, 3.27));
+  }
+
+  /** The crypt beneath the chapel: steps down to an iron door, thorns pushing through. */
+  private buildCrypt(g: THREE.Group, rng: () => number): void {
+    g.add(mesh(new THREE.BoxGeometry(2.4, 0.4, 2.2), mat(STONE_DARK), 0, 0.2, 0));
+    g.add(mesh(new THREE.BoxGeometry(1.6, 0.12, 1.6), mat("#1c1620"), 0, 0.41, 0.1));
+    for (const side of [-1, 1]) g.add(mesh(new THREE.BoxGeometry(0.3, 1.4, 0.3), mat(STONE), side * 0.95, 0.9, -0.85));
+    g.add(mesh(new THREE.BoxGeometry(2.2, 0.35, 0.35), mat(STONE), 0, 1.75, -0.85));
+    const hinge = new THREE.Group();
+    hinge.position.set(-0.7, 0, -0.85);
+    hinge.add(mesh(new THREE.BoxGeometry(1.4, 1.3, 0.1), mat("#4a4a52"), 0.7, 0.85, 0));
+    hinge.add(mesh(new THREE.BoxGeometry(0.12, 0.12, 0.14), mat("#8a8a92"), 1.2, 0.85, 0.06));
+    g.add(hinge);
+    const thorns = new THREE.Group();
+    for (let i = 0; i < 12; i++) {
+      const t = mesh(new THREE.ConeGeometry(0.07, 0.8 + rng() * 0.9, 4), mat("#1c1620"), (rng() - 0.5) * 2.4, 0.5, (rng() - 0.3) * 2);
+      t.rotation.set((rng() - 0.5) * 1.3, 0, (rng() - 0.5) * 1.3);
+      thorns.add(t);
+    }
+    g.add(thorns);
+    const light = new THREE.PointLight("#8a5cff", 14, 9, 2);
+    light.position.y = 1;
+    g.add(light);
+    this.glows.push({ light, base: 14 });
+    this.crypt = { door: hinge, thorns, light };
   }
 
   /** The clearing before and after you build your camp. */

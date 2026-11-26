@@ -82,6 +82,79 @@ export const RUINS_ROTATION = 0.35;
 export const CAMP = { u: -9, v: -10 };
 export const CAMP_CLEARING_RADIUS = 8;
 
+/** Haskel the peddler's cart, by the old signpost on the road to the pass. */
+export const VENDOR = { u: 31, v: -10 };
+
+/** Ashford: the farming village on the old west road, overrun by the dead. */
+export const VILLAGE = { u: -29, v: 12 };
+export const VILLAGE_CLEARING_RADIUS = 15;
+
+export type VillagePieceKind = "cottage" | "headman_house" | "chapel" | "well" | "cart" | "fence" | "headstone" | "crypt" | "gate_posts";
+
+/** Village layout, as offsets (u, v) from VILLAGE. `rot` is a yaw in radians. */
+export const VILLAGE_PIECES: ReadonlyArray<{ kind: VillagePieceKind; du: number; dv: number; rot: number; size?: number }> = [
+  { kind: "well", du: 0, dv: 0, rot: 0 },
+  { kind: "cottage", du: 5, dv: -8, rot: 0.2 },
+  { kind: "cottage", du: -2, dv: -9, rot: -0.15 },
+  { kind: "cottage", du: 8, dv: 6, rot: 2.9 },
+  { kind: "cottage", du: 1, dv: 9, rot: 3.3 },
+  { kind: "headman_house", du: -8, dv: 4, rot: 1.6 },
+  { kind: "chapel", du: -9, dv: -6, rot: 0.1 },
+  { kind: "crypt", du: -6, dv: -1.5, rot: 1.2 },
+  { kind: "cart", du: 7, dv: -1, rot: 0.9 },
+  { kind: "gate_posts", du: 12, dv: 0.5, rot: 0.8 },
+  { kind: "fence", du: 11, dv: -5, rot: 0.6, size: 5 },
+  { kind: "fence", du: 11, dv: 6, rot: 1.0, size: 5 },
+  // The graveyard, south of the chapel.
+  { kind: "fence", du: -9, dv: 9, rot: 0, size: 7 },
+  { kind: "fence", du: -9, dv: 16, rot: 0, size: 7 },
+  { kind: "fence", du: -12.5, dv: 12.5, rot: Math.PI / 2, size: 7 },
+  ...[0, 1, 2].flatMap((i) => [0, 1].map((j) => ({ kind: "headstone" as const, du: -11 + i * 2.2, dv: 11 + j * 2.4, rot: 0.1 * (i - j) }))),
+];
+
+/** The crypt beneath the chapel, the graveyard and the clues to what happened. */
+export const VILLAGE_CRYPT = { du: -6, dv: -1.5 };
+export const VILLAGE_GRAVEYARD = { du: -7.5, dv: 12.5 };
+
+export interface ClueDef {
+  id: string;
+  du: number;
+  dv: number;
+  /** Prompt, e.g. "Search the cart". */
+  verb: string;
+  /** What you find. */
+  text: string;
+}
+
+export const VILLAGE_CLUES: readonly ClueDef[] = [
+  {
+    id: "clue_cart",
+    du: 6,
+    dv: 1,
+    verb: "Search the cart",
+    text: "The headman's cart, half-packed: blankets, a cooking pot, a child's shoe. Someone meant to flee and never got the chance.",
+  },
+  {
+    id: "clue_well",
+    du: 1.6,
+    dv: 1.2,
+    verb: "Look down the well",
+    text: "Black thorns choke the well shaft, and the water stinks of rot. The same thorns as the ones at the cave.",
+  },
+  {
+    id: "clue_journal",
+    du: -4.4,
+    dv: 4,
+    verb: "Read the open journal",
+    text: "The headman's journal, last page: \"Corwin broke into the old crypt under the chapel. Says he heard singing down there. He won't speak now, only digs. Every night, more graves are open.\"",
+  },
+];
+
+/** Where named creatures appear: Old Corwin in the graveyard, the Hollow Priest at the crypt. */
+export function villagePoint(du: number, dv: number): { x: number; z: number } {
+  return fromUV(VILLAGE.u + du, VILLAGE.v + dv);
+}
+
 function segDist(u: number, v: number, a: { u: number; v: number }, b: { u: number; v: number }): { d: number; t: number } {
   const du = b.u - a.u;
   const dv = b.v - a.v;
@@ -180,6 +253,8 @@ export function trails(): UV[][] {
     [sp, { u: sp.u + 1, v: -11 }, { u: ford.u - 4, v: FORD_V }, ford, { u: ford.u + 5, v: FORD_V - 1 }, { u: 26, v: -16 }, PASS_START, { u: 52, v: -21 }],
     // Spawn → south-west to the ruins.
     [sp, { u: sp.u - 6, v: 6 }, { u: -16, v: 22 }, { u: RUINS_CENTER.u + 3, v: RUINS_CENTER.v - 10 }],
+    // Off the ruins trail, west along the old road into Ashford.
+    [{ u: sp.u - 6, v: 6 }, { u: -10, v: 10 }, { u: VILLAGE.u + 13, v: VILLAGE.v + 0.5 }, { u: VILLAGE.u + 3, v: VILLAGE.v }],
     // Ruins → north to the cave alcove (faint).
     [{ u: RUINS_CENTER.u - 4, v: RUINS_CENTER.v - 9 }, { u: -34, v: 14 }, { u: -34, v: -14 }, CAVE_ALCOVE_START, { u: -35, v: -56 }],
   ];
@@ -261,8 +336,8 @@ export type GateId = "valley_exit" | "ruins_seal" | "cave_thorns";
 
 export interface LandmarkDef {
   id: string;
-  /** What interacting does: inspect (text only), pray at a shrine, or use the campsite. */
-  kind: "inspect" | "shrine" | "camp";
+  /** What interacting does: inspect (text only), pray at a shrine, use the campsite, or talk to someone. */
+  kind: "inspect" | "shrine" | "camp" | "npc";
   /** Shrines: the god it belongs to. */
   faith?: string;
   name: string;
@@ -358,6 +433,36 @@ export function landmarks(): LandmarkDef[] {
       lockedText: "A sheltered clearing, out of the wind. It would make a good camp.",
       discoverRadius: 12,
     },
+    {
+      id: "vendor",
+      kind: "npc",
+      name: "Haskel the Peddler",
+      ...at(VENDOR.u, VENDOR.v),
+      interactRadius: 3.4,
+      verb: "Talk to Haskel",
+      lockedText: "",
+      discoverRadius: 14,
+    },
+    {
+      id: "village",
+      kind: "inspect",
+      name: "Ashford",
+      ...at(VILLAGE.u, VILLAGE.v),
+      interactRadius: 0,
+      verb: "",
+      lockedText: "",
+      discoverRadius: 17,
+    },
+    {
+      id: "crypt",
+      kind: "inspect",
+      name: "The Chapel Crypt",
+      ...villagePoint(VILLAGE_CRYPT.du + 1.6, VILLAGE_CRYPT.dv + 0.6),
+      interactRadius: 2.8,
+      verb: "Inspect the crypt",
+      lockedText: "Stone steps lead down under the chapel to an iron door. Black thorns have pushed up between the flagstones.",
+      discoverRadius: 0,
+    },
     ...SHRINES.map((s): LandmarkDef => {
       const p = shrinePosition(s);
       return {
@@ -436,8 +541,9 @@ export interface ZoneDef {
 }
 
 export const ZONES: readonly ZoneDef[] = [
-  { id: "tusk_meadow", name: "Tusk Meadow", levels: [1, 2], u: 27, v: 14, radius: 17, enemies: [{ id: "boar", weight: 1 }], population: 8 },
-  { id: "greypine_wood", name: "Greypine Wood", levels: [2, 3], u: 14, v: -48, radius: 19, enemies: [{ id: "wolf", weight: 1 }], population: 7 },
+  { id: "tusk_meadow", name: "Tusk Meadow", levels: [1, 2], u: 27, v: 14, radius: 17, enemies: [{ id: "boar", weight: 2 }, { id: "hare", weight: 1 }], population: 11 },
+  { id: "greypine_wood", name: "Greypine Wood", levels: [2, 3], u: 14, v: -48, radius: 19, enemies: [{ id: "wolf", weight: 3 }, { id: "hare", weight: 1 }], population: 9 },
+  { id: "ashford", name: "Ashford", levels: [2, 3], u: VILLAGE.u, v: VILLAGE.v, radius: 13, enemies: [{ id: "risen", weight: 11 }, { id: "skeleton", weight: 9 }], population: 10 },
   { id: "webbed_hollow", name: "Webbed Hollow", levels: [3, 4], u: 6, v: 50, radius: 16, enemies: [{ id: "spider", weight: 1 }], population: 7 },
   { id: "thornbrake", name: "The Thornbrake", levels: [4, 5], u: -35, v: -40, radius: 13, enemies: [{ id: "thornling", weight: 1 }], population: 7 },
 ];

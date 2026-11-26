@@ -50,10 +50,11 @@ export interface PlayerView {
   buffs: ArrayLike<BuffView> & { forEach(cb: (b: BuffView, i: number) => void): void };
   /** Harmful status effects (bleed, poison, blight). */
   statuses: ArrayLike<{ id: string; expiresAt: number }> & { forEach(cb: (s: { id: string; expiresAt: number }, i: number) => void): void };
-  /** Active quest id ("" if none), its current step and progress toward that step. */
-  activeQuest: string;
-  questStep: number;
-  questCount: number;
+  /** Quests in progress: current step and progress toward it. */
+  active: ArrayLike<QuestStateView> & { forEach(cb: (q: QuestStateView, i: number) => void): void; find(cb: (q: QuestStateView) => boolean): QuestStateView | undefined; some(cb: (q: QuestStateView) => boolean): boolean };
+  /** The odd job the merchant is offering right now. */
+  fetchOffer: string;
+  coins: number;
   /** Timed action in progress (gathering, building). */
   channelLabel: string;
   channelStart: number;
@@ -61,6 +62,12 @@ export interface PlayerView {
   /** Quest pick-ups (world node ids) already taken during the active quest. */
   gathered: ArrayLike<string> & { includes(id: string): boolean };
   cooldowns: ArrayLike<number>;
+}
+
+export interface QuestStateView {
+  id: string;
+  step: number;
+  count: number;
 }
 
 export interface EnemyView {
@@ -108,4 +115,7 @@ export interface WorldStateView {
   gates: MapView<boolean>;
   /** The campsite has been built. */
   campBuilt: boolean;
+  /** Ashford's crypt: unlocked, and its thorns burned. */
+  cryptOpen: boolean;
+  cryptBurned: boolean;
 }

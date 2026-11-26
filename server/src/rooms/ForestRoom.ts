@@ -29,6 +29,11 @@ import {
   type MoveDirMsg,
   type MoveToMsg,
   type UseItemMsg,
+  type BuyMsg,
+  type SellMsg,
+  type QuestMsg,
+  type UnequipMsg,
+  type QuickUseMsg,
 } from "@rpg/shared";
 import { WorldState } from "../schema/WorldState.ts";
 import { Game } from "../sim/Game.ts";
@@ -57,6 +62,8 @@ export class ForestRoom extends Room<{ state: WorldState }> {
         if (client) client.send(S2C.memory, e);
       },
       announce: (text) => this.broadcast(S2C.chat, { from: "", text, system: true } satisfies ChatEvent),
+      read: (playerId, e) => this.clients.getById(playerId)?.send(S2C.read, e),
+      dialog: (playerId, e) => this.clients.getById(playerId)?.send(S2C.dialog, e),
     });
 
     this.onMessage(C2S.moveDir, (client, m: MoveDirMsg) => {
@@ -77,6 +84,26 @@ export class ForestRoom extends Room<{ state: WorldState }> {
       if (Number.isInteger(m?.slot)) this.game.useItem(client.sessionId, m.slot);
     });
     this.onMessage(C2S.interact, (client) => this.game.interact(client.sessionId));
+    this.onMessage(C2S.buy, (client, m: BuyMsg) => {
+      if (Number.isInteger(m?.index)) this.game.buy(client.sessionId, m.index);
+    });
+    this.onMessage(C2S.sell, (client, m: SellMsg) => {
+      if (Number.isInteger(m?.slot)) this.game.sell(client.sessionId, m.slot, m.all === true);
+    });
+    this.onMessage(C2S.sellJunk, (client) => this.game.sellJunk(client.sessionId));
+    this.onMessage(C2S.acceptQuest, (client, m: QuestMsg) => {
+      if (typeof m?.questId === "string") this.game.acceptQuest(client.sessionId, m.questId);
+    });
+    this.onMessage(C2S.turnIn, (client, m: QuestMsg) => {
+      if (typeof m?.questId === "string") this.game.turnIn(client.sessionId, m.questId);
+    });
+    this.onMessage(C2S.requestWeapon, (client) => this.game.requestWeapon(client.sessionId));
+    this.onMessage(C2S.unequip, (client, m: UnequipMsg) => {
+      if (m?.slot === "weapon" || m?.slot === "armor") this.game.unequip(client.sessionId, m.slot);
+    });
+    this.onMessage(C2S.quickUse, (client, m: QuickUseMsg) => {
+      if (m?.kind === "heal" || m?.kind === "drink") this.game.quickUse(client.sessionId, m.kind);
+    });
     this.onMessage(C2S.advance, (client, m: AdvanceMsg) => {
       if (typeof m?.classId === "string") this.game.advance(client.sessionId, m.classId);
     });
@@ -107,10 +134,13 @@ export class ForestRoom extends Room<{ state: WorldState }> {
     } else if (cmd === "level" && arg && Number.isFinite(Number(arg))) {
       this.game.setLevel(client.sessionId, Number(arg));
       client.send(S2C.notice, `[dev] level set to ${arg}`);
-    } else if (cmd === "step" || (cmd === "quest" && arg === "make_camp")) {
-      // Finish the active quest's current step (or, with /quest make_camp, the whole quest).
-      const ok = this.game.devFinishQuestStep(client.sessionId, cmd === "quest");
-      client.send(S2C.notice, ok ? "[dev] quest progressed" : "[dev] no active quest");
+    } else if (cmd === "step" || (cmd === "quest" && arg && getQuest(arg))) {
+      // /step [quest]: finish the current step; /quest <id>: start (if needed) and finish a whole quest.
+      const ok = this.game.devQuest(client.sessionId, arg ?? null, cmd === "quest");
+      client.send(S2C.notice, ok ? "[dev] quest progressed" : "[dev] no such active quest");
+    } else if (cmd === "coins" && arg && Number.isFinite(Number(arg))) {
+      const p = this.state.players.get(client.sessionId);
+      if (p) p.coins = Math.max(0, Math.round(Number(arg)));
     } else if (cmd === "quest" && arg) {
       // "favor" = your own god's epic quest.
       const own = getFaith(this.state.players.get(client.sessionId)?.faith ?? "")?.favorQuest?.id;
@@ -134,7 +164,7 @@ export class ForestRoom extends Room<{ state: WorldState }> {
       const ok = this.game.teleportToLandmark(client.sessionId, arg);
       client.send(S2C.notice, ok ? `[dev] teleported to ${arg}` : `[dev] unknown landmark "${arg}"`);
     } else {
-      client.send(S2C.notice, "[dev] commands: /open|/close <gate>, /tp <place|shrine_<god>|camp|zone>, /level <n>, /quest <id|all|favor|make_camp>, /step, /class <id>");
+      client.send(S2C.notice, "[dev] commands: /open|/close <gate>, /tp <place|shrine_<god>|camp|zone>, /level <n>, /quest <id|all|favor>, /step [quest], /coins <n>, /class <id>");
     }
   }
 
@@ -146,7 +176,7 @@ export class ForestRoom extends Room<{ state: WorldState }> {
     const bg = getBackground(result.value.backgroundId);
     if (bg) client.send(S2C.memory, { text: bg.impression } satisfies MemoryEvent);
     // Once the first memory has faded: the first task is shelter, and your god's shrine calls to you.
-    const quest = getQuest(player.activeQuest);
+    const quest = getQuest(player.active[0]?.id ?? "");
     if (quest) this.clock.setTimeout(() => client.send(S2C.notice, `${quest.intro} Quest: ${quest.name}. ${quest.steps[0]!.text}`), 10_000);
     const faith = getFaith(result.value.faithId);
     const shrine = this.game.world.landmarks.find((l) => l.kind === "shrine" && l.faith === faith?.id);

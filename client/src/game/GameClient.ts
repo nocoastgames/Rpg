@@ -10,6 +10,11 @@ import {
   prayedFlag,
   zoneAt,
   NODE_NAMES,
+  MAP_FLAG,
+  TRADE_RANGE,
+  VILLAGE_QUEST,
+  type DialogEvent,
+  type ReadEvent,
   type GatherNode,
   type Interactable,
   ABILITY_SLOTS,
@@ -34,7 +39,7 @@ import { MenuNav } from "../controls/MenuNav.ts";
 import { TouchControls } from "../controls/TouchControls.ts";
 import type { GameRoom } from "../net.ts";
 import type { AssetLibrary } from "../scene/Assets.ts";
-import { createCompanionAvatar, createEnemyAvatar, createPlayerAvatar, type Avatar } from "../scene/Avatars.ts";
+import { createCompanionAvatar, createEnemyAvatar, createNpcAvatar, createPlayerAvatar, type Avatar } from "../scene/Avatars.ts";
 import { CelPost } from "../scene/CelPost.ts";
 import { DEFAULT_HOUR, lightingAt, type LightingPreset } from "../scene/Lighting.ts";
 import { Environment, groundHeight } from "../scene/Environment.ts";
@@ -49,6 +54,7 @@ import type { InputMode } from "../ui/glyphs.ts";
 import { Hud, type PartyMember } from "../ui/Hud.ts";
 import { Minimap, type MapContext, type MapMarker } from "../ui/Minimap.ts";
 import { Overlay } from "../ui/Overlay.ts";
+import { VendorPanel } from "../ui/Vendor.ts";
 import { Input } from "./Input.ts";
 
 interface Entity {
@@ -87,6 +93,9 @@ export class GameClient {
   private readonly env: Environment;
   private readonly landmarks: Landmarks;
   private readonly questNodes: QuestNodes;
+  private readonly vendor: VendorPanel;
+  /** People standing in the world (Haskel), by landmark id. */
+  private readonly npcs = new Map<string, { avatar: Avatar; pos: THREE.Vector3; name: string }>();
   /** Hunting ground the player is in (for the zone banner). */
   private zone: string | null = null;
   private readonly fx: FxSystem;
@@ -161,6 +170,15 @@ export class GameClient {
     this.scene.add(this.landmarks.group);
     this.questNodes = new QuestNodes(this.world);
     this.scene.add(this.questNodes.group);
+    for (const l of this.world.landmarks) {
+      if (l.kind !== "npc") continue;
+      const avatar = createNpcAvatar(l.id);
+      const pos = new THREE.Vector3(l.x, groundHeight(l.x, l.z), l.z);
+      avatar.root.position.copy(pos);
+      avatar.root.rotation.y = Math.atan2(-l.x * 0.3 - 1, -l.z * 0.3 + 1);
+      this.scene.add(avatar.root);
+      this.npcs.set(l.id, { avatar, pos, name: l.name });
+    }
     this.fx = new FxSystem(this.scene);
     this.overlay = new Overlay(overlayRoot, this.iso.camera);
     this.input = new Input(this.renderer.domElement);
@@ -188,11 +206,22 @@ export class GameClient {
         onAbility: (slot) => this.castAbility(slot, null),
         onInteract: () => room.send(C2S.interact),
         onAdvance: (classId) => room.send(C2S.advance, { classId }),
+        onUnequip: (slot) => room.send(C2S.unequip, { slot }),
       },
       this.minimap.el,
       this.touch.el,
     );
-    this.menuNav = new MenuNav(() => (this.hud.bagOpen ? this.hud.bag : this.hud.helpOpen ? this.hud.help : null));
+    this.vendor = new VendorPanel({
+      buy: (index) => room.send(C2S.buy, { index }),
+      sell: (slot, all) => room.send(C2S.sell, { slot, all }),
+      sellJunk: () => room.send(C2S.sellJunk),
+      accept: (questId) => room.send(C2S.acceptQuest, { questId }),
+      turnIn: (questId) => room.send(C2S.turnIn, { questId }),
+      requestWeapon: () => room.send(C2S.requestWeapon),
+      close: () => this.vendor.close(),
+    });
+    this.hud.root.append(this.vendor.el);
+    this.menuNav = new MenuNav(() => (this.vendor.isOpen ? this.vendor.el : this.hud.bagOpen ? this.hud.bag : this.hud.helpOpen ? this.hud.help : null));
     this.mode = matchMedia("(pointer: coarse)").matches ? "touch" : "kbm";
     this.hud.setInputMode(this.mode);
 
@@ -231,6 +260,13 @@ export class GameClient {
     this.room.onMessage(S2C.chat, (e: ChatEvent) => this.hud.chatLine(e.from, e.text, e.system));
     this.room.onMessage(S2C.notice, (text: string) => this.hud.notice(text));
     this.room.onMessage(S2C.memory, (e: MemoryEvent) => this.hud.memory(e));
+    this.room.onMessage(S2C.read, (e: ReadEvent) => this.hud.read(e));
+    this.room.onMessage(S2C.dialog, (e: DialogEvent) => {
+      if (e.npc === "vendor") {
+        this.hud.closePanels();
+        this.vendor.open();
+      }
+    });
     this.room.onLeave.once((code: number) => {
       this.running = false;
       const msg = document.createElement("div");
@@ -363,17 +399,9 @@ export class GameClient {
     this.room.send(C2S.ability, { slot, x: p.x, z: p.z });
   }
 
+  /** Heal: food out of combat, a draught in it (the server decides). Drink: the waterskin. */
   private quickUse(kind: "heal" | "restoreResource"): void {
-    const me = this.me;
-    if (!me) return;
-    for (let i = 0; i < me.inventory.length; i++) {
-      const use = getItem(me.inventory[i]!.itemId)?.use;
-      if (use?.type === kind) {
-        this.room.send(C2S.useItem, { slot: i });
-        return;
-      }
-    }
-    this.hud.notice(kind === "heal" ? "You have no food left." : "You have nothing to drink. Fill your waterskin at the stream.");
+    this.room.send(C2S.quickUse, { kind: kind === "heal" ? "heal" : "drink" });
   }
 
   // -------------------------------------------------------------------------
@@ -407,13 +435,15 @@ export class GameClient {
     if (pinch) this.iso.zoom(pinch, inp.width / inp.height);
 
     // --- Menus with a controller (bag / help) ----------------------------
-    const menuOpen = this.hud.bagOpen || this.hud.helpOpen;
+    if (this.hud.bookOpen && (this.pad.pressed(PAD.A) || this.pad.pressed(PAD.B))) this.hud.closeBook();
+    const menuOpen = this.hud.bagOpen || this.hud.helpOpen || this.vendor.isOpen;
     if (this.mode === "gamepad" && menuOpen) {
       const dir = this.pad.navDirection(now);
       if (dir) this.menuNav.move(dir);
       else this.menuNav.ensure();
       if (this.pad.pressed(PAD.A)) this.menuNav.activate();
       if (this.pad.pressed(PAD.B)) {
+        this.vendor.close();
         this.hud.closePanels();
         this.hud.hideTooltip();
         this.menuNav.clear();
@@ -430,7 +460,11 @@ export class GameClient {
       else if (k === "i" || k === "b" || k === "c") this.hud.toggleBag();
       else if (k === "h" || k === "?") this.hud.toggleHelp();
       else if (k === "m") this.minimap.toggle();
-      else if (k === "escape") this.hud.closePanels();
+      else if (k === "escape") {
+        this.hud.closePanels();
+        this.vendor.close();
+        this.hud.closeBook();
+      }
       else if (k >= "1" && k <= "4" && k.length === 1) this.castAbility(Number(k) - 1, null);
       else if (k === "q") this.castAbility(0, null);
       else if (k === "e") this.castAbility(1, null);
@@ -623,12 +657,51 @@ export class GameClient {
 
   /** Does the local player's current quest step want this pick-up? (Mirrors the server.) */
   private wantsNode(me: PlayerView, n: GatherNode): boolean {
-    const o = getQuest(me.activeQuest)?.steps[me.questStep]?.objective;
-    return o?.type === "gather" && o.node === n.kind && !me.gathered?.includes(n.id);
+    if (me.gathered?.includes(n.id)) return false;
+    return !!me.active?.some((qs) => {
+      const o = getQuest(qs.id)?.steps[qs.step]?.objective;
+      return o?.type === "gather" && o.node === n.kind;
+    });
+  }
+
+  /** The active quest step (if any) that wants you to use this landmark. */
+  private interactVerb(me: PlayerView, landmark: string): string | null {
+    let verb: string | null = null;
+    me.active?.forEach((qs) => {
+      const o = getQuest(qs.id)?.steps[qs.step]?.objective;
+      if (o?.type === "interact" && o.landmark === landmark) verb = o.verb ?? null;
+    });
+    return verb;
+  }
+
+  /** "!" over someone with a quest for you, "?" when you have something to hand in. */
+  private npcMarker(me: PlayerView, npc: string): string {
+    if (npc !== "vendor") return "";
+    let ready = false;
+    me.active.forEach((qs) => {
+      const q = getQuest(qs.id);
+      const o = q?.steps[qs.step]?.objective;
+      if (o?.type === "interact" && o.landmark === npc) ready = true;
+      if (o?.type === "deliver" && q?.giver === npc) {
+        let have = 0;
+        me.inventory.forEach((s) => {
+          if (s.itemId === o.item) have += s.qty;
+        });
+        if (have >= o.count) ready = true;
+      }
+    });
+    if (ready) return "❓ ";
+    const villageOpen = !me.quests.includes(VILLAGE_QUEST.id) && !me.active.some((q) => q.id === VILLAGE_QUEST.id);
+    const jobOpen = !me.active.some((q) => !!getQuest(q.id)?.repeatable);
+    return villageOpen || jobOpen ? "❗ " : "";
   }
 
   private interactHint(me: PlayerView, it: Interactable): string {
-    if (it.kind === "node") return NODE_NAMES[it.node.kind].verb;
+    if (it.kind === "node") return it.node.verb ?? NODE_NAMES[it.node.kind].verb;
+    if (it.kind === "landmark") {
+      const verb = this.interactVerb(me, it.landmark.id);
+      if (verb) return verb;
+    }
     if (it.kind === "water") {
       let hasEmptySkin = false;
       me.inventory.forEach((s) => {
@@ -641,11 +714,7 @@ export class GameClient {
       if (l.faith !== me.faith) return `Inspect the ${l.name}`;
       return me.quests.includes(prayedFlag(me.faith)) ? `Pray to ${getFaith(me.faith)?.name ?? "your god"}` : "Pray to receive your blessing";
     }
-    if (l.kind === "camp") {
-      const o = getQuest(me.activeQuest)?.steps[me.questStep]?.objective;
-      if (o?.type === "interact" && o.landmark === l.id) return this.room.state.campBuilt ? "Add your supplies to the camp" : "Build your camp";
-      return this.room.state.campBuilt ? "Rest by the fire" : "Inspect the clearing";
-    }
+    if (l.kind === "camp") return this.room.state.campBuilt ? "Rest by the fire" : "Inspect the clearing";
     return l.verb;
   }
 
@@ -686,7 +755,7 @@ export class GameClient {
     state.players.forEach((p, id) => {
       seenP.add(id);
       const a = p.appearance;
-      const look = `${p.classId}.${p.weapon}.${a.build}${a.skin}${a.hair}${a.hairColor}${a.beard}${a.dye}`;
+      const look = `${p.classId}.${p.weapon}.${p.armor}.${a.build}${a.skin}${a.hair}${a.hairColor}${a.beard}${a.dye}`;
       let ent = this.players.get(id);
       if (ent && ent.look !== look) {
         this.removeEntity(ent);
@@ -694,7 +763,7 @@ export class GameClient {
       }
       if (!ent) {
         ent = this.makeEntity(
-          createPlayerAvatar(this.assets, p.classId, p.weapon, { build: a.build, skin: a.skin, hair: a.hair, hairColor: a.hairColor, beard: a.beard, dye: a.dye }),
+          createPlayerAvatar(this.assets, p.classId, p.weapon, { build: a.build, skin: a.skin, hair: a.hair, hairColor: a.hairColor, beard: a.beard, dye: a.dye }, p.armor),
           p.x,
           p.z,
           look,
@@ -835,6 +904,8 @@ export class GameClient {
     this.lantern.intensity = flame > 0 ? flame * (1 + Math.sin(time * 7.3) * 0.05 + Math.sin(time * 3.1) * 0.05) : 0;
     this.landmarks.update(time);
     this.landmarks.setCampBuilt(!!state.campBuilt);
+    this.landmarks.setCrypt(!!state.cryptOpen, !!state.cryptBurned);
+    for (const npc of this.npcs.values()) npc.avatar.update(dt, 0);
     if (me) {
       this.landmarks.setCalling(me.faith, me.quests.includes(prayedFlag(me.faith)));
       this.questNodes.update(time, (n) => this.wantsNode(me, n));
@@ -849,6 +920,11 @@ export class GameClient {
       const ent = this.players.get(id);
       if (ent) this.overlay.plate(id, ent.pos.clone().setY(ent.pos.y + ent.avatar.height + 0.2), `${p.name}`, p.hp / Math.max(1, p.maxHp), "player");
     });
+    for (const [id, npc] of this.npcs) {
+      if (npc.pos.distanceToSquared(new THREE.Vector3(this.pred.x, npc.pos.y, this.pred.z)) > 40 * 40) continue;
+      const mark = me ? this.npcMarker(me, id) : "";
+      this.overlay.plate(`npc:${id}`, npc.pos.clone().setY(npc.pos.y + npc.avatar.height + 0.2), `${mark}${npc.name}`, null, "npc");
+    }
     state.enemies.forEach((e, id) => {
       const ent = this.enemies.get(id);
       if (!ent) return;
@@ -878,19 +954,27 @@ export class GameClient {
       state.enemies.forEach((e) => {
         if (Math.hypot(e.x - this.pred.x, e.z - this.pred.z) < 30) markers.push({ x: e.x, z: e.z, kind: "enemy" });
       });
-      // Quest markers: pick-ups you still need, or the place the step points to.
-      const objective = getQuest(me.activeQuest)?.steps[me.questStep]?.objective;
+      // Quest markers: pick-ups you still need, places steps point to, hunting grounds to search.
+      const mapInfo: MapContext = { faith: me.faith, objectiveZones: [], hasMap: me.quests.includes(MAP_FLAG) };
       for (const n of this.world.nodes) if (this.wantsNode(me, n)) markers.push({ x: n.x, z: n.z, kind: "node" });
-      if (objective?.type === "interact") {
-        const l = this.world.landmarks.find((m) => m.id === objective.landmark);
-        if (l) markers.push({ x: l.x, z: l.z, kind: "objective" });
-      }
-      const mapInfo: MapContext = { faith: me.faith };
-      if (objective?.type === "kill") {
-        // The first hunting ground with that creature.
-        mapInfo.objectiveZone = ZONES.find((z) => z.enemies.some((e) => e.id === objective.enemy))?.id;
-      }
+      me.active.forEach((qs) => {
+        const quest = getQuest(qs.id);
+        const step = quest?.steps[qs.step];
+        if (!step) return;
+        const o = step.objective;
+        const place = step.marker ?? (o.type === "interact" || o.type === "reach" ? o.landmark : o.type === "deliver" ? quest?.giver : undefined);
+        const zone = ZONES.find((z) => z.id === place) ?? (o.type === "kill" ? ZONES.find((z) => z.enemies.some((e) => o.enemies.includes(e.id))) : undefined);
+        if (zone) mapInfo.objectiveZones!.push(zone.id);
+        const l = place ? this.world.landmarks.find((m) => m.id === place) : undefined;
+        if (l && !zone) markers.push({ x: l.x, z: l.z, kind: "objective" });
+      });
+      this.minimap.explore(this.pred.x, this.pred.z);
       this.hud.update(me, state.serverTime, others);
+      if (this.vendor.isOpen) {
+        const v = this.world.landmarks.find((l) => l.id === "vendor");
+        if (v && Math.hypot(v.x - this.pred.x, v.z - this.pred.z) > TRADE_RANGE + 1) this.vendor.close();
+        else this.vendor.render(me, resolveKit(me.classId)?.base.id ?? "");
+      }
       this.minimap.draw(markers, this.discovered, this.world.openGates, mapInfo);
 
       const targetId = this.hovered ?? this.attackTarget;

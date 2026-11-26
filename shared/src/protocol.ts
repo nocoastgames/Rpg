@@ -47,6 +47,30 @@ export interface ChatMsg {
   text: string;
 }
 
+/** Buy entry `index` of the merchant's shop. */
+export interface BuyMsg {
+  index: number;
+}
+
+/** Sell the stack in a bag slot (all of it, or just one). */
+export interface SellMsg {
+  slot: number;
+  all?: boolean;
+}
+
+export interface QuestMsg {
+  questId: string;
+}
+
+export interface UnequipMsg {
+  slot: "weapon" | "armor";
+}
+
+/** Quick-use the best item of a kind: "heal" picks food out of combat, a potion in it. */
+export interface QuickUseMsg {
+  kind: "heal" | "drink";
+}
+
 export const C2S = {
   moveDir: "moveDir",
   moveTo: "moveTo",
@@ -56,6 +80,17 @@ export const C2S = {
   interact: "interact",
   advance: "advance",
   chat: "chat",
+  buy: "buy",
+  sell: "sell",
+  /** Sell every material (loot) in the bag. */
+  sellJunk: "sellJunk",
+  acceptQuest: "acceptQuest",
+  /** Hand in a delivery quest to its giver. */
+  turnIn: "turnIn",
+  /** Ask the merchant for a weapon when you have none. */
+  requestWeapon: "requestWeapon",
+  unequip: "unequip",
+  quickUse: "quickUse",
 } as const;
 
 /** Number of ability slots (one per tier). */
@@ -99,10 +134,23 @@ export interface ChatEvent {
   system?: boolean;
 }
 
+/** A book's text, shown to the reader. */
+export interface ReadEvent {
+  title: string;
+  text: string[];
+}
+
+/** Open a conversation (and shop) with someone. */
+export interface DialogEvent {
+  npc: string;
+}
+
 export const S2C = {
   hit: "hit",
   fx: "fx",
   chat: "chat",
   notice: "notice",
   memory: "memory",
+  read: "read",
+  dialog: "dialog",
 } as const;

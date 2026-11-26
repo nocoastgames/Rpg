@@ -32,12 +32,13 @@ and `shared/src/status.ts`. The rules run on the server in
 
 | Zone | Levels | Creatures | Status effect | Where |
 | --- | --- | --- | --- | --- |
-| Tusk Meadow | 1–2 | Tusked boars | none | East bank, across the ford |
+| Tusk Meadow | 1–2 | Tusked boars, wild hares | none | East bank, across the ford |
 | Greypine Wood | 2–3 | Grey wolves | Bleeding (20% of hits): 3 damage a second for 5 s | North, around the waterfall pool |
+| Ashford (the village) | 2–3 | Risen villagers, skeletons; Old Corwin the Gravedigger (named); the Hollow Priest (boss, level 4) | none (the Priest's blast blights) | West, on the old road |
 | Webbed Hollow | 3–4 | Hollow spiders | Poisoned (35%): 2 damage a second for 8 s | South, toward the gorge |
 | The Thornbrake | 4–5 | Thornlings | Blighted (25%): you deal 25% less damage for 10 s | North-west, in front of the cave |
 
-- Each zone keeps a set population (8, 7, 7, 7). A creature killed returns to
+- Each zone keeps a set population (11, 9, 10, 7, 7). Hares never fight back; they bolt. A creature killed returns to
   its own zone after 20 seconds.
 - Creatures spawn at a level inside the zone's range. Health, damage and
   experience scale with level (`enemyStats`).
@@ -105,10 +106,103 @@ Gathering and building are timed actions with a progress bar. Moving,
 attacking or being hit interrupts them. Quest rewards aren't boosted by Well
 Rested or background bonuses.
 
+## Haskel the Peddler
+
+A traveling merchant camped by the old signpost on the road to the pass. A
+rockfall buried the road behind his cart; everyone is stuck in the valley
+until the kingdom beyond digs it out. He used to trade with **Ashford**, a
+farming village down the old west road, and found it overrun by the dead.
+
+Talk to him (interact) to open his window:
+
+- **Talk:** his story, his quest (*The Silent Village*), one odd job at a
+  time, and a plain weapon for your calling if you've lost yours (no weapon
+  equipped and none you can use in your pack).
+- **Buy:**
+
+  | Item | Price | What it does |
+  | --- | --- | --- |
+  | Trail Ration | 3 | Food: 40% health over 12 s |
+  | Healing Draught | 25 | Potion: 40% health at once, even in combat (15 s cooldown) |
+  | Throwing Knife ×5 | 8 | Thrown at the nearest enemy within 12 m |
+  | Arrows ×20 | 4 | Bows shoot one per attack for +2 damage |
+  | Map of the Valley | 12 | Reveals the whole map for good |
+  | A Peddler's Bestiary | 10 | Notes on the valley's creatures (+60 XP the first read) |
+  | Hymns of the Ten | 10 | A hymn for each god, with a curious margin note (+60 XP) |
+
+- **Sell:** loot, rusty gear and anything else with a value. "Sell all loot"
+  sells every material in your pack.
+
+A **❗** over his head means he has something for you; **❓** means you have
+something to hand in.
+
+### Odd jobs (repeatable)
+
+He offers one at a time, at random: 3 wolf pelts, 4 raw hares, 3 boar hides,
+3 spider silk, 5 old bones or 4 black thorns, for 8–16 coins and some
+experience. Hand the items over in his window; a new job is offered after.
+
+## Food, potions, loot and money
+
+- **Food** (stale bread, rations, cooked meat) heals over 10–12 s and only
+  out of combat; taking or dealing damage interrupts the meal. Raw boar and
+  hare meat cook into Roast Boar and Roast Hare if you use them at the camp
+  fire.
+- **Healing Draughts** are expensive but instant and work mid-fight.
+- Quick-heal (`5`, D-pad up) eats out of combat and drinks a draught in it.
+- **Loot** goes straight into the killer's pack: boar hides and meat, wolf
+  pelts, hare meat, spider silk, black thorns, old bones, grave shrouds, the
+  odd tarnished locket, coins, and sometimes rusty gear (a rusted longsword,
+  flail, dirk or gravewood wand for one calling each, or a moth-eaten
+  gambeson anyone can wear).
+- **Equipment:** use a weapon or armour in your pack to equip it (it swaps
+  with what you're wearing). Click an equipped item to take it off. Armour
+  shows on your character.
+
+## The map
+
+You start without one. The map only shows what you've explored (about 24 m
+around wherever you've been), plus the camp and your god's shrine. Buy
+Haskel's map to see the whole valley.
+
+## Second quest: The Silent Village
+
+From Haskel. About twenty minutes; the village's dead are level 2–3 and the
+Hollow Priest is a level 4 boss.
+
+| Step | Task | Reward |
+| --- | --- | --- |
+| 1. The old west road | Find Ashford | 40 XP |
+| 2. Put them to rest | Destroy 8 risen villagers or skeletons | 90 XP |
+| 3. What happened here | Search the cart, the well and the headman's journal (2 s each) | 70 XP |
+| 4. The gravedigger | Kill Old Corwin in the graveyard for the crypt key | 70 XP |
+| 5. Under the chapel | Unlock the crypt (3 s); the Hollow Priest climbs out | 30 XP |
+| 6. The Hollow Priest | Destroy it. Every 7 s it blasts everything within 4.5 m (and blights it); at half health it calls two skeletons | 150 XP |
+| 7. Root and ash | Burn the black thorns in the crypt (4 s) | 60 XP |
+| 8. Report to Haskel | Talk to him | 150 XP, 25 coins, and your first **upper-body armour** for your calling |
+
+| Calling | Armour |
+| --- | --- |
+| Fighter | Ashford Militia Brigandine (10% armour, +2 Vitality) |
+| Mage | Hedge-Wizard's Robe (5% armour, +2 Intellect) |
+| Priest | Chapel Vestments (7% armour, +2 Spirit) |
+| Thief | Poacher's Leathers (7% armour, +2 Agility) |
+
+**When you report back, Haskel lights a signal fire on the rockslide. Twenty
+seconds later the kingdom's men clear the road and the pass opens for everyone
+in that world.** Beyond the pass isn't built yet.
+
+The crypt is shared world state like the camp: once someone unlocks it the
+door stays open, and once the thorns are burned they stay burned. If you
+reach the Hollow Priest step after someone else has destroyed it, inspect the
+crypt and it rises again for you.
+
 ## Dev commands
 
 | Command | Effect |
 | --- | --- |
 | `/tp camp`, `/tp shrine_<god>`, `/tp tusk_meadow` (any zone id) | Teleport |
-| `/step` | Finish the current quest step |
-| `/quest make_camp` | Finish the whole first quest (builds the camp) |
+| `/tp vendor`, `/tp village`, `/tp crypt` | Teleport to Haskel, Ashford, the crypt |
+| `/step [quest]` | Finish the current step of a quest (default: your first active one) |
+| `/quest make_camp`, `/quest silent_village` | Start (if needed) and finish a whole quest |
+| `/coins <n>` | Set your coins |
