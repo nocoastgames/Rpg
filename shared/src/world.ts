@@ -9,6 +9,8 @@
 import { PLAYER_RADIUS, WATER_INTERACT_RANGE, WORLD_HALF } from "./constants.ts";
 import { mulberry32, randRange } from "./rng.ts";
 import {
+  CAMP,
+  CAMP_CLEARING_RADIUS,
   CAVE_ALCOVE_START,
   CAVE_MOUTH,
   FORD_V,
@@ -33,6 +35,7 @@ import {
   valleyBase,
   valleySdf,
   valueNoise,
+  zoneAt,
   type GateId,
   type LandmarkDef,
 } from "./valley.ts";
@@ -65,7 +68,11 @@ export type StructureKind =
   | "boulder"
   | "cave_mouth"
   | "thorns"
-  | "signpost";
+  | "signpost"
+  /** A god's shrine (`faith` says whose). */
+  | "shrine"
+  /** The campsite: drawn as an empty clearing or a built camp, from synced state. */
+  | "camp";
 
 export interface Structure {
   kind: StructureKind;
@@ -77,7 +84,27 @@ export interface Structure {
   size?: number;
   /** Structure is part of a sealed gate; hidden/removed when the gate opens. */
   gate?: GateId;
+  /** Shrines: the god it belongs to. */
+  faith?: string;
 }
+
+/** Things you can pick up for quests: dry branches in the woods, smooth stones on the stream bank. */
+export type NodeKind = "deadfall" | "river_stone";
+
+export interface GatherNode {
+  id: string;
+  kind: NodeKind;
+  x: number;
+  z: number;
+}
+
+export const NODE_NAMES: Record<NodeKind, { name: string; verb: string }> = {
+  deadfall: { name: "Dry branches", verb: "Gather branches" },
+  river_stone: { name: "River stone", verb: "Pick up the stone" },
+};
+
+/** How close you must be to pick up a node. */
+export const NODE_RADIUS = 1.9;
 
 export interface Collider {
   x: number;
@@ -93,6 +120,8 @@ export interface World {
   structures: Structure[];
   colliders: Collider[];
   landmarks: LandmarkDef[];
+  /** Quest pick-ups. */
+  nodes: GatherNode[];
   /** Where new and respawning players wake up: on the bank of the stream. */
   spawn: { x: number; z: number };
   /** Gates currently open. Mutated from synced state on the client, by the game on the server. */
@@ -255,6 +284,16 @@ function buildStructures(): { structures: Structure[]; colliders: Collider[] } {
   const sign = landmarks().find((l) => l.id === "signpost")!;
   add({ kind: "signpost", x: sign.x + 0.9, z: sign.z - 0.9, rotation: passDir, scale: 1 }, 0.25);
 
+  // Shrines, one to each god.
+  for (const l of landmarks()) {
+    if (l.kind !== "shrine") continue;
+    const toCentre = Math.atan2(-l.x, -l.z);
+    add({ kind: "shrine", x: l.x, z: l.z, rotation: toCentre, scale: 1, faith: l.faith }, 0.7);
+  }
+  // The campsite (rendered from synced state; no colliders so you can stand at the fire).
+  const camp = fromUV(CAMP.u, CAMP.v);
+  add({ kind: "camp", ...camp, rotation: 0.6, scale: 1 });
+
   // A few big boulders strewn on the valley floor.
   const boulders: Array<[number, number, number]> = [
     [-20, -25, 1.8],
@@ -283,6 +322,7 @@ export function generateWorld(seed: number): World {
   const spawn = getSpawnPoint();
   const marks = landmarks();
   const rc = fromUV(RUINS_CENTER.u, RUINS_CENTER.v);
+  const campPos = fromUV(CAMP.u, CAMP.v);
 
   const step = 3.1;
   const half = WORLD_HALF + 20;
@@ -318,7 +358,8 @@ export function generateWorld(seed: number): World {
       const inPass = segPointDist(x, z, PASS_START, PASS_END) < PASS_RADIUS + 2;
       const inAlcove = segPointDist(x, z, CAVE_ALCOVE_START, CAVE_MOUTH) < 6;
       const nearMark = marks.some((m) => Math.hypot(x - m.x, z - m.z) < m.interactRadius + 2);
-      const open = water < 1.3 || spawnDist < SPAWN_CLEARING_RADIUS || trail < 2 || ruinsDist < 14 || inPass || inAlcove || nearMark;
+      const campDist = Math.hypot(x - campPos.x, z - campPos.z);
+      const open = water < 1.3 || spawnDist < SPAWN_CLEARING_RADIUS || campDist < CAMP_CLEARING_RADIUS || trail < 2 || ruinsDist < 14 || inPass || inAlcove || nearMark;
 
       // Rocks: everywhere, more along the banks.
       if (roll < (water < 1.5 ? 0.08 : 0.022) && spawnDist > 3 && trail > 1.2 && ruinsDist > 12) {
@@ -370,7 +411,48 @@ export function generateWorld(seed: number): World {
   const grid = new Map<number, Collider[]>();
   for (const c of colliders) addToGrid(grid, c);
 
-  return { seed, props, structures, colliders, landmarks: marks, spawn, openGates: new Set(), grid };
+  const world: World = { seed, props, structures, colliders, landmarks: marks, nodes: [], spawn, openGates: new Set(), grid };
+  world.nodes = placeNodes(world);
+  return world;
+}
+
+/**
+ * Quest pick-ups near the camp: deadfall in the woods around the clearing,
+ * stones along the stream banks. Fixed seed, so every client agrees.
+ */
+function placeNodes(world: World): GatherNode[] {
+  const rng = mulberry32(5151);
+  const camp = fromUV(CAMP.u, CAMP.v);
+  const nodes: GatherNode[] = [];
+  const farFromOthers = (x: number, z: number, min: number) => nodes.every((n) => Math.hypot(n.x - x, n.z - z) > min);
+  const tryPlace = (kind: NodeKind, want: number, spacing: number, pick: () => { x: number; z: number } | null) => {
+    let placed = 0;
+    for (let i = 0; i < 4000 && placed < want; i++) {
+      const p = pick();
+      if (!p || isInWater(p.x, p.z) || !isFree(world, p.x, p.z, 0.7) || !farFromOthers(p.x, p.z, spacing)) continue;
+      if (Math.hypot(p.x - world.spawn.x, p.z - world.spawn.z) < 5) continue;
+      // Keep out of the tougher hunting grounds (Tusk Meadow's boars are fair game).
+      const zone = zoneAt(p.x, p.z, 6);
+      if (zone && zone.levels[0] > 1) continue;
+      nodes.push({ id: `${kind === "deadfall" ? "d" : "s"}${placed}`, kind, ...p });
+      placed++;
+    }
+  };
+  // Dry branches: scattered through the woods 14-60 m from the camp, away from the water.
+  tryPlace("deadfall", 16, 8, () => {
+    const a = randRange(rng, 0, Math.PI * 2);
+    const r = randRange(rng, 14, 60);
+    const p = { x: camp.x + Math.cos(a) * r, z: camp.z + Math.sin(a) * r };
+    return distanceToWater(p.x, p.z) > 4 && valleySdf(p.x, p.z) > 3 && forestDensity(world.seed, p.x, p.z) > 0.35 ? p : null;
+  });
+  // River stones: on the banks from the waterfall woods down past the meadow.
+  tryPlace("river_stone", 12, 5, () => {
+    const v = randRange(rng, -60, 40);
+    const side = rng() < 0.5 ? -1 : 1;
+    const u = streamU(v) + side * (streamHalfWidth(v) + randRange(rng, 0.5, 1.3));
+    return fromUV(u, v);
+  });
+  return nodes;
 }
 
 /** Random walkable point on the valley floor (for enemy spawns). */
@@ -455,10 +537,25 @@ export function isFree(world: World, x: number, z: number, radius = PLAYER_RADIU
   return true;
 }
 
-export type Interactable = { kind: "landmark"; landmark: LandmarkDef } | { kind: "water" };
+export type Interactable = { kind: "landmark"; landmark: LandmarkDef } | { kind: "node"; node: GatherNode } | { kind: "water" };
 
-/** What the player at (x,z) would interact with by pressing the interact button. */
-export function findInteractable(world: World, x: number, z: number): Interactable | null {
+/**
+ * What the player at (x,z) would interact with by pressing the interact button.
+ * `wantsNode` says which quest pick-ups this player can take right now.
+ */
+export function findInteractable(world: World, x: number, z: number, wantsNode?: (n: GatherNode) => boolean): Interactable | null {
+  if (wantsNode) {
+    let node: GatherNode | null = null;
+    let nodeD = NODE_RADIUS;
+    for (const n of world.nodes) {
+      const d = Math.hypot(x - n.x, z - n.z);
+      if (d < nodeD && wantsNode(n)) {
+        node = n;
+        nodeD = d;
+      }
+    }
+    if (node) return { kind: "node", node };
+  }
   let best: LandmarkDef | null = null;
   let bestD = Infinity;
   for (const l of world.landmarks) {

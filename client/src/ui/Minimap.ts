@@ -7,10 +7,17 @@ import {
   toUV,
   valleyBase,
   valleySdf,
+  ZONES,
+  getFaith,
   type LandmarkDef,
   type World,
 } from "@rpg/shared";
 import { h } from "./dom.ts";
+
+const xz = (u: number, v: number): [number, number] => {
+  const p = fromUV(u, v);
+  return [p.x, p.z];
+};
 
 /** Map area in the valley's screen-aligned (u, v) frame, so the map matches the camera orientation. */
 const U0 = -75;
@@ -22,8 +29,17 @@ const RES = 2; // world metres per background pixel
 export interface MapMarker {
   x: number;
   z: number;
-  kind: "self" | "player" | "enemy";
+  /** node: a quest pick-up you still need; objective: where the current quest step points. */
+  kind: "self" | "player" | "enemy" | "node" | "objective";
   facing?: number;
+}
+
+/** What the map should highlight for the local player. */
+export interface MapContext {
+  /** Your god: their shrine is always marked, even before you find it. */
+  faith: string;
+  /** Hunting ground the current quest step sends you to. */
+  objectiveZone?: string;
 }
 
 /**
@@ -85,7 +101,7 @@ export class Minimap {
     return c;
   }
 
-  draw(markers: MapMarker[], discovered: Set<string>, openGates: Set<string>): void {
+  draw(markers: MapMarker[], discovered: Set<string>, openGates: Set<string>, ctxInfo?: MapContext): void {
     const size = this.el.clientWidth;
     if (!size) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -120,13 +136,35 @@ export class Minimap {
     const tl = { px: W / 2 + (U0 - cu) * scale, py: H / 2 + (V0 - cv) * scale };
     ctx.drawImage(this.bg, tl.px, tl.py, (U1 - U0) * scale, (V1 - V0) * scale);
 
-    // Landmarks (only once discovered).
-    ctx.font = `${Math.round(11 * dpr)}px Cinzel, Georgia, serif`;
+    // Hunting grounds: named on the large map once found; the quest's target ground is ringed.
     ctx.textAlign = "center";
+    for (const zn of ZONES) {
+      const c = toPx(...xz(zn.u, zn.v));
+      const target = ctxInfo?.objectiveZone === zn.id;
+      if (target) {
+        ctx.save();
+        ctx.setLineDash([4 * dpr, 4 * dpr]);
+        ctx.strokeStyle = "#fff3b0";
+        ctx.lineWidth = 1.5 * dpr;
+        ctx.beginPath();
+        ctx.arc(c.px, c.py, zn.radius * scale, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+      if (this.large && (discovered.has(zn.id) || target)) {
+        ctx.font = `italic ${Math.round(11 * dpr)}px Georgia, serif`;
+        ctx.fillStyle = "rgba(255, 230, 200, 0.85)";
+        ctx.fillText(`${zn.name} (${zn.levels[0]}–${zn.levels[1]})`, c.px, c.py);
+      }
+    }
+
+    // Landmarks (only once discovered; your god's shrine and the campsite always).
+    ctx.font = `${Math.round(11 * dpr)}px Cinzel, Georgia, serif`;
     for (const l of this.world.landmarks) {
-      if (!discovered.has(l.id) || l.discoverRadius === 0) continue;
+      const always = l.kind === "camp" || (l.kind === "shrine" && l.faith === ctxInfo?.faith);
+      if (l.discoverRadius === 0 || (!discovered.has(l.id) && !always)) continue;
       const { px, py } = toPx(l.x, l.z);
-      this.drawLandmark(ctx, l, px, py, dpr, !!l.gate && !openGates.has(l.gate));
+      this.drawLandmark(ctx, l, px, py, dpr, !!l.gate && !openGates.has(l.gate), l.faith === ctxInfo?.faith);
       if (this.large) {
         ctx.fillStyle = "#f3e6c4";
         ctx.fillText(l.name, px, py - 9 * dpr);
@@ -156,6 +194,20 @@ export class Minimap {
         ctx.fill();
         ctx.stroke();
         ctx.restore();
+      } else if (m.kind === "node" || m.kind === "objective") {
+        // Quest markers: small gold diamonds.
+        const r = (m.kind === "objective" ? 5 : 3) * dpr;
+        ctx.fillStyle = "#ffe07a";
+        ctx.strokeStyle = "#3a2a00";
+        ctx.lineWidth = dpr;
+        ctx.beginPath();
+        ctx.moveTo(px, py - r);
+        ctx.lineTo(px + r, py);
+        ctx.lineTo(px, py + r);
+        ctx.lineTo(px - r, py);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
       } else {
         ctx.fillStyle = m.kind === "enemy" ? "#e0433a" : "#7fc8ff";
         ctx.beginPath();
@@ -165,7 +217,41 @@ export class Minimap {
     }
   }
 
-  private drawLandmark(ctx: CanvasRenderingContext2D, l: LandmarkDef, px: number, py: number, dpr: number, sealed: boolean): void {
+  private drawLandmark(ctx: CanvasRenderingContext2D, l: LandmarkDef, px: number, py: number, dpr: number, sealed: boolean, mine = false): void {
+    if (l.kind === "shrine") {
+      const color = getFaith(l.faith ?? "")?.color ?? "#ffffff";
+      const r = (mine ? 6 : 4) * dpr;
+      if (mine) {
+        ctx.fillStyle = `${color}55`;
+        ctx.beginPath();
+        ctx.arc(px, py, r * 1.9, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = color;
+      ctx.strokeStyle = "#000";
+      ctx.lineWidth = dpr;
+      ctx.beginPath();
+      ctx.moveTo(px, py - r);
+      ctx.lineTo(px + r * 0.7, py);
+      ctx.lineTo(px, py + r);
+      ctx.lineTo(px - r * 0.7, py);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      return;
+    }
+    if (l.kind === "camp") {
+      ctx.fillStyle = "#ff9a3a";
+      ctx.strokeStyle = "#3a1a00";
+      ctx.lineWidth = dpr;
+      ctx.beginPath();
+      ctx.moveTo(px, py - 6 * dpr);
+      ctx.quadraticCurveTo(px + 5 * dpr, py, px, py + 4 * dpr);
+      ctx.quadraticCurveTo(px - 5 * dpr, py, px, py - 6 * dpr);
+      ctx.fill();
+      ctx.stroke();
+      return;
+    }
     ctx.fillStyle = sealed ? "#2a2018" : "#3d5a2a";
     ctx.strokeStyle = "#d8b54a";
     ctx.lineWidth = 1.5 * dpr;

@@ -6,6 +6,8 @@ export * from "./classes.ts";
 export * from "./character.ts";
 export * from "./items.ts";
 export * from "./enemies.ts";
+export * from "./status.ts";
+export * from "./quests.ts";
 export * from "./valley.ts";
 export * from "./world.ts";
 export * from "./movement.ts";

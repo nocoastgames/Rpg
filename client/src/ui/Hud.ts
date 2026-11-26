@@ -16,6 +16,10 @@ import {
   memoriesAt,
   backgroundRevealed,
   resolveKit,
+  getQuest,
+  getStatus,
+  REST,
+  VALLEY_LEVELS,
   type MemoryEvent,
   type ResolvedKit,
 } from "@rpg/shared";
@@ -80,6 +84,11 @@ export class Hud {
   private readonly targetName: HTMLElement;
   private readonly targetFill: HTMLElement;
   private readonly party: HTMLElement;
+  private readonly tracker: HTMLElement;
+  private readonly channel: HTMLElement;
+  private readonly channelFill: HTMLElement;
+  private readonly channelText: HTMLElement;
+  private trackerKey = "";
   private readonly death: HTMLElement;
   private readonly tooltip: HTMLElement;
   private readonly interactHint: HTMLElement;
@@ -173,22 +182,32 @@ export class Hud {
     this.targetFill = h("div.target-fill");
     this.target = h("div.target.hidden", null, this.targetName, h("div.target-bar", null, this.targetFill));
     this.party = h("div.party");
-    this.death = h("div.death.hidden", null, h("div.death-title", null, "You have fallen"), h("div.death-sub", null, "You will wake by the stream again…"));
+    this.tracker = h("div.tracker.hidden");
+    this.channelFill = h("div.channel-fill");
+    this.channelText = h("div.channel-text");
+    this.channel = h("div.channel.hidden", null, this.channelText, h("div.channel-bar", null, this.channelFill));
+    this.death = h("div.death.hidden", null, h("div.death-title", null, "You have fallen"), h("div.death-sub", null, "You will wake again soon…"));
     this.interactHint = h("div.interact-hint.hidden");
     this.help = this.buildHelp(stop);
 
-    this.bannerEl = h("div.zone-banner", null, h("div.zone-name", null, "The Unknown Forest"), h("div.zone-sub", null, "A valley walled in by mountains"));
+    this.bannerEl = h(
+      "div.zone-banner",
+      null,
+      h("div.zone-name", null, "The Unknown Forest"),
+      h("div.zone-sub", null, `A valley walled in by mountains · Level ${VALLEY_LEVELS[0]}–${VALLEY_LEVELS[1]}`),
+    );
     this.bannerTimer = window.setTimeout(() => this.bannerEl.classList.add("fade"), 3500);
 
     this.root = h(
       "div.hud",
       null,
       this.bannerEl,
-      this.party,
+      h("div.top-left", null, this.tracker, this.party),
       this.target,
       this.notices,
       this.memoryEl,
       this.interactHint,
+      this.channel,
       this.death,
       minimap,
       this.chat,
@@ -404,11 +423,29 @@ export class Hud {
     }
 
     const buffNodes: HTMLElement[] = [];
+    const time = (sec: number) => (sec >= 90 ? `${Math.ceil(sec / 60)}m` : `${sec.toFixed(0)}s`);
     p.buffs.forEach((b) => {
       const left = Math.max(0, (b.expiresAt - serverTime) / 1000);
-      if (left > 0) buffNodes.push(h("div.buff", { title: `+${Math.round(b.amount * 100)}% ${b.stat}` }, `${b.stat} ${left.toFixed(0)}s`));
+      if (left <= 0) return;
+      const rested = b.stat === REST.buffStat;
+      const label = rested ? "Well Rested" : b.stat;
+      const title = rested ? `+${Math.round(b.amount * 100)}% experience, faster healing` : `+${Math.round(b.amount * 100)}% ${b.stat}`;
+      buffNodes.push(h("div.buff", { title }, `${label} ${time(left)}`));
+    });
+    p.statuses?.forEach((st) => {
+      const def = getStatus(st.id);
+      const left = Math.max(0, (st.expiresAt - serverTime) / 1000);
+      if (def && left > 0) buffNodes.push(h("div.buff.status", { title: def.description, style: `--status:${def.color}` }, `${def.icon} ${def.name} ${time(left)}`));
     });
     this.buffs.replaceChildren(...buffNodes);
+    this.renderTracker(p);
+    const working = !!p.channelLabel && p.channelEnd > serverTime;
+    this.channel.classList.toggle("hidden", !working);
+    if (working) {
+      this.channelText.textContent = `${p.channelLabel}…`;
+      const frac = (serverTime - p.channelStart) / Math.max(1, p.channelEnd - p.channelStart);
+      this.channelFill.style.width = `${Math.min(100, Math.max(0, frac * 100))}%`;
+    }
 
     this.death.classList.toggle("hidden", p.anim !== "dead");
     const next = advancementOptions(p.classId);
@@ -491,14 +528,13 @@ export class Hud {
     const options = availableFavorQuests(p.faith, p.classId, p.quests, p.abandoned)
       .map((g) => `${g.favorQuest?.name} (${g.name})`)
       .join(", ");
-    const status =
-      !faith?.blessing || !info
-        ? "No god watches over you."
-        : info.status === "active"
-          ? `Blessing: ${faith.blessingText}.`
-          : info.status === "needsQuest"
-            ? `Blessing not yet earned: ${faith.name} favours ${faith.leaning.toLowerCase()} paths and yours is ${path}.`
-            : `${faith.name} will never bless a ${path} path.`;
+    const status = !faith?.blessing || !info ? "No god watches over you." : {
+      active: `Blessing: ${faith.blessingText}.`,
+      awaitsPrayer: `${faith.name} favours your path. Pray at their shrine (marked on your map) to receive the blessing: ${faith.blessingText}.`,
+      needsQuest: `Blessing not yet earned: ${faith.name} favours ${faith.leaning.toLowerCase()} paths and yours is ${path}.`,
+      opposed: `${faith.name} will never bless a ${path} path.`,
+      none: "No god watches over you.",
+    }[info.status];
     const abandoned = Array.from(p.abandoned, (id) => getFaith(id)?.name ?? id);
     return [
       h(`div.past-blessing${info?.blessedBy ? ".active" : ""}` as "div", null, status),
@@ -567,6 +603,25 @@ export class Hud {
       children.push(h("div.path-status", null, "You have mastered your path."));
     }
     this.pathEl.replaceChildren(...children.filter((c): c is HTMLElement => !!c));
+  }
+
+  /** Quest tracker: the active quest, the step you're on and your progress. */
+  private renderTracker(p: PlayerView): void {
+    const quest = getQuest(p.activeQuest ?? "");
+    const step = quest?.steps[p.questStep];
+    const key = quest && step ? `${quest.id}|${p.questStep}|${p.questCount}` : "";
+    if (key === this.trackerKey) return;
+    this.trackerKey = key;
+    this.tracker.classList.toggle("hidden", !quest || !step);
+    if (!quest || !step) return;
+    const o = step.objective;
+    const count = o.type === "interact" ? "" : ` (${p.questCount}/${o.count})`;
+    this.tracker.replaceChildren(
+      h("div.tracker-quest", null, quest.name),
+      h("div.tracker-step", null, `${step.title}${count}`),
+      h("div.tracker-text", null, step.text),
+      h("div.tracker-pips", null, ...quest.steps.map((_, i) => h(`span.pip${i < p.questStep ? ".done" : i === p.questStep ? ".now" : ""}` as "span"))),
+    );
   }
 
   private renderParty(others: PartyMember[]): void {

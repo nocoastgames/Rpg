@@ -78,6 +78,10 @@ export const CAVE_ALCOVE_RADIUS = 4.2;
 export const RUINS_CENTER = { u: -24, v: 40 };
 export const RUINS_ROTATION = 0.35;
 
+/** Sheltered clearing west of where you wake: the campsite you build in the first quest. */
+export const CAMP = { u: -9, v: -10 };
+export const CAMP_CLEARING_RADIUS = 8;
+
 function segDist(u: number, v: number, a: { u: number; v: number }, b: { u: number; v: number }): { d: number; t: number } {
   const du = b.u - a.u;
   const dv = b.v - a.v;
@@ -170,6 +174,8 @@ export function trails(): UV[][] {
   const sp = spawnUV();
   const ford = { u: streamU(FORD_V), v: FORD_V };
   return [
+    // Spawn clearing → the campsite clearing.
+    [sp, { u: (sp.u + CAMP.u) / 2, v: (sp.v + CAMP.v) / 2 - 1 }, CAMP],
     // Spawn clearing → ford → east to the pass.
     [sp, { u: sp.u + 1, v: -11 }, { u: ford.u - 4, v: FORD_V }, ford, { u: ford.u + 5, v: FORD_V - 1 }, { u: 26, v: -16 }, PASS_START, { u: 52, v: -21 }],
     // Spawn → south-west to the ruins.
@@ -255,6 +261,10 @@ export type GateId = "valley_exit" | "ruins_seal" | "cave_thorns";
 
 export interface LandmarkDef {
   id: string;
+  /** What interacting does: inspect (text only), pray at a shrine, or use the campsite. */
+  kind: "inspect" | "shrine" | "camp";
+  /** Shrines: the god it belongs to. */
+  faith?: string;
   name: string;
   /** Where the player stands to inspect it (world coords). */
   x: number;
@@ -294,6 +304,7 @@ export function landmarks(): LandmarkDef[] {
   return [
     {
       id: "valley_exit",
+      kind: "inspect",
       name: "The Narrow Pass",
       ...at(PASS_BLOCK.u - 3.5, PASS_BLOCK.v + 0.8),
       interactRadius: 4,
@@ -305,6 +316,7 @@ export function landmarks(): LandmarkDef[] {
     },
     {
       id: "ruins_seal",
+      kind: "inspect",
       name: "Unknown Ruins",
       ...at(RUINS_CENTER.u, RUINS_CENTER.v + 3.6),
       interactRadius: 3.2,
@@ -316,6 +328,7 @@ export function landmarks(): LandmarkDef[] {
     },
     {
       id: "cave_thorns",
+      kind: "inspect",
       name: "The Cave Mouth",
       ...caveApproach(3.8),
       interactRadius: 3.6,
@@ -327,6 +340,7 @@ export function landmarks(): LandmarkDef[] {
     },
     {
       id: "signpost",
+      kind: "inspect",
       name: "Old Signpost",
       ...at(PASS_START.u - 6, PASS_START.v + 2.2),
       interactRadius: 2.6,
@@ -334,7 +348,103 @@ export function landmarks(): LandmarkDef[] {
       lockedText: "The signpost is too weathered to read. One arm points toward the pass.",
       discoverRadius: 0,
     },
+    {
+      id: "campsite",
+      kind: "camp",
+      name: "The Clearing",
+      ...at(CAMP.u, CAMP.v),
+      interactRadius: 3.4,
+      verb: "Make camp",
+      lockedText: "A sheltered clearing, out of the wind. It would make a good camp.",
+      discoverRadius: 12,
+    },
+    ...SHRINES.map((s): LandmarkDef => {
+      const p = shrinePosition(s);
+      return {
+        id: `shrine_${s.faith}`,
+        kind: "shrine",
+        faith: s.faith,
+        name: s.name,
+        ...p,
+        interactRadius: 2.8,
+        verb: "Pray",
+        lockedText: s.text,
+        discoverRadius: 12,
+      };
+    }),
   ];
+}
+
+// ---------------------------------------------------------------------------
+// Shrines: one to each god, set where their domain shows
+// ---------------------------------------------------------------------------
+
+export interface ShrineDef {
+  faith: string;
+  name: string;
+  /** Desired spot (u, v); nudged toward the valley centre if it lands too close to the cliffs or the water. */
+  u: number;
+  v: number;
+  /** What a non-follower sees. */
+  text: string;
+}
+
+export const SHRINES: readonly ShrineDef[] = [
+  { faith: "solenne", name: "Shrine of the Dawn", u: 38, v: 6, text: "A white stone shrine facing the sunrise, warm to the touch even in shade." },
+  { faith: "valdris", name: "Shrine of the Oathshield", u: 27, v: -28, text: "A shield-shaped stone stands watch over the road to the pass." },
+  { faith: "green_mother", name: "Shrine of the Green Mother", u: 30, v: -52, text: "A mossy stone ringed with wildflowers that bloom out of season." },
+  { faith: "orren", name: "Shrine of the Roads", u: -4, v: -24, text: "A waymarker carved with a hundred little arrows, worn smooth by passing hands." },
+  { faith: "mirevel", name: "Shrine of the Hidden Ledger", u: -36, v: 54, text: "A slate carved with writing no one has ever finished reading." },
+  { faith: "ferryman", name: "Shrine of the Far Shore", u: 0, v: 66, text: "A grey cairn by the water, where the stream leaves the valley." },
+  { faith: "kaelthar", name: "Shrine of the Hunger", u: -42, v: -4, text: "A blackened altar. Old stains darken the stone." },
+  { faith: "veiled_one", name: "Shrine of the Veil", u: -10, v: -66, text: "A shrouded figure in the mist of the waterfall. You can't see its face." },
+  { faith: "rot_below", name: "Shrine of the Deep Rot", u: -20, v: -50, text: "A stump split open by black thorns. Something sweet and rotten breathes from it." },
+];
+
+/** Where a shrine actually stands: walked toward the valley centre until it has room. */
+export function shrinePosition(s: { u: number; v: number }): { x: number; z: number } {
+  let u = s.u;
+  let v = s.v;
+  for (let i = 0; i < 60; i++) {
+    const p = fromUV(u, v);
+    if (valleySdf(p.x, p.z) > 6 && distanceToWater(p.x, p.z) > 4) return p;
+    u *= 0.96;
+    v *= 0.97;
+    if (distanceToWater(p.x, p.z) <= 4) u -= 1.5 * Math.sign(streamU(v) - u || 1);
+  }
+  return fromUV(u, v);
+}
+
+// ---------------------------------------------------------------------------
+// Hunting grounds: the valley is a level 1-5 zone
+// ---------------------------------------------------------------------------
+
+export const VALLEY_LEVELS: [number, number] = [1, 5];
+
+export interface ZoneDef {
+  id: string;
+  name: string;
+  levels: [number, number];
+  /** Centre and radius (u, v frame). */
+  u: number;
+  v: number;
+  radius: number;
+  /** Enemy kinds and spawn weights. */
+  enemies: ReadonlyArray<{ id: string; weight: number }>;
+  /** How many creatures live here at full strength. */
+  population: number;
+}
+
+export const ZONES: readonly ZoneDef[] = [
+  { id: "tusk_meadow", name: "Tusk Meadow", levels: [1, 2], u: 27, v: 14, radius: 17, enemies: [{ id: "boar", weight: 1 }], population: 8 },
+  { id: "greypine_wood", name: "Greypine Wood", levels: [2, 3], u: 14, v: -48, radius: 19, enemies: [{ id: "wolf", weight: 1 }], population: 7 },
+  { id: "webbed_hollow", name: "Webbed Hollow", levels: [3, 4], u: 6, v: 50, radius: 16, enemies: [{ id: "spider", weight: 1 }], population: 7 },
+  { id: "thornbrake", name: "The Thornbrake", levels: [4, 5], u: -35, v: -40, radius: 13, enemies: [{ id: "thornling", weight: 1 }], population: 7 },
+];
+
+export function zoneAt(x: number, z: number, margin = 0): ZoneDef | undefined {
+  const { u, v } = toUV(x, z);
+  return ZONES.find((zn) => Math.hypot(u - zn.u, v - zn.v) < zn.radius + margin);
 }
 
 export function spawnPoint(): { x: number; z: number } {

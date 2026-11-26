@@ -17,7 +17,7 @@ import {
   validateCreation,
   getBackground,
   getFaith,
-  blessingActive,
+  getQuest,
   type MemoryEvent,
   type AbilityMsg,
   type AdvanceMsg,
@@ -107,6 +107,10 @@ export class ForestRoom extends Room<{ state: WorldState }> {
     } else if (cmd === "level" && arg && Number.isFinite(Number(arg))) {
       this.game.setLevel(client.sessionId, Number(arg));
       client.send(S2C.notice, `[dev] level set to ${arg}`);
+    } else if (cmd === "step" || (cmd === "quest" && arg === "make_camp")) {
+      // Finish the active quest's current step (or, with /quest make_camp, the whole quest).
+      const ok = this.game.devFinishQuestStep(client.sessionId, cmd === "quest");
+      client.send(S2C.notice, ok ? "[dev] quest progressed" : "[dev] no active quest");
     } else if (cmd === "quest" && arg) {
       // "favor" = your own god's epic quest.
       const own = getFaith(this.state.players.get(client.sessionId)?.faith ?? "")?.favorQuest?.id;
@@ -130,7 +134,7 @@ export class ForestRoom extends Room<{ state: WorldState }> {
       const ok = this.game.teleportToLandmark(client.sessionId, arg);
       client.send(S2C.notice, ok ? `[dev] teleported to ${arg}` : `[dev] unknown landmark "${arg}"`);
     } else {
-      client.send(S2C.notice, "[dev] commands: /open|/close <gate>, /tp <place>, /level <n>, /quest <id|all>, /class <id>");
+      client.send(S2C.notice, "[dev] commands: /open|/close <gate>, /tp <place|shrine_<god>|camp|zone>, /level <n>, /quest <id|all|favor|make_camp>, /step, /class <id>");
     }
   }
 
@@ -141,8 +145,17 @@ export class ForestRoom extends Room<{ state: WorldState }> {
     // The one thing you remember as you open your eyes.
     const bg = getBackground(result.value.backgroundId);
     if (bg) client.send(S2C.memory, { text: bg.impression } satisfies MemoryEvent);
+    // Once the first memory has faded: the first task is shelter, and your god's shrine calls to you.
+    const quest = getQuest(player.activeQuest);
+    if (quest) this.clock.setTimeout(() => client.send(S2C.notice, `${quest.intro} Quest: ${quest.name}. ${quest.steps[0]!.text}`), 10_000);
     const faith = getFaith(result.value.faithId);
-    if (faith && blessingActive(faith.id, result.value.classId)) client.send(S2C.notice, `${faith.name}'s blessing is with you: ${faith.blessingText}.`);
+    const shrine = this.game.world.landmarks.find((l) => l.kind === "shrine" && l.faith === faith?.id);
+    if (faith && shrine) {
+      this.clock.setTimeout(
+        () => client.send(S2C.notice, `You feel ${faith.name}'s call. Somewhere in this valley stands the ${shrine.name} (marked on your map). Pray there to receive their blessing.`),
+        17_000,
+      );
+    }
     this.broadcast(S2C.chat, { from: "", text: `${player.name} wakes up by the stream.`, system: true } satisfies ChatEvent);
   }
 

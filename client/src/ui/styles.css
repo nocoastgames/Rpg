@@ -496,6 +496,11 @@ kbd {
   color: var(--accent);
   text-transform: capitalize;
 }
+.buff.status {
+  border-color: var(--status);
+  color: #fff;
+  background: color-mix(in srgb, var(--status) 35%, rgba(20, 10, 10, 0.9));
+}
 .xp-bar {
   height: 7px;
   background: #120f0b;
@@ -687,13 +692,60 @@ kbd {
   height: 100%;
   background: linear-gradient(#d0412f, #7a1a10);
 }
-.party {
+.top-left {
   position: absolute;
-  top: 12px;
-  left: 12px;
+  top: calc(12px + env(safe-area-inset-top));
+  left: calc(12px + env(safe-area-inset-left));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.party {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+.tracker {
+  width: 230px;
+  padding: 7px 9px 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  text-shadow: 0 1px 2px #000;
+}
+.tracker-quest {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 0.95rem;
+}
+.tracker-step {
+  font-weight: 700;
+  font-size: 0.85rem;
+  margin-top: 2px;
+}
+.tracker-text {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  line-height: 1.3;
+  margin-top: 2px;
+}
+.tracker-pips {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+.tracker-pips .pip {
+  width: 14px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.15);
+}
+.tracker-pips .pip.done {
+  background: var(--accent);
+}
+.tracker-pips .pip.now {
+  background: #fff3b0;
 }
 .party-member {
   width: 170px;
@@ -1200,7 +1252,7 @@ body[data-input="touch"] .buffs {
   justify-content: flex-start;
   flex-wrap: wrap;
 }
-body[data-input="touch"] .party {
+body[data-input="touch"] .top-left {
   top: calc(140px + env(safe-area-inset-top));
 }
 body[data-input="touch"] .chat {
@@ -1290,6 +1342,12 @@ body[data-input="gamepad"] .interact-hint {
   .minimap {
     width: 110px;
     height: 110px;
+  }
+  .tracker {
+    width: 190px;
+  }
+  .tracker-text {
+    display: none;
   }
   .bag {
     top: 140px;
@@ -1889,4 +1947,33 @@ body[data-input="gamepad"] .interact-hint {
 .past-blessing.active {
   color: #cfe8b0;
   font-style: normal;
+}
+
+/* Timed actions (gathering, building) */
+.channel {
+  position: absolute;
+  left: 50%;
+  bottom: 34%;
+  transform: translateX(-50%);
+  width: 240px;
+  text-align: center;
+  pointer-events: none;
+}
+.channel-text {
+  font-family: var(--font-display);
+  color: #fff3d0;
+  text-shadow: 0 1px 3px #000;
+  font-size: 0.9rem;
+}
+.channel-bar {
+  height: 9px;
+  margin-top: 3px;
+  border: 1px solid #000;
+  background: rgba(20, 14, 6, 0.85);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.channel-fill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(#f2d27a, #b8862a);
 }

@@ -77,8 +77,12 @@ elder ruins and monsters.
   the valley.
 - **Ends at about level 10:** you burn back the thorns. The quarantine lifts,
   the pass opens and you leave for the Known Lands.
+- **What you do there:** build a camp (the first quest, *Shelter*), find your
+  god's shrine, and hunt the valley's four grounds up to level 5. See
+  [VALLEY.md](VALLEY.md).
 - **No overt hints yet**, only seeds that make sense later: ruins built with
   impossibly straight lines, and runes that look like circuitry once you know.
+  Each shrine stands on the same worn eight-sided plinth, whatever the god.
 
 ### Act II: The Known Lands (levels 10–25)
 - Kingdoms, temples, guilds and faith factions. The Blight spreads along the
@@ -117,6 +121,8 @@ elder ruins and monsters.
 | Companions | Pets are engineered creatures (the phoenix from Solenne's labs, the rat king a Rot construct); familiars are small drones and sub-minds |
 | Good and evil pet classes | Which mind's creations you bond with |
 | Faith | Which mind you're registered with. Flavour for now; it matters at the end |
+| Shrines | Local interface nodes. The first prayer is a handshake that links you to your mind (the blessing); later prayers are a maintenance request: the Weave repairs your body and purges toxins |
+| Status effects | Bleeding and poison are mundane; **blight** is the reclamation swarm in your blood, the first trace of the Rot |
 | Elder relics | Maker tech: everburning torches, glowing slates |
 
 ## Hints catalogue (level 25+)

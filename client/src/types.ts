@@ -48,11 +48,24 @@ export interface PlayerView {
   armor: string;
   inventory: ArrayLike<InventorySlotView> & { forEach(cb: (s: InventorySlotView, i: number) => void): void };
   buffs: ArrayLike<BuffView> & { forEach(cb: (b: BuffView, i: number) => void): void };
+  /** Harmful status effects (bleed, poison, blight). */
+  statuses: ArrayLike<{ id: string; expiresAt: number }> & { forEach(cb: (s: { id: string; expiresAt: number }, i: number) => void): void };
+  /** Active quest id ("" if none), its current step and progress toward that step. */
+  activeQuest: string;
+  questStep: number;
+  questCount: number;
+  /** Timed action in progress (gathering, building). */
+  channelLabel: string;
+  channelStart: number;
+  channelEnd: number;
+  /** Quest pick-ups (world node ids) already taken during the active quest. */
+  gathered: ArrayLike<string> & { includes(id: string): boolean };
   cooldowns: ArrayLike<number>;
 }
 
 export interface EnemyView {
   kind: string;
+  level: number;
   x: number;
   z: number;
   facing: number;
@@ -93,4 +106,6 @@ export interface WorldStateView {
   companions: MapView<CompanionView>;
   /** Gate id -> open. Sealed gates block movement. */
   gates: MapView<boolean>;
+  /** The campsite has been built. */
+  campBuilt: boolean;
 }

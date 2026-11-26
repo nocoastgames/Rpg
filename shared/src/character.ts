@@ -330,9 +330,16 @@ export type BlessingStatus =
   | "needsQuest"
   /** Your god opposes your path (good vs evil). Another god's epic quest can convert you. */
   | "opposed"
+  /** Your god would bless you, but you have not yet prayed at their shrine. */
+  | "awaitsPrayer"
   /** Faithless, or a god without a blessing. */
   | "none";
 
+
+/** Recorded (in the quest log) the first time you pray at a god's shrine. */
+export function prayedFlag(faithId: string): string {
+  return `prayed_${faithId}`;
+}
 
 /** Steps between a god's leaning and a class's alignment: 0 same, 1 adjacent, 2 opposite. */
 function leaningDistance(f: FaithDef, classId: string): number {
@@ -351,13 +358,21 @@ export interface BlessingInfo {
  *   - one step apart (good/neutral, neutral/evil): earned with the god's epic quest;
  *   - opposite (good vs evil): never (another god's epic quest can make them your god: availableFavorQuests);
  *   - Faithless: none.
+ * Either way the blessing is only received by praying once at the god's shrine.
  */
 export function blessingInfo(faithId: string, classId: string, quests: QuestLog = []): BlessingInfo {
   const f = getFaith(faithId);
   if (!f?.blessing || f.leaning === "None") return { status: "none" };
   const d = leaningDistance(f, classId);
-  if (d === 0 || (d === 1 && f.favorQuest && quests.includes(f.favorQuest.id))) return { status: "active", blessedBy: f };
-  return { status: d === 2 ? "opposed" : "needsQuest" };
+  if (!favourWon(f, classId, quests)) return { status: d === 2 ? "opposed" : "needsQuest" };
+  if (!quests.includes(prayedFlag(f.id))) return { status: "awaitsPrayer" };
+  return { status: "active", blessedBy: f };
+}
+
+/** The god accepts your path: same alignment, or one step away with their epic quest done. */
+function favourWon(f: FaithDef, classId: string, quests: QuestLog): boolean {
+  const d = leaningDistance(f, classId);
+  return d === 0 || (d === 1 && !!f.favorQuest && quests.includes(f.favorQuest.id));
 }
 
 export function blessingStatus(faithId: string, classId: string, quests: QuestLog = []): BlessingStatus {
@@ -390,7 +405,7 @@ export function availableFavorQuests(faithId: string, classId: string, quests: Q
       !!g.blessing &&
       leaningDistance(g, classId) < 2 &&
       !abandoned.includes(g.id) &&
-      !(g.id === faithId && blessingActive(faithId, classId, quests)),
+      !(g.id === faithId && favourWon(g, classId, quests)),
   );
 }
 
@@ -406,7 +421,7 @@ export function favorQuestOutcome(
   if (!god) return { ok: false, reason: "That is not an epic quest of the gods." };
   if (abandoned.includes(god.id)) return { ok: false, reason: `You turned your back on ${god.name}. They will not take you back.` };
   if (leaningDistance(god, classId) === 2) return { ok: false, reason: `${god.name} will never bless a ${classAlignment(classId)} path.` };
-  if (god.id === faithId && blessingActive(faithId, classId, quests)) return { ok: false, reason: `${god.name} already blesses you.` };
+  if (god.id === faithId && favourWon(god, classId, quests)) return { ok: false, reason: `${god.name} already favours you.` };
   return { ok: true, newFaith: god };
 }
 

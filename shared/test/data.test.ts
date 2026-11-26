@@ -134,7 +134,8 @@ test("backgrounds: 3 memories each, name revealed only by the last; faiths exist
   assert.ok(FAITHS.length >= 8);
 });
 
-import { blessingActive, passiveBonus } from "../src/character.ts";
+import { blessingActive, passiveBonus, prayedFlag } from "../src/character.ts";
+const PRAYED = FAITHS.map((f) => prayedFlag(f.id));
 import { classAlignment } from "../src/classes.ts";
 
 test("faith blessings apply only when the class's alignment matches the god", () => {
@@ -142,13 +143,13 @@ test("faith blessings apply only when the class's alignment matches the god", ()
   assert.equal(classAlignment("paladin"), "good");
   assert.equal(classAlignment("lich"), "evil");
   assert.equal(classAlignment("deathspeaker"), "neutral", "a deeper node can turn the path back");
-  assert.equal(blessingActive("solenne", "paladin"), true);
-  assert.equal(blessingActive("solenne", "lich"), false);
-  assert.equal(blessingActive("kaelthar", "death_knight"), true);
-  assert.equal(blessingActive("orren", "fighter"), true, "neutral gods bless neutral paths");
-  assert.equal(blessingActive("faithless", "fighter"), false);
-  assert.equal(passiveBonus("urchin", "orren", "fighter", "moveSpeed"), 0.05 + 0.04, "background + blessing stack");
-  assert.equal(passiveBonus("urchin", "orren", "paladin", "moveSpeed"), 0.05, "blessing off on a good path");
+  assert.equal(blessingActive("solenne", "paladin", PRAYED), true);
+  assert.equal(blessingActive("solenne", "lich", PRAYED), false);
+  assert.equal(blessingActive("kaelthar", "death_knight", PRAYED), true);
+  assert.equal(blessingActive("orren", "fighter", PRAYED), true, "neutral gods bless neutral paths");
+  assert.equal(blessingActive("faithless", "fighter", PRAYED), false);
+  assert.equal(passiveBonus("urchin", "orren", "fighter", "moveSpeed", PRAYED), 0.05 + 0.04, "background + blessing stack");
+  assert.equal(passiveBonus("urchin", "orren", "paladin", "moveSpeed", PRAYED), 0.05, "blessing off on a good path");
   // Every pet class's alignment matches its good/evil tag.
   for (const n of CLASS_NODES.filter((n) => n.pet)) assert.equal(classAlignment(n.id), n.pet, n.id);
 });
@@ -157,21 +158,21 @@ import { blessingStatus } from "../src/character.ts";
 
 test("adjacent paths can earn a blessing by epic quest; opposites never can", () => {
   // good god
-  assert.equal(blessingStatus("solenne", "paladin"), "active");
-  assert.equal(blessingStatus("solenne", "fighter"), "needsQuest", "neutral path, good god");
-  assert.equal(blessingStatus("solenne", "fighter", ["favor_solenne"]), "active");
-  assert.equal(blessingStatus("solenne", "lich", ["favor_solenne"]), "opposed", "evil can never get good");
+  assert.equal(blessingStatus("solenne", "paladin", PRAYED), "active");
+  assert.equal(blessingStatus("solenne", "fighter", PRAYED), "needsQuest", "neutral path, good god");
+  assert.equal(blessingStatus("solenne", "fighter", [...PRAYED, "favor_solenne"]), "active");
+  assert.equal(blessingStatus("solenne", "lich", [...PRAYED, "favor_solenne"]), "opposed", "evil can never get good");
   // evil god
-  assert.equal(blessingStatus("kaelthar", "lich"), "active");
-  assert.equal(blessingStatus("kaelthar", "warlord", ["favor_kaelthar"]), "active", "neutral path, evil god, quest done");
-  assert.equal(blessingStatus("kaelthar", "paladin", ["favor_kaelthar"]), "opposed", "good can never get evil");
+  assert.equal(blessingStatus("kaelthar", "lich", PRAYED), "active");
+  assert.equal(blessingStatus("kaelthar", "warlord", [...PRAYED, "favor_kaelthar"]), "active", "neutral path, evil god, quest done");
+  assert.equal(blessingStatus("kaelthar", "paladin", [...PRAYED, "favor_kaelthar"]), "opposed", "good can never get evil");
   // neutral god accepts either side with the quest
-  assert.equal(blessingStatus("orren", "paladin"), "needsQuest");
-  assert.equal(blessingStatus("orren", "lich", ["favor_orren"]), "active");
+  assert.equal(blessingStatus("orren", "paladin", PRAYED), "needsQuest");
+  assert.equal(blessingStatus("orren", "lich", [...PRAYED, "favor_orren"]), "active");
   // faithless
-  assert.equal(blessingStatus("faithless", "fighter", ["favor_solenne"]), "none");
+  assert.equal(blessingStatus("faithless", "fighter", [...PRAYED, "favor_solenne"]), "none");
   // another god's quest doesn't count
-  assert.equal(blessingStatus("valdris", "fighter", ["favor_solenne"]), "needsQuest");
+  assert.equal(blessingStatus("valdris", "fighter", [...PRAYED, "favor_solenne"]), "needsQuest");
 });
 
 import { availableFavorQuests, blessingInfo, favorQuestOutcome } from "../src/character.ts";
@@ -190,7 +191,8 @@ test("completing a god's epic quest makes them your god; which quests are offere
 
   const conv = favorQuestOutcome("kaelthar", "paladin", "favor_solenne");
   assert.ok(conv.ok && conv.newFaith.id === "solenne");
-  assert.equal(blessingInfo("orren", "paladin", ["favor_orren"]).status, "active", "the new god blesses you");
+  assert.equal(blessingInfo("orren", "paladin", ["favor_orren"]).status, "awaitsPrayer", "the new god will bless you once you pray at their shrine");
+  assert.equal(blessingInfo("orren", "paladin", ["favor_orren", prayedFlag("orren")]).status, "active");
   // Too far apart, whatever your current god.
   assert.equal(favorQuestOutcome("orren", "paladin", "favor_kaelthar").ok, false);
   assert.equal(favorQuestOutcome("orren", "lich", "favor_solenne").ok, false);
@@ -198,4 +200,14 @@ test("completing a god's epic quest makes them your god; which quests are offere
   assert.ok(favorQuestOutcome("orren", "paladin", "favor_mirevel", ["favor_orren"], ["solenne"]).ok);
   assert.equal(favorQuestOutcome("orren", "paladin", "favor_solenne", ["favor_orren"], ["solenne"]).ok, false);
   assert.ok(!availableFavorQuests("orren", "paladin", ["favor_orren"], ["solenne"]).some((g) => g.id === "solenne"));
+});
+
+test("a blessing is received by praying at the god's shrine", () => {
+  assert.equal(blessingStatus("solenne", "paladin"), "awaitsPrayer");
+  assert.equal(blessingStatus("solenne", "paladin", [prayedFlag("solenne")]), "active");
+  assert.equal(blessingStatus("solenne", "paladin", [prayedFlag("valdris")]), "awaitsPrayer", "another god's shrine doesn't count");
+  assert.equal(blessingStatus("solenne", "fighter", [prayedFlag("solenne")]), "needsQuest", "prayer alone doesn't win an adjacent god");
+  assert.equal(passiveBonus("urchin", "orren", "fighter", "moveSpeed"), 0.05, "no blessing before praying");
+  // Praying doesn't reopen your own god's quest.
+  assert.ok(!availableFavorQuests("solenne", "paladin").some((g) => g.id === "solenne"));
 });

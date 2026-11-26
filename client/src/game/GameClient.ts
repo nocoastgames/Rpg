@@ -5,10 +5,18 @@ import {
   S2C,
   findInteractable,
   generateWorld,
+  getFaith,
+  getQuest,
+  prayedFlag,
+  zoneAt,
+  NODE_NAMES,
+  type GatherNode,
+  type Interactable,
   ABILITY_SLOTS,
   getEnemy,
   getItem,
   resolveKit,
+  ZONES,
   stepMovement,
   type AbilityDef,
   type ChatEvent,
@@ -33,12 +41,13 @@ import { Environment, groundHeight } from "../scene/Environment.ts";
 import { FxSystem } from "../scene/Fx.ts";
 import { IsoCamera } from "../scene/IsoCamera.ts";
 import { Landmarks } from "../scene/Landmarks.ts";
+import { QuestNodes } from "../scene/QuestNodes.ts";
 import { updateOcclusion } from "../scene/occlusion.ts";
 import type { EnemyView, PlayerView } from "../types.ts";
 import { safeStorageGet, safeStorageSet } from "../ui/dom.ts";
 import type { InputMode } from "../ui/glyphs.ts";
 import { Hud, type PartyMember } from "../ui/Hud.ts";
-import { Minimap, type MapMarker } from "../ui/Minimap.ts";
+import { Minimap, type MapContext, type MapMarker } from "../ui/Minimap.ts";
 import { Overlay } from "../ui/Overlay.ts";
 import { Input } from "./Input.ts";
 
@@ -77,6 +86,9 @@ export class GameClient {
   private readonly iso: IsoCamera;
   private readonly env: Environment;
   private readonly landmarks: Landmarks;
+  private readonly questNodes: QuestNodes;
+  /** Hunting ground the player is in (for the zone banner). */
+  private zone: string | null = null;
   private readonly fx: FxSystem;
   private readonly overlay: Overlay;
   private readonly hud: Hud;
@@ -147,6 +159,8 @@ export class GameClient {
     this.env = new Environment(this.world, this.scene, assets, { lowPower });
     this.landmarks = new Landmarks(this.world);
     this.scene.add(this.landmarks.group);
+    this.questNodes = new QuestNodes(this.world);
+    this.scene.add(this.questNodes.group);
     this.fx = new FxSystem(this.scene);
     this.overlay = new Overlay(overlayRoot, this.iso.camera);
     this.input = new Input(this.renderer.domElement);
@@ -607,7 +621,49 @@ export class GameClient {
     });
   }
 
+  /** Does the local player's current quest step want this pick-up? (Mirrors the server.) */
+  private wantsNode(me: PlayerView, n: GatherNode): boolean {
+    const o = getQuest(me.activeQuest)?.steps[me.questStep]?.objective;
+    return o?.type === "gather" && o.node === n.kind && !me.gathered?.includes(n.id);
+  }
+
+  private interactHint(me: PlayerView, it: Interactable): string {
+    if (it.kind === "node") return NODE_NAMES[it.node.kind].verb;
+    if (it.kind === "water") {
+      let hasEmptySkin = false;
+      me.inventory.forEach((s) => {
+        if (s.itemId === "waterskin_empty") hasEmptySkin = true;
+      });
+      return hasEmptySkin ? "Fill your waterskin" : "Drink from the stream";
+    }
+    const l = it.landmark;
+    if (l.kind === "shrine") {
+      if (l.faith !== me.faith) return `Inspect the ${l.name}`;
+      return me.quests.includes(prayedFlag(me.faith)) ? `Pray to ${getFaith(me.faith)?.name ?? "your god"}` : "Pray to receive your blessing";
+    }
+    if (l.kind === "camp") {
+      const o = getQuest(me.activeQuest)?.steps[me.questStep]?.objective;
+      if (o?.type === "interact" && o.landmark === l.id) return this.room.state.campBuilt ? "Add your supplies to the camp" : "Build your camp";
+      return this.room.state.campBuilt ? "Rest by the fire" : "Inspect the clearing";
+    }
+    return l.verb;
+  }
+
   private checkDiscovery(): void {
+    // Hunting grounds: a banner when you walk in (with a little slack so the edge doesn't flicker).
+    const still = this.zone ? zoneAt(this.pred.x, this.pred.z, 4)?.id === this.zone : false;
+    const here = still ? ZONES.find((z) => z.id === this.zone) : zoneAt(this.pred.x, this.pred.z);
+    const id = here?.id ?? null;
+    if (id !== this.zone) {
+      this.zone = id;
+      if (here) {
+        this.hud.banner(here.name, `Level ${here.levels[0]}–${here.levels[1]}`);
+        if (!this.discovered.has(here.id)) {
+          this.discovered.add(here.id);
+          safeStorageSet(DISCOVERY_KEY, JSON.stringify([...this.discovered]));
+        }
+      }
+    }
     for (const l of this.world.landmarks) {
       if (l.discoverRadius === 0 || this.discovered.has(l.id)) continue;
       if (Math.hypot(this.pred.x - l.x, this.pred.z - l.z) < l.discoverRadius) {
@@ -778,6 +834,11 @@ export class GameClient {
     const flame = this.lighting.lantern;
     this.lantern.intensity = flame > 0 ? flame * (1 + Math.sin(time * 7.3) * 0.05 + Math.sin(time * 3.1) * 0.05) : 0;
     this.landmarks.update(time);
+    this.landmarks.setCampBuilt(!!state.campBuilt);
+    if (me) {
+      this.landmarks.setCalling(me.faith, me.quests.includes(prayedFlag(me.faith)));
+      this.questNodes.update(time, (n) => this.wantsNode(me, n));
+    }
     this.fx.update(dt);
     updateOcclusion(this.iso.camera, this.renderer, me ? focus : null);
 
@@ -817,25 +878,27 @@ export class GameClient {
       state.enemies.forEach((e) => {
         if (Math.hypot(e.x - this.pred.x, e.z - this.pred.z) < 30) markers.push({ x: e.x, z: e.z, kind: "enemy" });
       });
+      // Quest markers: pick-ups you still need, or the place the step points to.
+      const objective = getQuest(me.activeQuest)?.steps[me.questStep]?.objective;
+      for (const n of this.world.nodes) if (this.wantsNode(me, n)) markers.push({ x: n.x, z: n.z, kind: "node" });
+      if (objective?.type === "interact") {
+        const l = this.world.landmarks.find((m) => m.id === objective.landmark);
+        if (l) markers.push({ x: l.x, z: l.z, kind: "objective" });
+      }
+      const mapInfo: MapContext = { faith: me.faith };
+      if (objective?.type === "kill") {
+        // The first hunting ground with that creature.
+        mapInfo.objectiveZone = ZONES.find((z) => z.enemies.some((e) => e.id === objective.enemy))?.id;
+      }
       this.hud.update(me, state.serverTime, others);
-      this.minimap.draw(markers, this.discovered, this.world.openGates);
+      this.minimap.draw(markers, this.discovered, this.world.openGates, mapInfo);
 
       const targetId = this.hovered ?? this.attackTarget;
       const tgt = targetId ? state.enemies.get(targetId) : undefined;
-      this.hud.setTarget(tgt ? (getEnemy(tgt.kind)?.name ?? tgt.kind) : null, tgt?.hp, tgt?.maxHp);
+      this.hud.setTarget(tgt ? `Lv ${tgt.level ?? 1} ${getEnemy(tgt.kind)?.name ?? tgt.kind}` : null, tgt?.hp, tgt?.maxHp);
 
-      const interact = me.anim === "dead" ? null : findInteractable(this.world, this.pred.x, this.pred.z);
-      let hasEmptySkin = false;
-      me.inventory.forEach((s) => {
-        if (s.itemId === "waterskin_empty") hasEmptySkin = true;
-      });
-      const hint = !interact
-        ? null
-        : interact.kind === "landmark"
-          ? interact.landmark.verb
-          : hasEmptySkin
-            ? "Fill your waterskin"
-            : "Drink from the stream";
+      const interact = me.anim === "dead" ? null : findInteractable(this.world, this.pred.x, this.pred.z, (n) => this.wantsNode(me, n));
+      const hint = interact ? this.interactHint(me, interact) : null;
       this.hud.setInteractHint(hint);
       this.touch.setInteract(!!hint);
       this.touch.setAbilityLabels(this.hud.abilityNames);

@@ -56,3 +56,28 @@ test("mountains rise outside the valley and the valley floor stays low", () => {
   const peak = fromUV(-80, -40);
   assert.ok(terrainHeight(peak.x, peak.z) > 12);
 });
+
+import { CAMP_QUEST, ENEMIES, FAITHS as ALL_FAITHS, SHRINES, ZONES, distanceToWater, enemyStats, getEnemy } from "../src/index.ts";
+
+test("starting zone content: a shrine per god, campsite, quest nodes, hunting grounds", () => {
+  const w = generateWorld(1337);
+  const gods = ALL_FAITHS.filter((f) => f.blessing).map((f) => f.id).sort();
+  assert.deepEqual(SHRINES.map((s) => s.faith).sort(), gods, "one shrine for every god");
+  for (const l of w.landmarks.filter((m) => m.kind !== "inspect")) {
+    assert.ok(valleySdf(l.x, l.z) > 4, `${l.id} inside the valley`);
+    assert.ok(distanceToWater(l.x, l.z) > 2, `${l.id} not in the stream`);
+  }
+  const shrines = w.landmarks.filter((m) => m.kind === "shrine");
+  for (const a of shrines) for (const b of shrines) if (a !== b) assert.ok(Math.hypot(a.x - b.x, a.z - b.z) > 12, `${a.id} apart from ${b.id}`);
+  // Enough pick-ups for the camp quest, with room to spare.
+  for (const step of CAMP_QUEST.steps) {
+    const o = step.objective;
+    if (o.type === "gather") assert.ok(w.nodes.filter((n) => n.kind === o.node).length >= o.count * 1.5, o.node);
+    if (o.type === "kill") assert.ok(ZONES.some((z) => z.enemies.some((e) => e.id === o.enemy)), o.enemy);
+  }
+  for (const n of w.nodes) assert.ok(isFree(w, n.x, n.z, 0.6) && !isInWater(n.x, n.z), n.id);
+  // Zones cover levels 1-5 in order, with known enemies, and get tougher.
+  assert.deepEqual([ZONES[0]!.levels[0], ZONES[ZONES.length - 1]!.levels[1]], [1, 5]);
+  for (const z of ZONES) for (const e of z.enemies) assert.ok(getEnemy(e.id), e.id);
+  for (const def of ENEMIES) assert.ok(enemyStats(def, 5).maxHp > enemyStats(def, 1).maxHp);
+});

@@ -566,6 +566,102 @@ class ProceduralBeast implements Avatar {
 }
 
 // ---------------------------------------------------------------------------
+// Spider: a low body, a bulbous abdomen and eight jointed legs
+// ---------------------------------------------------------------------------
+
+class ProceduralSpider implements Avatar {
+  readonly root = new THREE.Group();
+  readonly height: number;
+  private readonly body = new THREE.Group();
+  private readonly legs: Array<{ pivot: THREE.Group; side: number; i: number }> = [];
+  private readonly fangs: THREE.Object3D[] = [];
+  private phase = Math.random() * 10;
+  private anim = "idle";
+  private seq = -1;
+  private lunge = 0;
+  private deadT = 0;
+
+  constructor(color: string, scale: number) {
+    const dark = `#${new THREE.Color(color).multiplyScalar(0.6).getHexString()}`;
+    const mark = "#b8324a";
+    this.height = 1.1 * scale;
+    this.root.add(this.body);
+    this.body.position.y = 0.42;
+    // Head-chest and abdomen.
+    const thorax = mesh(new THREE.SphereGeometry(0.26, 8, 6), color, 0, 0, 0.18);
+    thorax.scale.set(1, 0.7, 1.1);
+    const abdomen = mesh(new THREE.SphereGeometry(0.4, 9, 7), color, 0, 0.12, -0.42);
+    abdomen.scale.set(1, 0.85, 1.2);
+    // An hourglass-ish marking on the back.
+    const spot = mesh(new THREE.SphereGeometry(0.12, 6, 5), mark, 0, 0.42, -0.42);
+    spot.scale.set(1, 0.3, 1.5);
+    this.body.add(thorax, abdomen, spot);
+    // Eyes: a cluster of small glowing beads.
+    for (const [x, y] of [[-0.08, 0.06], [0.08, 0.06], [-0.13, 0.1], [0.13, 0.1], [-0.04, 0.12], [0.04, 0.12]] as const) {
+      this.body.add(mesh(new THREE.SphereGeometry(0.03, 5, 4), "#ff5a3a", x, y, 0.42, true));
+    }
+    for (const side of [-1, 1]) {
+      const f = mesh(new THREE.ConeGeometry(0.035, 0.16, 4), "#e8e0c8", side * 0.07, -0.08, 0.42);
+      f.rotation.x = Math.PI;
+      this.fangs.push(f);
+      this.body.add(f);
+    }
+    // Eight legs: an upper segment that rises, then a lower one reaching down to the ground.
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 4; i++) {
+        const pivot = new THREE.Group();
+        pivot.position.set(side * 0.16, 0, 0.3 - i * 0.16);
+        pivot.rotation.y = side * (0.5 + (i - 1.5) * -0.45) + (side < 0 ? Math.PI : 0);
+        const upper = new THREE.Group();
+        upper.rotation.z = 0.7;
+        const ug = box(0.5, 0.06, 0.06);
+        ug.translate(0.25, 0, 0);
+        upper.add(mesh(ug, dark));
+        const knee = new THREE.Group();
+        knee.position.x = 0.5;
+        knee.rotation.z = -1.9;
+        const lg = box(0.62, 0.05, 0.05);
+        lg.translate(0.31, 0, 0);
+        knee.add(mesh(lg, dark));
+        upper.add(knee);
+        pivot.add(upper);
+        this.body.add(pivot);
+        this.legs.push({ pivot, side, i });
+      }
+    }
+    this.root.scale.setScalar(scale);
+  }
+
+  setAnim(anim: string, actionSeq: number): void {
+    if (actionSeq !== this.seq && this.seq !== -1 && anim === "attack") this.lunge = 1;
+    this.anim = anim;
+    this.seq = actionSeq;
+  }
+
+  update(dt: number, moveSpeed: number): void {
+    const walking = moveSpeed > 0.3 && this.anim !== "dead";
+    this.phase += dt * (walking ? 9 + moveSpeed * 2 : 1.2);
+    for (const l of this.legs) {
+      const alt = (l.i + (l.side > 0 ? 1 : 0)) % 2 === 0 ? 1 : -1;
+      const base = l.side * (0.5 + (l.i - 1.5) * -0.45) + (l.side < 0 ? Math.PI : 0);
+      l.pivot.rotation.y = base + (walking ? Math.sin(this.phase) * 0.28 * alt : Math.sin(this.phase + l.i) * 0.03);
+      l.pivot.rotation.x = walking ? Math.max(0, Math.cos(this.phase) * alt) * 0.25 * l.side : 0;
+    }
+    this.body.position.y = 0.42 + (walking ? Math.abs(Math.sin(this.phase * 2)) * 0.03 : Math.sin(this.phase) * 0.01);
+    this.lunge = Math.max(0, this.lunge - dt * 3);
+    this.body.rotation.x = -Math.sin(this.lunge * Math.PI) * 0.35;
+    this.body.position.z = Math.sin(this.lunge * Math.PI) * 0.25;
+    for (const f of this.fangs) f.rotation.z = Math.sin(this.lunge * Math.PI) * 0.5 * (f.position.x > 0 ? 1 : -1);
+    this.deadT = THREE.MathUtils.clamp(this.deadT + (this.anim === "dead" ? dt * 3 : -dt * 3), 0, 1);
+    this.body.rotation.z = this.deadT * Math.PI;
+  }
+
+  dispose(): void {
+    this.root.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Factories
 // ---------------------------------------------------------------------------
 
@@ -797,6 +893,7 @@ export function createEnemyAvatar(assets: AssetLibrary, kind: string): Avatar {
   const color = def?.color ?? "#777777";
   const scale = def?.scale ?? 1;
   if (kind === "wolf" || kind === "boar") return new ProceduralBeast(kind, color, scale);
+  if (kind === "spider") return new ProceduralSpider(color, scale);
   // Thornling: a small, spiky, bark-skinned humanoid.
   const h = new ProceduralHumanoid({ classId: "thornling", flavor: "", color, weapon: "", scale: scale * 0.75, skin: "#5a7a3a" });
   h.root.traverse((o) => {

@@ -7,7 +7,14 @@
  * That keeps the rules testable without sockets.
  */
 import {
-  ENEMIES,
+  CAMP,
+  FIRST_QUEST,
+  REST,
+  ZONES,
+  enemyStats,
+  getQuest,
+  getStatus,
+  prayedFlag,
   RESOURCES,
   RESPAWN_SECONDS,
   STARTING_ARMOR,
@@ -30,7 +37,6 @@ import {
   isInWater,
   mulberry32,
   randomValleyPoint,
-  toUV,
   randRange,
   STAT_IDS,
   FAITHS,
@@ -45,6 +51,11 @@ import {
   type AbilityDef,
   type CompanionPower,
   type EnemyDef,
+  type GatherNode,
+  type LandmarkDef,
+  type QuestObjective,
+  type StatusId,
+  type ZoneDef,
   type FxEvent,
   type GateId,
   type HitEvent,
@@ -53,7 +64,7 @@ import {
   type MoveIntent,
   type World,
 } from "@rpg/shared";
-import { Buff, Companion, Enemy, InventorySlot, Player, WorldState } from "../schema/WorldState.ts";
+import { Buff, Companion, Enemy, InventorySlot, Player, StatusEffect, WorldState } from "../schema/WorldState.ts";
 import {
   applyDerived,
   armorFraction,
@@ -86,10 +97,20 @@ interface PlayerRuntime {
   nextAttackAt: number;
   respawnAt: number;
   nextDrinkAt: number;
+  /** Next whole-second tick of damage-over-time statuses. */
+  nextDotAt: number;
+  /** Shrines answer again after a short while. */
+  nextPrayAt: number;
+  /** Timed action in progress (gathering, building); finishes unless interrupted. */
+  channel: (() => void) | null;
 }
 
 interface EnemyRuntime {
   def: EnemyDef;
+  zone: ZoneDef;
+  level: number;
+  damage: [number, number];
+  xp: number;
   homeX: number;
   homeZ: number;
   targetId: string | null;
@@ -119,15 +140,17 @@ const FLYING_KINDS = new Set(["hawk", "raven", "owl", "dove", "crane", "parrot",
 const COMPANION_SPEED = 6.5;
 const COMPANION_RESPAWN_MS = 12_000;
 
-const ENEMY_POPULATION = 18;
-
-/** Enemy kinds that count as beasts (Trapper background bonus). */
-const BEASTS = new Set(["wolf", "boar"]);
+/** Creatures don't spawn this close to where players wake or to the campsite. */
+const SPAWN_SAFE_RADIUS = 16;
+const PRAY_COOLDOWN_MS = 30_000;
+/** Nothing spawns this close to a shrine. */
+const SHRINE_SANCTUARY = 12;
+/** Enemies this close and chasing you stop you from resting. */
+const REST_DANGER_RADIUS = 16;
 
 const article = (word: string) => (/^[aeiou]/i.test(word) ? "an" : "a");
 const capitalize = (w: string) => w[0]!.toUpperCase() + w.slice(1);
 const ENEMY_RESPAWN_MS = 20_000;
-const SAFE_RADIUS = 24;
 const XP_SHARE_RADIUS = 20;
 const ANIM_HOLD_MS = 350;
 
@@ -138,7 +161,8 @@ export class Game {
   private readonly companions = new Map<string, CompanionRuntime>();
   private readonly rng: () => number;
   private nextEnemyId = 1;
-  private pendingSpawns: number[] = [];
+  private pendingSpawns: Array<{ at: number; zone: ZoneDef }> = [];
+  private readonly campPos: { x: number; z: number };
   private now = 0;
 
   constructor(
@@ -150,7 +174,8 @@ export class Game {
     this.world = generateWorld(seed);
     this.rng = mulberry32(seed ^ 0x9e3779b9);
     for (const l of this.world.landmarks) if (l.gate) state.gates.set(l.gate, false);
-    for (let i = 0; i < ENEMY_POPULATION; i++) this.spawnEnemy();
+    this.campPos = fromUV(CAMP.u, CAMP.v);
+    this.repopulate();
   }
 
   // -------------------------------------------------------------------------
@@ -194,7 +219,11 @@ export class Game {
       nextAttackAt: 0,
       respawnAt: 0,
       nextDrinkAt: 0,
+      nextDotAt: 0,
+      nextPrayAt: 0,
+      channel: null,
     });
+    p.activeQuest = FIRST_QUEST;
     return p;
   }
 
@@ -217,6 +246,7 @@ export class Game {
     if (len > 0) {
       rt.intent.target = null;
       rt.attackTargetId = null;
+      this.cancelChannel(id);
     }
   }
 
@@ -225,6 +255,7 @@ export class Game {
     if (!rt) return;
     rt.intent.target = { x, z };
     rt.attackTargetId = null;
+    this.cancelChannel(id);
   }
 
   setAttackTarget(id: string, enemyId: string): void {
@@ -232,6 +263,7 @@ export class Game {
     if (!rt || !this.state.enemies.has(enemyId)) return;
     rt.attackTargetId = enemyId;
     rt.intent.target = null;
+    this.cancelChannel(id);
   }
 
   castAbility(id: string, slot: number, x: number, z: number): void {
@@ -249,6 +281,7 @@ export class Game {
       return;
     }
     if (!this.executeAbility(id, p, rt, ability, x, z)) return;
+    this.cancelChannel(id);
 
     p.resource -= ability.cost;
     p.cooldowns[slot] = this.now + ability.cooldown * 1000;
@@ -284,16 +317,24 @@ export class Game {
   interact(id: string): void {
     const p = this.state.players.get(id);
     const rt = this.players.get(id);
-    if (!p || !rt || p.anim === "dead") return;
-    const target = findInteractable(this.world, p.x, p.z);
+    if (!p || !rt || p.anim === "dead" || rt.channel) return;
+    const target = findInteractable(this.world, p.x, p.z, (n) => this.wantsNode(p, n));
     if (!target) {
       this.events.notice(id, "There is nothing here to interact with.");
       return;
     }
+    if (target.kind === "node") {
+      this.gather(id, p, rt, target.node);
+      return;
+    }
     if (target.kind === "landmark") {
       const l = target.landmark;
-      const open = l.gate ? this.state.gates.get(l.gate) === true : false;
-      this.events.notice(id, open && l.openText ? l.openText : l.lockedText);
+      if (l.kind === "shrine") this.pray(id, p, rt, l);
+      else if (l.kind === "camp") this.useCamp(id, p, rt, l);
+      else {
+        const open = l.gate ? this.state.gates.get(l.gate) === true : false;
+        this.events.notice(id, open && l.openText ? l.openText : l.lockedText);
+      }
       return;
     }
     const empty = p.inventory.find((s) => s.itemId === "waterskin_empty");
@@ -306,6 +347,247 @@ export class Game {
     rt.nextDrinkAt = this.now + 5000;
     p.resource = Math.min(p.maxResource, p.resource + 10);
     this.events.notice(id, "You cup your hands and drink from the stream. Refreshing.");
+  }
+
+  // -------------------------------------------------------------------------
+  // Shrines
+  // -------------------------------------------------------------------------
+
+  /**
+   * A shrine calls to its god's followers. The first prayer there receives
+   * the god's blessing; after that it cures every status effect and heals.
+   */
+  private pray(id: string, p: Player, rt: PlayerRuntime, l: LandmarkDef): void {
+    const god = getFaith(l.faith ?? "");
+    if (!god) return;
+    if (p.faith !== god.id) {
+      const quest = god.favorQuest ? ` Completing ${god.favorQuest.name} would make ${god.name} your god.` : "";
+      this.events.notice(id, `${l.lockedText} It is a shrine to ${god.name}, ${god.title}. It does not answer you.${quest}`);
+      return;
+    }
+    const first = !p.quests.includes(prayedFlag(god.id));
+    if (!first && this.now < rt.nextPrayAt) {
+      this.events.notice(id, `The shrine's light is dim. ${god.name} will answer again soon.`);
+      return;
+    }
+    rt.nextPrayAt = this.now + PRAY_COOLDOWN_MS;
+    if (first) p.quests.push(prayedFlag(god.id));
+    applyDerived(p, rt.ch); // a blessing can change max resource
+    const cured = p.statuses.length > 0;
+    p.statuses.clear();
+    const before = p.hp;
+    p.hp = p.maxHp;
+    p.resource = Math.max(p.resource, RESOURCES[rt.ch.kit.base.resource].startsFull ? p.maxResource : p.resource);
+    this.events.fx({ kind: "heal", sourceId: id, fromX: p.x, fromZ: p.z, toX: p.x, toZ: p.z, radius: 2.5, color: god.color });
+    if (p.hp > before) this.events.hit({ targetId: id, sourceId: id, amount: Math.round(p.hp - before), heal: true });
+    if (first) {
+      const info = blessingInfo(p.faith, p.classId, p.quests);
+      this.events.notice(
+        id,
+        info.status === "active"
+          ? `You kneel and pray. ${god.name} answers: their blessing settles on you. ${god.blessingText}.`
+          : info.status === "needsQuest"
+            ? `You kneel and pray. ${god.name} hears you, but your path is not yet theirs. Complete ${god.favorQuest?.name ?? "their epic quest"} and the blessing will follow.`
+            : `You kneel and pray. ${god.name} hears you, but will never bless a path like yours.`,
+      );
+    } else {
+      this.events.notice(id, cured ? `${god.name} answers. Your wounds close and the sickness leaves you.` : `${god.name} answers. Your wounds close.`);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Campsite
+  // -------------------------------------------------------------------------
+
+  private useCamp(id: string, p: Player, rt: PlayerRuntime, l: LandmarkDef): void {
+    const step = this.currentStep(p);
+    if (step?.objective.type === "interact" && step.objective.landmark === l.id) {
+      const o = step.objective;
+      this.startChannel(id, p, rt, o.seconds ?? 0, this.state.campBuilt ? "Adding to the camp" : "Building your camp", () => this.buildCamp(id, p, l, o));
+      return;
+    }
+    if (!this.state.campBuilt) {
+      this.events.notice(id, p.activeQuest === "make_camp" ? `${l.lockedText} You'll need firewood, stones and hides first.` : l.lockedText);
+      return;
+    }
+    this.rest(id, p, rt);
+  }
+
+  private buildCamp(id: string, p: Player, l: LandmarkDef, o: QuestObjective): void {
+    const already = this.state.campBuilt;
+    this.state.campBuilt = true;
+    this.events.fx({ kind: "levelup", sourceId: id, fromX: l.x, fromZ: l.z, toX: l.x, toZ: l.z, color: "#ff9a3a" });
+    if (already) this.events.notice(id, "You add your wood, stones and hides to the camp. It's sturdier for it.");
+    else this.events.announce(`${p.name} has made camp in the clearing.`);
+    this.progressQuest(id, p, o, 1);
+    if (!p.activeQuest) this.events.notice(id, "Rest by the fire (interact) to recover and become Well Rested. Resting stirs the valley's creatures back to life.");
+  }
+
+  /** Rest at the camp: heal, cure, Well Rested, and every creature in the valley returns. */
+  private rest(id: string, p: Player, rt: PlayerRuntime): void {
+    for (const [eid, ert] of this.enemies) {
+      const e = this.state.enemies.get(eid);
+      if (ert.targetId === id && e && Math.hypot(e.x - p.x, e.z - p.z) < REST_DANGER_RADIUS) {
+        this.events.notice(id, "You can't rest with enemies nearby.");
+        return;
+      }
+    }
+    p.hp = p.maxHp;
+    p.resource = RESOURCES[rt.ch.kit.base.resource].startsFull ? p.maxResource : p.resource;
+    p.statuses.clear();
+    for (let i = p.buffs.length - 1; i >= 0; i--) if (p.buffs[i]!.stat === REST.buffStat) p.buffs.splice(i, 1);
+    const b = new Buff();
+    b.stat = REST.buffStat;
+    b.amount = REST.xpBonus;
+    b.expiresAt = this.now + REST.durationSec * 1000;
+    p.buffs.push(b);
+    this.events.fx({ kind: "buff", sourceId: id, fromX: p.x, fromZ: p.z, toX: p.x, toZ: p.z, radius: 2, variant: REST.buffStat, color: "#ffb35a" });
+    const returned = this.repopulate();
+    this.events.notice(
+      id,
+      `You rest by the fire and wake Well Rested: +${Math.round(REST.xpBonus * 100)}% experience and faster healing for ${REST.durationSec / 60} minutes.` +
+        (returned > 0 ? " Out in the valley, creatures stir." : ""),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Quests
+  // -------------------------------------------------------------------------
+
+  private currentStep(p: Player) {
+    return getQuest(p.activeQuest)?.steps[p.questStep];
+  }
+
+  /** Can this player pick up this node right now? (Their current step wants it and they haven't taken it.) */
+  private wantsNode(p: Player, n: GatherNode): boolean {
+    const o = this.currentStep(p)?.objective;
+    return o?.type === "gather" && o.node === n.kind && !p.gathered.includes(n.id);
+  }
+
+  private gather(id: string, p: Player, rt: PlayerRuntime, n: GatherNode): void {
+    const o = this.currentStep(p)?.objective;
+    if (!o || o.type !== "gather" || !this.wantsNode(p, n)) return;
+    p.facing = Math.atan2(n.x - p.x, n.z - p.z);
+    this.startChannel(id, p, rt, o.seconds ?? 0, n.kind === "deadfall" ? "Gathering branches" : "Prying the stone loose", () => {
+      if (!this.wantsNode(p, n)) return;
+      p.gathered.push(n.id);
+      this.events.fx({ kind: "buff", sourceId: id, fromX: n.x, fromZ: n.z, toX: n.x, toZ: n.z, radius: 0.8, variant: "gather", color: "#e8d28a" });
+      this.progressQuest(id, p, o, 1);
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Timed actions
+  // -------------------------------------------------------------------------
+
+  /** Work for a few seconds (gathering, building). Moving, attacking or being hit interrupts it. */
+  private startChannel(id: string, p: Player, rt: PlayerRuntime, seconds: number, label: string, done: () => void): void {
+    if (seconds <= 0) {
+      done();
+      return;
+    }
+    rt.channel = done;
+    rt.intent = { dirX: 0, dirZ: 0, target: null };
+    rt.attackTargetId = null;
+    p.channelLabel = label;
+    p.channelStart = this.now;
+    p.channelEnd = this.now + seconds * 1000;
+    p.anim = "cast";
+    p.actionSeq = (p.actionSeq + 1) % 65535;
+  }
+
+  private cancelChannel(id: string, reason?: string): void {
+    const p = this.state.players.get(id);
+    const rt = this.players.get(id);
+    if (!p || !rt?.channel) return;
+    rt.channel = null;
+    p.channelLabel = "";
+    p.channelEnd = 0;
+    if (p.anim === "cast") p.anim = "idle";
+    if (reason) this.events.notice(id, reason);
+  }
+
+  private updateChannel(p: Player, rt: PlayerRuntime): void {
+    if (!rt.channel || this.now < p.channelEnd) return;
+    const done = rt.channel;
+    rt.channel = null;
+    p.channelLabel = "";
+    p.channelEnd = 0;
+    p.anim = "idle";
+    done();
+  }
+
+  /** Count progress toward the current step if `o` matches it; finish steps and quests. */
+  private progressQuest(id: string, p: Player, o: QuestObjective, amount: number): void {
+    const quest = getQuest(p.activeQuest);
+    const step = quest?.steps[p.questStep];
+    if (!quest || !step || !sameObjective(step.objective, o)) return;
+    const so = step.objective;
+    if (so.type === "kill" && so.chance !== undefined && amount < 255 && this.rng() >= so.chance) {
+      if (so.failText) this.events.notice(id, so.failText);
+      return;
+    }
+    const need = step.objective.type === "interact" ? 1 : step.objective.count;
+    p.questCount = Math.min(need, p.questCount + amount);
+    if (p.questCount < need) return;
+    this.events.notice(id, `${step.title}: ${step.doneText}`);
+    p.questStep += 1;
+    p.questCount = 0;
+    this.grantXp(id, p, step.xp, false);
+    if (p.questStep >= quest.steps.length) {
+      p.activeQuest = "";
+      p.questStep = 0;
+      p.gathered.clear();
+      if (!p.quests.includes(quest.id)) p.quests.push(quest.id);
+      this.events.fx({ kind: "levelup", sourceId: id, fromX: p.x, fromZ: p.z, toX: p.x, toZ: p.z, color: "#ffd54a" });
+      this.events.notice(id, `Quest complete: ${quest.name}.`);
+    } else {
+      this.events.notice(id, `Next: ${quest.steps[p.questStep]!.text}`);
+    }
+  }
+
+  /** Dev helper: finish the current quest step (or the whole quest). */
+  devFinishQuestStep(id: string, all = false): boolean {
+    const p = this.state.players.get(id);
+    if (!p || !p.activeQuest) return false;
+    do {
+      const step = this.currentStep(p);
+      if (!step) break;
+      if (step.objective.type === "interact" && step.objective.landmark === "campsite") this.state.campBuilt = true;
+      this.progressQuest(id, p, step.objective, 255);
+    } while (all && p.activeQuest);
+    return true;
+  }
+
+  // -------------------------------------------------------------------------
+  // Status effects
+  // -------------------------------------------------------------------------
+
+  private inflict(p: Player, status: StatusId): void {
+    const def = getStatus(status);
+    if (!def) return;
+    const existing = p.statuses.find((s) => s.id === status);
+    const until = this.now + def.duration * 1000;
+    if (existing) existing.expiresAt = until;
+    else {
+      const s = new StatusEffect();
+      s.id = status;
+      s.expiresAt = until;
+      p.statuses.push(s);
+    }
+  }
+
+  private updateStatuses(id: string, p: Player, rt: PlayerRuntime): void {
+    for (let i = p.statuses.length - 1; i >= 0; i--) if (p.statuses[i]!.expiresAt <= this.now) p.statuses.splice(i, 1);
+    if (p.statuses.length === 0) {
+      rt.nextDotAt = this.now + 1000;
+      return;
+    }
+    if (this.now < rt.nextDotAt) return;
+    rt.nextDotAt = this.now + 1000;
+    let dot = 0;
+    for (const s of p.statuses) dot += getStatus(s.id)?.dps ?? 0;
+    if (dot > 0) this.damagePlayer(id, p, dot, "status", true);
   }
 
   // -------------------------------------------------------------------------
@@ -331,7 +613,7 @@ export class Game {
       this.events.notice(id, `Complete the ${next.quest.name} to advance.`);
       return;
     }
-    const blessedBefore = blessingInfo(p.faith, p.classId, p.quests).blessedBy?.id;
+    const blessingBefore = blessingInfo(p.faith, p.classId, p.quests).status;
     p.classId = classId;
     rt.ch = resolveCharacter(p);
     applyDerived(p, rt.ch);
@@ -341,10 +623,11 @@ export class Game {
     this.events.notice(id, `You learned ${choice.ability.name}.`);
     const info = blessingInfo(p.faith, classId, p.quests);
     const faith = getFaith(p.faith);
-    if (faith && info.blessedBy?.id !== blessedBefore) {
+    if (faith && info.status !== blessingBefore) {
       if (info.status === "active") this.events.notice(id, `${faith.name}'s blessing settles on you: ${faith.blessingText}.`);
+      else if (info.status === "awaitsPrayer") this.events.notice(id, `${faith.name} now favours your path. Pray at their shrine to receive the blessing.`);
       else if (info.status === "needsQuest") this.events.notice(id, `${faith.name}'s favour fades from your new path. Complete ${faith.favorQuest?.name ?? "an epic quest"} to win it back.`);
-      else this.events.notice(id, `${faith.name} will never bless a path like yours. Another god's epic quest could make them your god.`);
+      else if (info.status === "opposed") this.events.notice(id, `${faith.name} will never bless a path like yours. Another god's epic quest could make them your god.`);
     }
     this.syncCompanion(id);
     const c = companionFor(classId);
@@ -381,8 +664,8 @@ export class Game {
       this.events.notice(
         id,
         previous && previous.id !== god.id
-          ? `You turn from ${previous.name} to ${god.name}. Blessing: ${god.blessingText}.`
-          : `${god.name} accepts your devotion. Blessing: ${god.blessingText}.`,
+          ? `You turn from ${previous.name} to ${god.name}. Pray at their shrine to receive their blessing (${god.blessingText}).`
+          : `${god.name} accepts your devotion.${p.quests.includes(prayedFlag(god.id)) ? ` Blessing: ${god.blessingText}.` : " Pray at their shrine to receive their blessing."}`,
       );
       if (previous && previous.id !== god.id) this.events.announce(`${p.name} now follows ${god.name}.`);
     } else if (!p.quests.includes(questId)) {
@@ -574,7 +857,8 @@ export class Game {
     const p = this.state.players.get(id);
     const rt = this.players.get(id);
     const pool = poolCenter();
-    const named: Record<string, { x: number; z: number }> = { spawn: this.world.spawn, pool: fromUV(pool.u, pool.v + POOL_RADIUS + 2) };
+    const named: Record<string, { x: number; z: number }> = { spawn: this.world.spawn, pool: fromUV(pool.u, pool.v + POOL_RADIUS + 2), camp: this.campPos };
+    for (const z of ZONES) named[z.id] = fromUV(z.u, z.v);
     const l = named[landmarkId] ?? this.world.landmarks.find((m) => m.id === landmarkId);
     if (!p || !rt || !l) return false;
     const spot = this.findFreeSpotNear(l.x, l.z, 1);
@@ -604,9 +888,8 @@ export class Game {
     for (const [id, p] of this.state.players) this.updatePlayer(id, p, dtSec);
     for (const [id, c] of this.state.companions) this.updateCompanion(id, c, dtSec);
     for (const [id, e] of this.state.enemies) this.updateEnemy(id, e, dtSec);
-    while (this.pendingSpawns.length && this.pendingSpawns[0]! <= nowMs) {
-      this.pendingSpawns.shift();
-      this.spawnEnemy();
+    while (this.pendingSpawns.length && this.pendingSpawns[0]!.at <= nowMs) {
+      this.spawnEnemy(this.pendingSpawns.shift()!.zone);
     }
   }
 
@@ -618,13 +901,17 @@ export class Game {
       return;
     }
 
-    // Expire buffs.
+    // Expire buffs; tick status effects.
     for (let i = p.buffs.length - 1; i >= 0; i--) if (p.buffs[i]!.expiresAt <= this.now) p.buffs.splice(i, 1);
+    this.updateStatuses(id, p, rt);
+    if (p.anim === "dead") return;
+    this.updateChannel(p, rt);
 
-    // Resource regen/decay, slow natural HP regen.
+    // Resource regen/decay, slow natural HP regen (faster when Well Rested).
     const res = RESOURCES[rt.ch.kit.base.resource];
     p.resource = Math.max(0, Math.min(p.maxResource, p.resource + res.regenPerSecond * dt));
-    p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.005 * (1 + bonus(p, "hpRegen")) * dt);
+    const rested = p.buffs.some((b) => b.stat === REST.buffStat) ? REST.regenMultiplier : 1;
+    p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.005 * (1 + bonus(p, "hpRegen")) * rested * dt);
 
     // Chase-and-attack takes priority over plain movement.
     let intent = rt.intent;
@@ -653,7 +940,7 @@ export class Game {
 
     const busy = this.now < rt.nextAttackAt - rt.ch.kit.basicAttack.cooldown * 1000 + ANIM_HOLD_MS;
     if (moved.moving) p.anim = "walk";
-    else if (!busy && p.anim !== "idle") p.anim = "idle";
+    else if (!busy && !rt.channel && p.anim !== "idle") p.anim = "idle";
   }
 
   private basicAttack(id: string, p: Player, rt: PlayerRuntime, enemyId: string, target: Enemy): void {
@@ -794,7 +1081,7 @@ export class Game {
     if (e.hp <= 0) return;
     // Trappers know where beasts are soft.
     const src = this.state.players.get(sourceId);
-    if (src && BEASTS.has(e.kind)) amount = Math.round(amount * (1 + bonus(src, "beastDamage")));
+    if (src && this.enemies.get(enemyId)?.def.beast) amount = Math.round(amount * (1 + bonus(src, "beastDamage")));
     // Kaelthar's blessing: a little of every wound flows back to you.
     const leech = src ? bonus(src, "lifesteal") : 0;
     if (src && leech > 0 && src.anim !== "dead") src.hp = Math.min(src.maxHp, src.hp + amount * leech);
@@ -806,20 +1093,26 @@ export class Game {
   }
 
   private killEnemy(enemyId: string, e: Enemy): void {
-    const def = getEnemy(e.kind);
+    const ert = this.enemies.get(enemyId);
     this.events.fx({ kind: "death", sourceId: enemyId, fromX: e.x, fromZ: e.z, toX: e.x, toZ: e.z });
     this.state.enemies.delete(enemyId);
     this.enemies.delete(enemyId);
-    this.pendingSpawns.push(this.now + ENEMY_RESPAWN_MS);
-    if (!def) return;
-    for (const [pid, p] of this.playersInRadius(e.x, e.z, XP_SHARE_RADIUS)) this.grantXp(pid, p, def.xp);
+    if (!ert) return;
+    this.pendingSpawns.push({ at: this.now + ENEMY_RESPAWN_MS, zone: ert.zone });
+    this.pendingSpawns.sort((a, b) => a.at - b.at);
+    for (const [pid, p] of this.playersInRadius(e.x, e.z, XP_SHARE_RADIUS)) {
+      this.grantXp(pid, p, ert.xp);
+      this.progressQuest(pid, p, { type: "kill", enemy: e.kind, count: 0 }, 1);
+    }
     for (const rt of this.players.values()) if (rt.attackTargetId === enemyId) rt.attackTargetId = null;
   }
 
-  private damagePlayer(id: string, p: Player, raw: number, sourceId: string): void {
+  /** `pierce`: ignores armour (damage over time from statuses). */
+  private damagePlayer(id: string, p: Player, raw: number, sourceId: string, pierce = false): void {
     if (p.anim === "dead") return;
-    const amount = Math.max(1, Math.round(raw * (1 - armorFraction(p, this.now))));
+    const amount = Math.max(1, Math.round(raw * (pierce ? 1 : 1 - armorFraction(p, this.now))));
     p.hp = Math.max(0, p.hp - amount);
+    if (!pierce) this.cancelChannel(id, "Interrupted!");
     this.events.hit({ targetId: id, sourceId, amount });
     const rt = this.players.get(id)!;
     const res = RESOURCES[rt.ch.kit.base.resource];
@@ -829,6 +1122,9 @@ export class Game {
       rt.respawnAt = this.now + Math.max(1, RESPAWN_SECONDS - bonus(p, "respawnFaster")) * 1000;
       rt.attackTargetId = null;
       rt.intent = { dirX: 0, dirZ: 0, target: null };
+      p.statuses.clear();
+      this.cancelChannel(id);
+      p.anim = "dead";
       this.events.fx({ kind: "death", sourceId: id, fromX: p.x, fromZ: p.z, toX: p.x, toZ: p.z });
       this.events.announce(`${p.name} has fallen.`);
       for (const e of this.enemies.values()) if (e.targetId === id) e.targetId = null;
@@ -843,9 +1139,11 @@ export class Game {
     if (healed > 0) this.events.hit({ targetId: id, sourceId, amount: healed, heal: true });
   }
 
-  private grantXp(id: string, p: Player, amount: number): void {
-    if (p.anim === "dead" || p.level >= MAX_LEVEL) return;
-    p.xp += Math.round(amount * (1 + bonus(p, "xp")));
+  /** `boosted`: background, blessing and Well Rested bonuses apply (kills, not quest rewards). */
+  private grantXp(id: string, p: Player, amount: number, boosted = true): void {
+    if (p.level >= MAX_LEVEL || (boosted && p.anim === "dead")) return;
+    const rested = p.buffs.some((b) => b.stat === REST.buffStat) ? REST.xpBonus : 0;
+    p.xp += Math.round(amount * (boosted ? 1 + bonus(p, "xp") + rested : 1));
     while (p.xp >= p.xpNext && p.level < MAX_LEVEL) {
       p.xp -= p.xpNext;
       p.level += 1;
@@ -869,14 +1167,18 @@ export class Game {
     }
   }
 
+  /** You come back by the stream, or at the camp fire once it is built. */
   private respawn(p: Player, rt: PlayerRuntime): void {
-    const spot = this.findFreeSpotNear(this.world.spawn.x, this.world.spawn.z, 3);
+    const home = this.state.campBuilt ? this.campPos : this.world.spawn;
+    const spot = this.findFreeSpotNear(home.x, home.z, 3);
     p.x = spot.x;
     p.z = spot.z;
     p.hp = p.maxHp;
     p.resource = RESOURCES[rt.ch.kit.base.resource].startsFull ? p.maxResource : 0;
     p.anim = "idle";
-    p.buffs.clear();
+    // Death takes your ability buffs but not a good night's sleep.
+    for (let i = p.buffs.length - 1; i >= 0; i--) if (p.buffs[i]!.stat !== REST.buffStat) p.buffs.splice(i, 1);
+    p.statuses.clear();
     rt.intent = { dirX: 0, dirZ: 0, target: null };
   }
 
@@ -884,23 +1186,51 @@ export class Game {
   // Enemies
   // -------------------------------------------------------------------------
 
-  private spawnEnemy(): void {
-    for (let attempt = 0; attempt < 40; attempt++) {
-      const pos = randomValleyPoint(this.world, this.rng);
-      if (Math.hypot(pos.x - this.world.spawn.x, pos.z - this.world.spawn.z) < SAFE_RADIUS) continue;
-      const def = this.pickEnemyFor(pos.x, pos.z);
-      if (!isFree(this.world, pos.x, pos.z, def.radius)) continue;
+  /** Bring every hunting ground back to full strength. Returns how many creatures returned. */
+  private repopulate(): number {
+    this.pendingSpawns = [];
+    let n = 0;
+    for (const zone of ZONES) {
+      let living = 0;
+      for (const rt of this.enemies.values()) if (rt.zone === zone) living++;
+      for (let i = living; i < zone.population; i++) if (this.spawnEnemy(zone)) n++;
+    }
+    return n;
+  }
+
+  /** Spawn one creature somewhere in a hunting ground, at a level within the zone's range. */
+  private spawnEnemy(zone: ZoneDef): boolean {
+    const totalWeight = zone.enemies.reduce((t, e) => t + e.weight, 0);
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const a = randRange(this.rng, 0, Math.PI * 2);
+      const r = Math.sqrt(this.rng()) * zone.radius;
+      const pos = fromUV(zone.u + Math.cos(a) * r, zone.v + Math.sin(a) * r);
+      if (Math.hypot(pos.x - this.world.spawn.x, pos.z - this.world.spawn.z) < SPAWN_SAFE_RADIUS) continue;
+      if (Math.hypot(pos.x - this.campPos.x, pos.z - this.campPos.z) < SPAWN_SAFE_RADIUS) continue;
+      if (this.world.landmarks.some((l) => l.kind === "shrine" && Math.hypot(pos.x - l.x, pos.z - l.z) < SHRINE_SANCTUARY)) continue;
+      let roll = this.rng() * totalWeight;
+      const pick = zone.enemies.find((e) => (roll -= e.weight) <= 0) ?? zone.enemies[0]!;
+      const def = getEnemy(pick.id);
+      if (!def) return false;
+      if (isInWater(pos.x, pos.z) || !isFree(this.world, pos.x, pos.z, Math.max(0.8, def.radius))) continue;
+      const level = zone.levels[0] + Math.floor(this.rng() * (zone.levels[1] - zone.levels[0] + 1));
+      const st = enemyStats(def, level);
       const id = `e${this.nextEnemyId++}`;
       const e = new Enemy();
       e.kind = def.id;
+      e.level = level;
       e.x = pos.x;
       e.z = pos.z;
       e.facing = randRange(this.rng, 0, Math.PI * 2);
-      e.hp = def.maxHp;
-      e.maxHp = def.maxHp;
+      e.hp = st.maxHp;
+      e.maxHp = st.maxHp;
       this.state.enemies.set(id, e);
       this.enemies.set(id, {
         def,
+        zone,
+        level,
+        damage: st.damage,
+        xp: st.xp,
         homeX: pos.x,
         homeZ: pos.z,
         targetId: null,
@@ -909,18 +1239,9 @@ export class Game {
         nextWanderAt: 0,
         returning: false,
       });
-      return;
+      return true;
     }
-  }
-
-  /** Regional spawns: thornlings near the ruins and cave (west), wolves in the north, boars in the east and south. */
-  private pickEnemyFor(x: number, z: number): EnemyDef {
-    const { u, v } = toUV(x, z);
-    const byId = (id: string) => ENEMIES.find((e) => e.id === id) ?? ENEMIES[0]!;
-    const r = this.rng();
-    if (u < -15) return byId(r < 0.7 ? "thornling" : "wolf");
-    if (v < -25) return byId(r < 0.7 ? "wolf" : "boar");
-    return byId(r < 0.6 ? "boar" : "wolf");
+    return false;
   }
 
   private updateEnemy(id: string, e: Enemy, dt: number): void {
@@ -970,9 +1291,13 @@ export class Game {
           e.anim = "attack";
           e.actionSeq = (e.actionSeq + 1) % 65535;
           this.events.fx({ kind: "swing", sourceId: id, fromX: e.x, fromZ: e.z, toX: target.x, toZ: target.z });
-          const dmg = randRange(this.rng, def.damage[0], def.damage[1]);
+          const dmg = randRange(this.rng, rt.damage[0], rt.damage[1]);
           if (rt.targetId!.startsWith("c:")) this.damageCompanion(rt.targetId!, target as Companion, dmg, id);
-          else this.damagePlayer(rt.targetId!, target as Player, dmg, id);
+          else {
+            const victim = target as Player;
+            this.damagePlayer(rt.targetId!, victim, dmg, id);
+            if (def.inflicts && victim.anim !== "dead" && this.rng() < def.inflicts.chance) this.inflict(victim, def.inflicts.status);
+          }
         } else if (this.now > rt.nextAttackAt - def.attackCooldown * 1000 + ANIM_HOLD_MS) {
           e.anim = "idle";
         }
@@ -1077,4 +1402,11 @@ export class Game {
     s.qty -= qty;
     if (s.qty <= 0) p.inventory.splice(slot, 1);
   }
+}
+
+function sameObjective(a: QuestObjective, b: QuestObjective): boolean {
+  if (a.type !== b.type) return false;
+  if (a.type === "gather") return a.node === (b as typeof a).node;
+  if (a.type === "kill") return a.enemy === (b as typeof a).enemy;
+  return a.landmark === (b as typeof a).landmark;
 }

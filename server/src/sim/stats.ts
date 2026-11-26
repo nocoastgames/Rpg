@@ -9,6 +9,7 @@ import {
   deriveMaxResource,
   getBackground,
   getItem,
+  getStatus,
   primaryDamageMultiplier,
   resolveKit,
   type Passive,
@@ -57,8 +58,15 @@ export function buffTotal(p: Player, stat: string, now: number): number {
   return total;
 }
 
+/** Multiplier from harmful statuses (Blight saps your strength). */
+export function statusDamageMultiplier(p: Player, now: number): number {
+  let m = 1;
+  for (const s of p.statuses) if (s.expiresAt > now) m *= getStatus(s.id)?.damageDealt ?? 1;
+  return m;
+}
+
 export function damageMultiplier(p: Player, ch: ResolvedCharacter, now: number): number {
-  return primaryDamageMultiplier(ch.stats[ch.kit.base.primaryStat]) * (1 + buffTotal(p, "damage", now));
+  return primaryDamageMultiplier(ch.stats[ch.kit.base.primaryStat]) * (1 + buffTotal(p, "damage", now)) * statusDamageMultiplier(p, now);
 }
 
 export function critChance(p: Player, ch: ResolvedCharacter): number {

@@ -5,8 +5,9 @@ in the browser, with **online multiplayer**. You wake up on the bank of a stream
 in an unknown forest with almost nothing: tattered clothes, a crude weapon, a
 heel of stale bread and an empty waterskin.
 
-> Status: **groundwork**. The engine, networking, 12 classes, combat loop and
-> starting forest are in place. Story, quests, loot and dungeons come next.
+> Status: **groundwork**. The engine, networking, class tree, combat loop and
+> the first zone (the valley, levels 1–5, with its first quest) are in place.
+> Story, more quests, loot and dungeons come next.
 
 ![Waking up by the stream](docs/images/spawn.png)
 
@@ -59,10 +60,12 @@ When the server is not running with `NODE_ENV=production`, these chat commands h
 
 | Command | Effect |
 | --- | --- |
-| `/tp <place>` | Teleport to `spawn`, `pool`, `ruins_seal`, `cave_thorns`, `valley_exit` or `signpost` |
+| `/tp <place>` | Teleport to `spawn`, `pool`, `camp`, `ruins_seal`, `cave_thorns`, `valley_exit`, `signpost`, a shrine (`shrine_<god>`) or a hunting ground (`tusk_meadow`, `greypine_wood`, `webbed_hollow`, `thornbrake`) |
 | `/open <gate>` / `/close <gate>` | Open or seal `valley_exit`, `ruins_seal` or `cave_thorns` for everyone |
 | `/level <n>` | Set your level |
 | `/quest <id\|all\|favor>` | Complete a gate trial (`trial_of_paths`, `trial_of_mastery`), or a god's epic quest (`favor` for your own god's, or `favor_<god>`); completing one makes that god your god |
+| `/step` | Finish the current step of your active quest |
+| `/quest make_camp` | Finish the whole first quest (builds the camp) |
 | `/class <id>` | Jump down your tree to a class (sets level 50, completes trials), e.g. `/class dragon_knight` |
 
 ### Other scripts
@@ -127,6 +130,19 @@ screen to run full-screen (it ships a web app manifest).
   calling (base class), a **first memory** that secretly picks your background
   (revealed through memories at levels 3, 8 and 15), faith (flavour), and
   point-buy attributes. See [docs/CHARACTER_CREATION.md](docs/CHARACTER_CREATION.md).
+- **A level 1–5 starting zone** ([docs/VALLEY.md](docs/VALLEY.md)):
+  - **Four hunting grounds**: Tusk Meadow (boars, 1–2), Greypine Wood (wolves,
+    2–3), Webbed Hollow (spiders, 3–4) and the Thornbrake (thornlings, 4–5).
+    Creatures have levels, and wolves, spiders and thornlings inflict
+    bleeding, poison and blight.
+  - **A shrine to each god.** Your god's shrine calls to you with a pillar of
+    light. The first prayer receives your blessing; after that it cures every
+    status effect and heals you.
+  - **A campsite** you build in the first quest, *Shelter* (gather firewood
+    and river stones, hunt boars for hides, make camp; about ten minutes).
+    Resting there heals you, makes you Well Rested (+15% XP) and brings every
+    hunting ground back to full strength. You respawn at the camp once it's
+    built.
 - **The starting valley**: a small forested valley (~100 m × 160 m) walled in by
   mountains. A waterfall in the north cliffs feeds a pool and a winding stream
   (wading slows you down) that leaves through a gorge in the south. Worn trails
@@ -153,11 +169,18 @@ screen to run full-screen (it ships a web app manifest).
   drink to restore your resource.
 - **Server-authoritative multiplayer** (up to 16 per world instance): movement,
   combat, abilities, buffs, enemy AI, XP sharing, levelling, death and respawn.
-- **Forest creatures**: grey wolves, tusked boars and thornlings that wander,
-  aggro, chase, leash back home and respawn.
+- **Forest creatures**: tusked boars, grey wolves, hollow spiders and
+  thornlings that wander, aggro, chase, leash back home and respawn in their
+  own hunting grounds.
 - **Classic isometric presentation**: orthographic camera, low-poly art,
   see-through foliage around your hero, health/resource orbs, hotbar with
   cooldowns, floating combat text, nameplates, party frames, chat.
+
+| Your camp at night | A shrine calls to its follower |
+| --- | --- |
+| ![Camp](docs/images/camp.png) | ![Shrine](docs/images/shrine.png) |
+
+![Webbed Hollow](docs/images/hollow.png)
 
 ![Unknown ruins](docs/images/ruins.png)
 
@@ -186,7 +209,7 @@ client/   Vite + three.js: scene, avatars, effects, input, HUD, character creati
 docs/     architecture, class reference, asset sources
 ```
 
-Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the pieces fit, and [docs/WORLD.md](docs/WORLD.md) for the setting and story outline (spoilers).
+Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the pieces fit, [docs/VALLEY.md](docs/VALLEY.md) for the starting zone, and [docs/WORLD.md](docs/WORLD.md) for the setting and story outline (spoilers).
 
 ## Roadmap
 
@@ -195,10 +218,10 @@ Suggested next steps, roughly in order:
 1. **Art pass**: drop in KayKit/Quaternius CC0 packs via the model manifest (manual download for now; see [docs/ASSETS.md](docs/ASSETS.md)).
 2. **Persistence**: accounts and saved characters (Colyseus auth + a database such as SQLite/Postgres).
 3. **Loot & inventory**: drops, equipment slots, item rarity, vendor.
-4. **Abilities 2.0**: status effects (slow, stun, DoT), forms (Primalist), taunts; companion commands and abilities.
+4. **Abilities 2.0**: more status effects (slow, stun) and player-applied ones, forms (Primalist), taunts; companion commands and abilities.
 5. **Gate quests**: the Trial of Paths (25) and Trial of Mastery (50); the lineage system for changing paths.
 6. **Dungeons**: instanced rooms generated from KayKit dungeon tiles; parties enter together.
-7. **Story & quests**: the amnesia hook, NPCs, the first settlement.
+7. **Story & quests**: the amnesia hook, the gods' epic quests, NPCs, the first settlement; opening the valley's gates.
 8. **Day/night cycle**: advance the hour from server time (`GameClient.setHour`); night spawns, light radius gameplay.
 9. **Audio**: ambience (stream, birds), combat SFX, music.
 10. **Ops**: Redis presence for multiple server processes, deployment pipeline.

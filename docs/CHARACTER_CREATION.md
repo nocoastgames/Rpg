@@ -56,8 +56,13 @@ blessing can change when you advance.
 | One step apart (good/neutral or neutral/evil) | Earned by completing the god's **epic quest** |
 | Opposite (good/evil) | Never. A Paladin can never be blessed by an evil god; it's too far apart |
 
+**The blessing is received at the god's shrine.** Each god has a shrine in
+the starting valley that calls to its followers. The first prayer there
+receives the blessing (once the rules above allow it); later prayers cure
+status effects and heal you. See [VALLEY.md](VALLEY.md).
+
 **Completing a god's epic quest makes that god your god.** Your faith
-changes to them and their blessing applies from then on.
+changes to them; pray at their shrine to receive their blessing.
 
 - **Which quests you can take depends on your class, not your old god.**
   Any god within one step of your path's alignment: a good Paladin can seek
