@@ -2142,3 +2142,46 @@ body[data-input="gamepad"] .interact-hint {
 .cutscene.out .cutscene-line {
   opacity: 0;
 }
+
+/* World choice (character creation) and share code (character panel) */
+.cc-world {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+.cc-world-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.cc-world-btn {
+  flex: 1;
+  min-width: 140px;
+}
+.cc-world-code {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.world-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.world-code {
+  font-family: var(--font-display);
+  letter-spacing: 0.12em;
+  color: var(--accent);
+}
+.world-copy {
+  padding: 2px 10px;
+  font-size: 0.8rem;
+}

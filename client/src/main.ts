@@ -1,6 +1,6 @@
 import "./ui/styles.css";
 import { GameClient } from "./game/GameClient.ts";
-import { joinWorld, type GameRoom } from "./net.ts";
+import { joinWorld, worldFromUrl, type GameRoom } from "./net.ts";
 import { AssetLibrary } from "./scene/Assets.ts";
 import { showCharacterCreate } from "./ui/CharacterCreate.ts";
 import { h } from "./ui/dom.ts";
@@ -20,12 +20,13 @@ async function boot(): Promise<void> {
   let error: string | undefined;
   let room: GameRoom | null = null;
   while (!room) {
-    const options = await showCharacterCreate(ui, error);
+    const offline = import.meta.env.MODE === "offline";
+    const { options, world } = await showCharacterCreate(ui, error, offline ? null : { mode: worldFromUrl() ? "join" : "new", code: worldFromUrl() ?? "" });
     loading("Waking up…");
     try {
       await assetsReady;
       // The offline build runs the game rules in the page (single player); otherwise join the server.
-      room = import.meta.env.MODE === "offline" ? (await import("./local/LocalRoom.ts")).joinLocal(options) : await joinWorld(options);
+      room = offline ? (await import("./local/LocalRoom.ts")).joinLocal(options) : await joinWorld(options, world ?? { mode: "new" });
       // Wait for the first full state so the world seed is known.
       await new Promise<void>((resolve) => {
         if (room!.state && room!.state.players?.has(room!.sessionId)) resolve();
@@ -33,7 +34,8 @@ async function boot(): Promise<void> {
       });
     } catch (err) {
       console.error(err);
-      error = `Could not reach the game server. Is it running? (${(err as Error).message ?? err})`;
+      const msg = String((err as Error).message ?? err);
+      error = /world|code|full/i.test(msg) ? msg : `Could not reach the game server. Is it running? (${msg})`;
       room = null;
     }
   }

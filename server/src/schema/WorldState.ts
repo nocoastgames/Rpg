@@ -164,6 +164,8 @@ export type Companion = SchemaType<typeof Companion>;
 export const WorldState = schema(
   {
     seed: t.uint32().default(0),
+    /** Share code for this world instance (see shared/src/worlds.ts). */
+    code: t.string().default(""),
     /** Server clock in ms, used by clients to show cooldowns/buffs. */
     serverTime: t.float64().default(0),
     players: t.map(Player),

@@ -6,3 +6,5 @@ build/
 .env.*
 .DS_Store
 dist-offline/
+deploy/.env
+!deploy/.env.example

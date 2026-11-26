@@ -25,6 +25,7 @@ import {
   pointsRemaining,
   primaryDamageMultiplier,
   validateCreation,
+  normalizeWorldCode,
   type Appearance,
   type BaseClassId,
   type ClassNode,
@@ -170,7 +171,18 @@ class Preview {
 }
 
 /** Character creation: appearance, calling (base class), first memory (hidden background), faith, attributes. */
-export function showCharacterCreate(root: HTMLElement, error?: string): Promise<JoinOptions> {
+/** What the player picked: their character, and which world to wake up in (null: single player). */
+export interface CreationResult {
+  options: JoinOptions;
+  world: { mode: "new" } | { mode: "join"; code: string } | null;
+}
+
+export function showCharacterCreate(
+  root: HTMLElement,
+  error?: string,
+  initialWorld: { mode: "new" | "join"; code: string } | null = { mode: "new", code: "" },
+): Promise<CreationResult> {
+  const world = initialWorld ? { ...initialWorld } : null;
   const draft = loadDraft();
   let step: StepId = draft.backgroundId && draft.faithId ? "review" : "look";
   const preview = new Preview();
@@ -465,6 +477,25 @@ export function showCharacterCreate(root: HTMLElement, error?: string): Promise<
       ];
     };
 
+    /** New world (you get a code to share) or a friend's world by code. */
+    const worldPicker = () => {
+      if (!world) return null;
+      const pick = (mode: "new" | "join") =>
+        h("button.cc-choice.cc-world-btn", { type: "button", "aria-pressed": String(world.mode === mode), onclick: () => ((world.mode = mode), render()) }, mode === "new" ? "Start a new world" : "Join a friend's world");
+      const input = h("input.cc-world-code", { type: "text", maxlength: 8, placeholder: "Code, e.g. K7Q-M2X", value: world.code, autocapitalize: "characters", spellcheck: false }) as HTMLInputElement;
+      input.addEventListener("input", () => {
+        world.code = input.value;
+        next.disabled = !validateCreation(draft).ok || !normalizeWorldCode(world.code);
+      });
+      return h(
+        "div.cc-world",
+        null,
+        h("span.cc-label", null, "World"),
+        h("div.cc-world-row", null, pick("new"), pick("join")),
+        world.mode === "join" ? input : h("p.cc-hint", null, "You'll get a code to share so friends can join you."),
+      );
+    };
+
     const stepReview = () => {
       const n = getClassNode(draft.classId)!;
       const faith = getFaith(draft.faithId);
@@ -481,6 +512,7 @@ export function showCharacterCreate(root: HTMLElement, error?: string): Promise<
         ),
         h("div.cc-derived", null, ...derived().map(([k, v]) => h("div.cc-derived-item", null, h("span", null, k), h("b", null, v)))),
         !check.ok ? h("div.cc-error", null, check.error) : null,
+        world ? worldPicker() : null,
         pointsRemaining(draft.alloc) > 0 ? h("p.cc-hint", null, `You have ${pointsRemaining(draft.alloc)} unspent attribute points.`) : null,
       ];
     };
@@ -512,7 +544,10 @@ export function showCharacterCreate(root: HTMLElement, error?: string): Promise<
       back.disabled = idx === 0;
       const last = idx === STEPS.length - 1;
       next.textContent = last ? "Wake Up" : "Next";
-      next.disabled = (step === "memory" && !draft.backgroundId) || (step === "faith" && !draft.faithId) || (last && !validateCreation(draft).ok);
+      next.disabled =
+        (step === "memory" && !draft.backgroundId) ||
+        (step === "faith" && !draft.faithId) ||
+        (last && (!validateCreation(draft).ok || (world?.mode === "join" && !normalizeWorldCode(world.code))));
     };
 
     const submit = () => {
@@ -527,8 +562,13 @@ export function showCharacterCreate(root: HTMLElement, error?: string): Promise<
       next.disabled = true;
       next.textContent = "Waking…";
       done = true;
+      if (world?.mode === "join" && !normalizeWorldCode(world.code)) {
+        errorBox.textContent = "World codes are 6 letters and numbers, like K7Q-M2X.";
+        errorBox.classList.remove("hidden");
+        return;
+      }
       preview.dispose();
-      resolve(result.value);
+      resolve({ options: result.value, world: world ? (world.mode === "join" ? { mode: "join", code: world.code } : { mode: "new" }) : null });
     };
     let done = false;
 

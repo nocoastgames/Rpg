@@ -52,6 +52,21 @@ npm run dev
 Open the client in two browser windows to see multiplayer. Other people on your
 network can join via `http://<your-ip>:5173`.
 
+### Hosting (Proxmox + Cloudflare)
+
+[docs/DEPLOY.md](docs/DEPLOY.md) sets the server up in its own Proxmox LXC
+with Docker Compose, published through a Cloudflare Tunnel and behind a
+Cloudflare Access login (`deploy/`: `proxmox/create-lxc.sh`, `setup.sh`,
+`update.sh`, `docker-compose.yml`).
+
+### Worlds and share codes
+
+Every world instance has a code like `K7Q-M2X`. On the last character-creation
+step choose **Start a new world** or **Join a friend's world** and type their
+code; the Character panel shows your world's code and a **Copy invite link**
+button (`?world=K7Q-M2X` prefills the code). A world stays open for 30
+minutes after its last player leaves.
+
 ### Production
 
 ```bash
@@ -85,6 +100,7 @@ When the server is not running with `NODE_ENV=production`, these chat commands h
 
 | Command | What it does |
 | --- | --- |
+| `deploy/update.sh` | On the server: pull, rebuild and restart the game (closes open worlds) |
 | `npm run build:offline` | Single-player build (game rules run in the page) into `client/dist-offline/` |
 | `npm run typecheck` | Type-check all three packages |
 | `npm test` | Unit tests for shared data/world/movement |

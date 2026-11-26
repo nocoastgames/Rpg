@@ -1,0 +1,30 @@
+# The game server plus a Cloudflare Tunnel. No ports are opened on the host:
+# cloudflared dials out to Cloudflare, which serves https://<your-name>.renegar.online
+# behind Cloudflare Access and forwards it to http://game:2567.
+#
+#   cp .env.example .env   # paste your tunnel token
+#   docker compose up -d --build
+name: rpg
+
+services:
+  game:
+    build: ..
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "2567"
+      # 1 turns on the /tp, /level, /quest... chat commands for everyone. Keep 0 for real play.
+      DEV_COMMANDS: ${DEV_COMMANDS:-0}
+    # Reachable only from the tunnel container (and the host, for a quick local check).
+    ports:
+      - "127.0.0.1:2567:2567"
+
+  tunnel:
+    image: cloudflare/cloudflared:2024.12.2
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?Set TUNNEL_TOKEN in deploy/.env (Cloudflare Zero Trust > Networks > Tunnels)}
+    depends_on:
+      game:
+        condition: service_healthy

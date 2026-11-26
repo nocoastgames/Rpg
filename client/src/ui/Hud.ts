@@ -24,6 +24,7 @@ import {
   VALLEY_LEVELS,
   type MemoryEvent,
   type ReadEvent,
+  formatWorldCode,
   type CutsceneEvent,
   type ResolvedKit,
 } from "@rpg/shared";
@@ -467,7 +468,7 @@ export class Hud {
   }
 
   private renderBag(p: PlayerView): void {
-    const parts: string[] = [p.weapon, p.armor, String(p.level), String(p.coins)];
+    const parts: string[] = [p.weapon, p.armor, String(p.level), String(p.coins), this.worldCode];
     p.inventory.forEach((s) => parts.push(`${s.itemId}:${s.qty}`));
     const key = parts.join("|");
     if (key === this.bagKey) return;
@@ -478,6 +479,7 @@ export class Hud {
       h("div.char-name", null, p.name),
       h("div.char-class", { style: `color:${node?.color}` }, `Level ${p.level} ${node?.name ?? ""}`),
       h("div.char-coins", null, `🪙 ${p.coins} coins`),
+      this.worldCode ? this.worldLine() : "",
     );
 
     const itemCell = (itemId: string, qty: number, onClick?: () => void) => {
@@ -660,6 +662,21 @@ export class Hud {
     });
     this.tracker.classList.toggle("hidden", blocks.length === 0);
     this.tracker.replaceChildren(...blocks);
+  }
+
+  /** This world's share code (empty in single player). */
+  worldCode = "";
+
+  private worldLine(): HTMLElement {
+    const link = `${location.origin}${location.pathname}?world=${formatWorldCode(this.worldCode)}`;
+    const copy = h("button.btn.world-copy", { type: "button" }, "Copy invite link") as HTMLButtonElement;
+    copy.addEventListener("click", () => {
+      navigator.clipboard?.writeText(link).then(
+        () => (copy.textContent = "Copied!"),
+        () => (copy.textContent = link),
+      );
+    });
+    return h("div.world-line", null, h("span.past-label", null, "World "), h("b.world-code", null, formatWorldCode(this.worldCode)), copy);
   }
 
   /** A book you're reading: title and pages, until you close it. */

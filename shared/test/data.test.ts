@@ -245,3 +245,18 @@ test("every calling gets its own upper-body armour from Haskel, and its starter 
   const price = (id: string) => VENDOR_NPC.shop.find((e) => e.item === id)!.price;
   assert.ok(price("healing_draught") > price("trail_ration") * 5);
 });
+
+import { WORLD_CODE_ALPHABET, formatWorldCode, generateWorldCode, normalizeWorldCode } from "../src/worlds.ts";
+
+test("world codes: generated from an unambiguous alphabet, forgiving to type", () => {
+  for (let i = 0; i < 200; i++) {
+    const code = generateWorldCode();
+    assert.equal(code.length, 6);
+    assert.equal(normalizeWorldCode(code), code);
+    assert.equal(normalizeWorldCode(formatWorldCode(code).toLowerCase()), code, "dash and case don't matter");
+  }
+  for (const c of "01ILO") assert.ok(!WORLD_CODE_ALPHABET.includes(c), `${c} is ambiguous`);
+  assert.equal(normalizeWorldCode(" k7q - m2x "), "K7QM2X");
+  assert.equal(normalizeWorldCode("abc"), null);
+  assert.equal(normalizeWorldCode("ABC-DE!"), null);
+});

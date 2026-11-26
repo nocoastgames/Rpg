@@ -109,6 +109,8 @@ export interface MapView<T> {
 
 export interface WorldStateView {
   seed: number;
+  /** This world's share code ("" in single player). */
+  code: string;
   serverTime: number;
   players: MapView<PlayerView>;
   enemies: MapView<EnemyView>;

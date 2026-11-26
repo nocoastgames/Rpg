@@ -1025,6 +1025,7 @@ export class GameClient {
         if (l && !zone) markers.push({ x: l.x, z: l.z, kind: "objective" });
       });
       this.minimap.explore(this.pred.x, this.pred.z);
+      this.hud.worldCode = state.code ?? "";
       this.hud.update(me, state.serverTime, others);
       if (this.vendor.isOpen) {
         const v = this.world.landmarks.find((l) => l.id === "vendor");
