@@ -1,0 +1,25 @@
+{
+  "_comment": "Example mapping for CC0 packs. Copy entries into manifest.json once the files exist. File and clip names vary between pack versions - open the .glb in https://gltf-viewer.donmccurdy.com/ to check clip names, and adjust scale/rotationY until the model matches the placeholder size (~1.8m) and faces +Z.",
+  "characters": {
+    "default": {
+      "url": "kaykit-adventurers/Knight.glb",
+      "scale": 1,
+      "clips": { "idle": "Idle", "walk": "Walking_A", "attack": "1H_Melee_Attack_Chop", "cast": "Spellcast_Shoot", "dead": "Death_A" }
+    },
+    "warrior.berserker": { "url": "kaykit-adventurers/Barbarian.glb" },
+    "warrior.guardian": { "url": "kaykit-adventurers/Knight.glb" },
+    "paladin": { "url": "kaykit-adventurers/Knight.glb" },
+    "rogue": { "url": "kaykit-adventurers/Rogue_Hooded.glb" },
+    "ranger": { "url": "kaykit-adventurers/Rogue.glb", "clips": { "attack": "1H_Ranged_Shoot" } },
+    "wizard": { "url": "kaykit-adventurers/Mage.glb", "clips": { "attack": "Spellcast_Shoot", "cast": "Spellcast_Raise" } },
+    "necromancer": { "url": "kaykit-skeletons/Skeleton_Mage.glb" }
+  },
+  "enemies": {
+    "wolf": { "url": "quaternius-animals/Wolf.gltf", "scale": 0.5, "clips": { "idle": "Idle", "walk": "Walk", "attack": "Attack", "dead": "Death" } },
+    "thornling": { "url": "kaykit-skeletons/Skeleton_Minion.glb", "scale": 0.8 }
+  },
+  "props": {
+    "pine": { "url": "kaykit-forest/Tree_1_A_Color1.gltf", "scale": 1 },
+    "rock": { "url": "kenney-nature/rock_largeA.glb", "scale": 1.2 }
+  }
+}

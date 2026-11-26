@@ -1,0 +1,28 @@
+{
+  "name": "rpg",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Old-school isometric multiplayer action RPG dungeon crawler (web).",
+  "type": "module",
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n server,client -c magenta,cyan \"npm:dev -w server\" \"npm:dev -w client\"",
+    "build": "npm run build -w client",
+    "start": "npm run start -w server",
+    "typecheck": "npm run typecheck -w shared && npm run typecheck -w server && npm run typecheck -w client",
+    "test": "npm run test -w shared",
+    "docs:classes": "node --experimental-strip-types scripts/gen-class-docs.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.7",
+    "concurrently": "^9.2.5",
+    "typescript": "^5.9.3"
+  }
+}
