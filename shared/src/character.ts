@@ -279,8 +279,9 @@ export function backgroundBonus(backgroundId: string, type: Passive["type"]): nu
 // alignment matches your god's leaning (good with good, evil with evil,
 // neutral with neutral). If the alignment is one step away (good/neutral or
 // neutral/evil) you can still earn the blessing by completing that god's
-// epic quest. Opposites (good and evil) can never be blessed. The Faithless
-// get no blessing.
+// epic quest. Opposites (good and evil) can never be blessed by their own
+// god, but can earn a neutral god's blessing through that god's epic quest.
+// The Faithless get no blessing.
 // ---------------------------------------------------------------------------
 
 export interface FaithDef {
@@ -319,21 +320,26 @@ export function getFaith(id: string): FaithDef | undefined {
 const LEANING_STEP: Record<ClassAlignment, number> = { good: 1, neutral: 0, evil: -1 };
 
 /** Anything with an `includes` check: a plain array, or a synced ArraySchema. */
-export type QuestLog = { includes(id: string): boolean };
+export type QuestLog = { includes(id: string): boolean; readonly length?: number; readonly [i: number]: string };
 
 export type BlessingStatus =
-  /** Blessing applies. */
+  /** Your own god's blessing applies. */
   | "active"
+  /** Your god opposes your path, but a neutral god you earned favour with blesses you instead. */
+  | "patron"
   /** Class is one step from the god's leaning: the god's epic quest will win its favour. */
   | "needsQuest"
-  /** Class is the opposite of the god's leaning (good vs evil): no blessing, ever. */
+  /** Your god opposes your path (good vs evil). A neutral god's epic quest can still earn a neutral blessing. */
   | "opposed"
   /** Faithless, or a god without a blessing. */
   | "none";
 
-export function blessingStatus(faithId: string, classId: string, quests: QuestLog = []): BlessingStatus {
-  const f = getFaith(faithId);
-  if (!f?.blessing || f.leaning === "None") return "none";
+/** Gods of neutral leaning: the ones an opposed follower can turn to. */
+export function neutralGods(): FaithDef[] {
+  return FAITHS.filter((f) => f.leaning === "Neutral" && f.blessing);
+}
+
+function ownStatus(f: FaithDef, classId: string, quests: QuestLog): "active" | "needsQuest" | "opposed" {
   const god = LEANING_STEP[f.leaning.toLowerCase() as ClassAlignment];
   const distance = Math.abs(god - LEANING_STEP[classAlignment(classId)]);
   if (distance === 0) return "active";
@@ -341,16 +347,56 @@ export function blessingStatus(faithId: string, classId: string, quests: QuestLo
   return f.favorQuest && quests.includes(f.favorQuest.id) ? "active" : "needsQuest";
 }
 
-/** True while a faith's blessing applies to this class (matching alignment, or adjacent with the god's epic quest done). */
-export function blessingActive(faithId: string, classId: string, quests: QuestLog = []): boolean {
-  return blessingStatus(faithId, classId, quests) === "active";
+/** The neutral god an opposed follower earned favour with first (if any). */
+function neutralPatron(quests: QuestLog & { [i: number]: string; length?: number }): FaithDef | undefined {
+  const list = Array.from({ length: quests.length ?? 0 }, (_, i) => quests[i]!);
+  for (const q of list) {
+    const god = neutralGods().find((g) => g.favorQuest?.id === q);
+    if (god) return god;
+  }
+  return undefined;
 }
 
-/** Total of a passive type from background + (active) faith blessing. */
+export interface BlessingInfo {
+  status: BlessingStatus;
+  /** The god whose blessing applies right now (own god, or a neutral patron). */
+  blessedBy?: FaithDef;
+}
+
+/**
+ * Which blessing (if any) a follower has:
+ *   - same alignment as the god: automatic;
+ *   - one step apart (good/neutral, neutral/evil): earned with the god's epic quest;
+ *   - opposite (good vs evil): never from their own god, but a neutral god's
+ *     epic quest earns that neutral blessing instead;
+ *   - Faithless: none.
+ */
+export function blessingInfo(faithId: string, classId: string, quests: QuestLog = []): BlessingInfo {
+  const f = getFaith(faithId);
+  if (!f?.blessing || f.leaning === "None") return { status: "none" };
+  const own = ownStatus(f, classId, quests);
+  if (own === "active") return { status: "active", blessedBy: f };
+  if (own === "opposed") {
+    const patron = neutralPatron(quests as QuestLog & { [i: number]: string; length?: number });
+    return patron ? { status: "patron", blessedBy: patron } : { status: "opposed" };
+  }
+  return { status: own };
+}
+
+export function blessingStatus(faithId: string, classId: string, quests: QuestLog = []): BlessingStatus {
+  return blessingInfo(faithId, classId, quests).status;
+}
+
+/** True while any blessing applies (own god or a neutral patron). */
+export function blessingActive(faithId: string, classId: string, quests: QuestLog = []): boolean {
+  return !!blessingInfo(faithId, classId, quests).blessedBy;
+}
+
+/** Total of a passive type from background + the active blessing. */
 export function passiveBonus(backgroundId: string, faithId: string, classId: string, type: Passive["type"], quests: QuestLog = []): number {
   let total = backgroundBonus(backgroundId, type);
-  const f = getFaith(faithId);
-  if (f?.blessing?.type === type && blessingActive(faithId, classId, quests)) total += f.blessing.amount;
+  const b = blessingInfo(faithId, classId, quests).blessedBy?.blessing;
+  if (b?.type === type) total += b.amount;
   return total;
 }
 

@@ -54,12 +54,14 @@ blessing can change when you advance.
 | --- | --- |
 | Same (good/good, neutral/neutral, evil/evil) | Automatic |
 | One step apart (good/neutral or neutral/evil) | Earned by completing the god's **epic quest** |
-| Opposite (good/evil) | Never |
+| Opposite (good/evil) | Never from your own god, but a **neutral** god's epic quest (*The Endless Road*, *The Unwritten Page* or *The Far Shore*) earns that neutral god's blessing instead |
 
-So no one is left out except by their own choices: a neutral Archmage of
-Solenne can win the Dawn Mother's favour through *The Long Dawn*, but a
-Lich never can. A favour, once won, stays while the path remains within
-one step. You are told when a blessing turns on or off, and the Past
+So no one is left out: a neutral Archmage of Solenne can win the Dawn
+Mother's favour through *The Long Dawn*; a Lich of Solenne never can, but
+can earn Orren's, Mirevel's or the Ferryman's blessing as a patron. You
+only ever have one blessing: your own god's when it applies, otherwise the
+first neutral patron you earned. Favour, once won, is kept and applies
+again whenever the path makes it possible. You are told when a blessing turns on or off, and the Past
 section of the character panel shows its status and what to do.
 
 | Faith | Domain | Leaning | Blessing | Epic quest |
@@ -76,8 +78,8 @@ section of the character panel shows its status and what to do.
 | Faithless | No god | None | None | — |
 
 The epic quests themselves aren't built yet; their ids (`favor_<faith>`)
-already gate the blessing, and `/quest favor` completes your god's quest in
-dev mode.
+already gate the blessing. In dev mode `/quest favor` completes your own
+god's quest and `/quest favor_orren` (etc.) any other.
 
 Blessings stack with your background's passive. All of this is data in
 `shared/src/character.ts` and validated on the server (`validateCreation`).
