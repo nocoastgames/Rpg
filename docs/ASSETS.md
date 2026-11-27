@@ -1,11 +1,53 @@
 # Art & Asset Sources
 
-The game runs with **zero downloaded assets**: every character, creature and
-prop has a procedural low-poly placeholder built in code
-(`client/src/scene/Avatars.ts`, `client/src/scene/propGeometry.ts`).
+## What ships with the game
 
-Real models are layered on top through a manifest, so you can swap art in
-gradually without touching game code.
+| Pack | Author | Used for | Licence |
+| --- | --- | --- | --- |
+| [KayKit Character Pack: Adventurers 1.0](https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0) | Kay Lousberg ([kaylousberg.com](https://www.kaylousberg.com)) | Players, Haskel, the camp's travellers, the King's guards; swords, daggers, wands, staves, hats, helm, hood, capes | CC0 |
+| [KayKit Character Pack: Skeletons 1.0](https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0) | Kay Lousberg | Ashford's undead (skeletons, the risen, Old Corwin, the Hollow Priest) and the shared animation set | CC0 |
+
+Both are CC0 (no attribution required); they're credited here anyway. The
+packs are on GitHub, so they download from the cloud dev environment too.
+
+`scripts/build-models.ts` turns them into what's in
+`client/public/assets/models/kaykit/` (about 4 MB in all, down from ~37 MB):
+one `.glb` per character with its meshes and weapons but no animations (every
+source file carries the same ~3 MB of clips), the skeletons' weapons as
+`.glb`, and `animations.glb` with only the 30 clips the game plays.
+
+```bash
+git clone --depth 1 https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0 /tmp/kk-adv
+git clone --depth 1 https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0 /tmp/kk-skel
+node --experimental-strip-types scripts/build-models.ts /tmp/kk-adv /tmp/kk-skel
+```
+
+How the game uses them (`client/src/scene/KayKit.ts`, `KitAvatars.ts`):
+
+- **One skeleton.** Every KayKit character has the same rig, so parts from
+  different models combine: a Barbarian's bearded head on a Rogue's tunic
+  under a Mage's hat. One animation library drives everyone.
+- **Palette recolouring.** Each model's texture is an 8×4 grid of shaded
+  swatches. Skin, hair and clothes are changed by repainting a swatch with
+  the new colour, keeping its shading. Recoloured palettes and materials are
+  cached and shared.
+- **Appearance → parts**: face (Knight, Barbarian, Mage or Rogue head),
+  headwear (hooded head, fur cap, wide hat, helm), clothes (Rogue tunic,
+  Barbarian furs, Mage robe; Knight plate comes with the militia brigandine),
+  cloak (the outfit's cape). Armour picks the clothes and their colour.
+- **Weapons**: KayKit's sword, two-hander, knife, wand and staff hang on the
+  hand bone; game weapons KayKit doesn't have (mace, cudgel, flail, spear, bow,
+  lute, fetish, sigil) are the procedural ones on the same bone.
+- **Animations** follow the weapon: one-handed chops, two-handed slices,
+  stabs, punches, bow shots and spellcasting, walk/run scaled to speed,
+  deaths, and the risen climb out of the ground and shamble.
+- **Fallbacks.** If the files fail to load, or the page is opened with
+  `?placeholders`, everyone is drawn with the procedural models
+  (`client/src/scene/Avatars.ts`). Creatures (wolves, boars, spiders,
+  thornlings, hares, pets) and all props are still procedural.
+
+Real models for anything else are layered on top through a manifest, so you
+can swap art in gradually without touching game code.
 
 ## How to add a model pack
 
@@ -36,9 +78,9 @@ A character entry can also point `animations` at a separate `.glb` that holds
 clips for the same skeleton (useful for packs that ship rigs and animations
 separately).
 
-## Downloading packs (why it's manual)
+## Downloading packs (why some are manual)
 
-Automated downloads from the cloud dev environment didn't work out:
+KayKit's packs are on GitHub and download fine. The others didn't:
 
 - **Quaternius** hosts packs in Google Drive folders; Drive answered "quota
   exceeded" for every file (popular public files hit Drive's download limits).
@@ -60,8 +102,8 @@ credits screen should list them.
 
 | Pack | Author | What it gives us | Licence | Where |
 | --- | --- | --- | --- | --- |
-| KayKit – Adventurers | Kay Lousberg | Rigged + animated Knight, Barbarian, Mage, Rogue, Rogue (hooded) with weapons. Good base for most of the 12 classes. | CC0 | kaylousberg.itch.io/kaykit-adventurers |
-| KayKit – Skeletons | Kay Lousberg | Animated skeleton warrior / mage / rogue / minion. First dungeon enemies; necromancer look. | CC0 | kaylousberg.itch.io/kaykit-skeletons |
+| KayKit – Adventurers | Kay Lousberg | Rigged + animated Knight, Barbarian, Mage, Rogue, Rogue (hooded) with weapons. Good base for most of the 12 classes. | CC0 | **In use** (see above) |
+| KayKit – Skeletons | Kay Lousberg | Animated skeleton warrior / mage / rogue / minion. First dungeon enemies; necromancer look. | CC0 | **In use** (see above) |
 | KayKit – Dungeon Remastered | Kay Lousberg | Modular dungeon walls, floors, doors, props, chests. For the dungeon layer. | CC0 | kaylousberg.itch.io/kaykit-dungeon-remastered |
 | KayKit – Forest Nature Pack | Kay Lousberg | Stylised trees, rocks, bushes matching the KayKit look. Drop-in for the forest props. | CC0 | kaylousberg.itch.io |
 | Ultimate Animated Animal Pack | Quaternius | Animated forest animals (wolf, deer, fox and others) for the forest creatures. | CC0 | quaternius.com |

@@ -31,7 +31,7 @@ export interface PlayerView {
   memories: number;
   /** Creation point-buy, in STAT_IDS order. */
   alloc: ArrayLike<number>;
-  appearance: { build: number; skin: number; hair: number; hairColor: number; beard: number; dye: number };
+  appearance: { build: number; skin: number; head: number; hairColor: number; headwear: number; outfit: number; dye: number; cloak: number };
   /** "valley" or "dungeon" (the castle cell, far away). */
   region: string;
   x: number;

@@ -45,6 +45,8 @@ export interface MapContext {
   hasMap?: boolean;
   /** Somewhere the map doesn't cover (the castle dungeon). */
   unknown?: boolean;
+  /** Where the followed quest points: marked, with an arrow at the edge when it's off the map. */
+  quest?: { x: number; z: number; radius: number; label: string };
 }
 
 /** How far around you the map fills in as you explore (m). */
@@ -245,6 +247,8 @@ export class Minimap {
       }
     }
 
+    if (ctxInfo?.quest) this.drawQuestTarget(ctx, ctxInfo.quest, toPx, W, H, scale, dpr);
+
     for (const m of markers) {
       const { px, py } = toPx(m.x, m.z);
       if (m.kind === "self") {
@@ -289,6 +293,66 @@ export class Minimap {
         ctx.fill();
       }
     }
+  }
+
+  /** The followed quest: a pulsing marker on the map, or an arrow on the rim pointing the way. */
+  private drawQuestTarget(ctx: CanvasRenderingContext2D, q: NonNullable<MapContext["quest"]>, toPx: (x: number, z: number) => { px: number; py: number }, W: number, H: number, scale: number, dpr: number): void {
+    const { px, py } = toPx(q.x, q.z);
+    const cx = W / 2;
+    const cy = H / 2;
+    const dx = px - cx;
+    const dy = py - cy;
+    const dist = Math.hypot(dx, dy);
+    // The corner map is round; keep the arrow just inside its rim.
+    const rim = Math.min(W, H) / 2 - 11 * dpr;
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 260);
+    const areaR = q.radius * scale;
+    if (dist - areaR * 0.5 <= rim) {
+      // On the map: ring the spot (an area already has its dashed ring).
+      if (areaR < 6 * dpr) {
+        ctx.save();
+        ctx.strokeStyle = `rgba(255, 224, 122, ${0.5 + 0.5 * pulse})`;
+        ctx.lineWidth = 2 * dpr;
+        ctx.beginPath();
+        ctx.arc(px, py, (7 + pulse * 4) * dpr, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+      if (dist > rim) return;
+      ctx.fillStyle = "#ffe07a";
+      ctx.strokeStyle = "#3a2a00";
+      ctx.lineWidth = dpr;
+      const r = 5 * dpr;
+      ctx.beginPath();
+      ctx.moveTo(px, py - r);
+      ctx.lineTo(px + r, py);
+      ctx.lineTo(px, py + r);
+      ctx.lineTo(px - r, py);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      return;
+    }
+    // Off the map: a gold arrow on the rim, pointing at it.
+    const ang = Math.atan2(dy, dx);
+    const ax = cx + Math.cos(ang) * rim;
+    const ay = cy + Math.sin(ang) * rim;
+    ctx.save();
+    ctx.translate(ax, ay);
+    ctx.rotate(ang);
+    const s = (1 + pulse * 0.15) * dpr;
+    ctx.fillStyle = "#ffe07a";
+    ctx.strokeStyle = "#3a2a00";
+    ctx.lineWidth = 1.5 * dpr;
+    ctx.beginPath();
+    ctx.moveTo(9 * s, 0);
+    ctx.lineTo(-6 * s, 7 * s);
+    ctx.lineTo(-2 * s, 0);
+    ctx.lineTo(-6 * s, -7 * s);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
   }
 
   private drawLandmark(ctx: CanvasRenderingContext2D, l: LandmarkDef, px: number, py: number, dpr: number, sealed: boolean, mine = false): void {

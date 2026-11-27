@@ -235,9 +235,32 @@ Haskel's **Companions** tab) and ask **one** to adventure with you:
 
 ## The map
 
-You start without one. The map only shows what you've explored (about 24 m
+You start without one. The map only shows what you've explored (about 45 m
 around wherever you've been), plus the camp and your god's shrine. Buy
 Haskel's map to see the whole valley.
+
+### Quest arrow and the quest diary
+
+The quest you're **following** gets a gold marker on the map, and when it's
+off the edge of the corner map, a gold arrow on the rim points the way. The
+tracker shows where and how far ("Tusk Meadow · 240 m ↗", the arrow matching
+the map's orientation). The arrow is deliberately general: a place, the
+middle of a hunting ground, or the nearest pick-up you still need, never a
+creature's exact position. For a delivery, it points at the creatures that
+drop the item until you carry enough, then at whoever asked for it
+(`questTarget` in `shared/src/questTargets.ts`).
+
+The **quest diary** (`J`, 📜 on touch, or the button in the character panel)
+lists:
+
+- **In progress**: each quest's story so far (finished steps, in the words of
+  what happened), the current step with progress, and a *Follow on the map*
+  button. Clicking a quest in the tracker opens it here.
+- **Finished** quests.
+- **Rumours**: the gods' epic quests you've read about but haven't done.
+
+You follow the story quest you're on unless you pick another; the choice is
+remembered on this device.
 
 ## Second quest: The Silent Village
 
@@ -295,3 +318,4 @@ crypt and it rises again for you.
 | `/step [quest]` | Finish the current step of a quest (default: your first active one) |
 | `/quest make_camp`, `/quest silent_village` | Start (if needed) and finish a whole quest |
 | `/coins <n>` | Set your coins |
+| `/near <creature>` | Teleport next to the nearest creature of a kind (`skeleton`, `risen`, `wolf`…) |

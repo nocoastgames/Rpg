@@ -191,11 +191,26 @@ export class RoomLogic {
         return;
       }
       for (const id of path.slice(start + 1)) this.game.advance(id, id);
+    } else if (cmd === "near" && arg) {
+      // Next to the nearest creature of a kind (looking at models).
+      const p = this.state.players.get(id);
+      let best: { x: number; z: number } | null = null;
+      let bestD = Infinity;
+      this.state.enemies.forEach((e) => {
+        if (e.kind !== arg || !p) return;
+        const d = Math.hypot(e.x - p.x, e.z - p.z);
+        if (d < bestD) {
+          bestD = d;
+          best = { x: e.x, z: e.z };
+        }
+      });
+      const ok = !!best && this.game.teleportTo(id, (best as { x: number; z: number }).x + 6, (best as { x: number; z: number }).z + 6);
+      reply(ok ? `[dev] next to a ${arg}` : `[dev] no ${arg} around`);
     } else if (cmd === "tp" && arg) {
       const ok = this.game.teleportToLandmark(id, arg);
       reply(ok ? `[dev] teleported to ${arg}` : `[dev] unknown landmark "${arg}"`);
     } else {
-      reply("[dev] commands: /open|/close <gate>, /tp <place|shrine_<god>|camp|vendor|village|crypt|cell|zone>, /level <n>, /quest <id|all|favor>, /step [quest], /coins <n>, /class <id>");
+      reply("[dev] commands: /open|/close <gate>, /tp <place|shrine_<god>|camp|vendor|village|crypt|cell|zone>, /level <n>, /quest <id|all|favor>, /step [quest], /coins <n>, /class <id>, /near <creature>");
     }
   }
 }

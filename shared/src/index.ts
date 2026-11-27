@@ -8,6 +8,7 @@ export * from "./items.ts";
 export * from "./enemies.ts";
 export * from "./status.ts";
 export * from "./quests.ts";
+export * from "./questTargets.ts";
 export * from "./npcs.ts";
 export * from "./worlds.ts";
 export * from "./adventurers.ts";

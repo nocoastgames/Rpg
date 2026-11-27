@@ -1457,14 +1457,19 @@ export class Game {
 
   /** Dev helper: move a player next to a landmark (or "spawn"). */
   teleportToLandmark(id: string, landmarkId: string): boolean {
-    const p = this.state.players.get(id);
-    const rt = this.players.get(id);
     const pool = poolCenter();
     const named: Record<string, { x: number; z: number }> = { spawn: this.world.spawn, pool: fromUV(pool.u, pool.v + POOL_RADIUS + 2), camp: this.campPos, cell: DUNGEON_CELL };
     for (const z of ZONES) named[z.id] = fromUV(z.u, z.v);
     const l = named[landmarkId] ?? this.world.landmarks.find((m) => m.id === landmarkId);
-    if (!p || !rt || !l) return false;
-    const spot = this.findFreeSpotNear(l.x, l.z, 1);
+    return !!l && this.teleportTo(id, l.x, l.z);
+  }
+
+  /** Dev helper: move a player to the nearest free spot. */
+  teleportTo(id: string, x: number, z: number): boolean {
+    const p = this.state.players.get(id);
+    const rt = this.players.get(id);
+    if (!p || !rt) return false;
+    const spot = this.findFreeSpotNear(x, z, 1);
     p.x = spot.x;
     p.z = spot.z;
     p.region = inDungeon(spot.x, spot.z) ? "dungeon" : "valley";

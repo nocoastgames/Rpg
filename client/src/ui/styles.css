@@ -2231,3 +2231,139 @@ body[data-input="gamepad"] .interact-hint {
   font-style: italic;
   color: var(--text-dim);
 }
+
+/* Quest diary (J) */
+.diary {
+  position: absolute;
+  top: calc(60px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(680px, calc(100vw - 24px));
+  max-height: calc(100vh - 200px);
+  display: flex;
+  flex-direction: column;
+  z-index: 16;
+}
+.diary-body {
+  display: grid;
+  grid-template-columns: minmax(150px, 34%) 1fr;
+  gap: 12px;
+  min-height: 0;
+  overflow: hidden;
+}
+.diary-list,
+.diary-page {
+  overflow-y: auto;
+  min-height: 0;
+}
+.diary-list .panel-sub:first-child {
+  margin-top: 0;
+}
+.diary-entry {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  text-align: left;
+  padding: 5px 7px;
+  margin-bottom: 3px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+.diary-entry.sel {
+  border-color: var(--accent);
+  background: rgba(216, 181, 74, 0.12);
+}
+.diary-entry.done .diary-entry-name {
+  color: var(--text-dim);
+}
+.diary-entry.rumour .diary-entry-name {
+  font-style: italic;
+}
+.diary-entry-name {
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  color: var(--accent);
+}
+.diary-entry-sub,
+.diary-empty {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+.diary-title {
+  font-family: var(--font-display);
+  color: var(--accent);
+  margin: 0 0 6px;
+  font-size: 1.1rem;
+}
+.diary-intro {
+  font-style: italic;
+  line-height: 1.4;
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+}
+.diary-steps {
+  margin: 0 0 8px;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+.diary-step.done {
+  color: var(--text-dim);
+}
+.diary-step.done b {
+  text-decoration: line-through;
+  text-decoration-color: rgba(216, 181, 74, 0.6);
+}
+.diary-step.now b {
+  color: #fff3b0;
+}
+.diary-step.later {
+  color: var(--text-dim);
+  list-style: none;
+}
+.diary-note {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  margin: 4px 0 8px;
+}
+.diary-track {
+  padding: 5px 12px;
+  font-size: 0.85rem;
+}
+.diary-track:disabled {
+  opacity: 0.6;
+}
+.diary-open {
+  width: 100%;
+  margin: 6px 0 2px;
+  padding: 5px;
+  font-size: 0.85rem;
+}
+.tracker {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.tracker-entry.followed .tracker-quest {
+  color: #fff3b0;
+}
+.tracker-where {
+  font-size: 0.78rem;
+  color: var(--accent);
+  margin-top: 3px;
+}
+@media (max-width: 640px) {
+  .diary-body {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+  .diary-list,
+  .diary-page {
+    overflow: visible;
+  }
+}

@@ -21,7 +21,7 @@ async function boot(): Promise<void> {
   let room: GameRoom | null = null;
   while (!room) {
     const offline = import.meta.env.MODE === "offline";
-    const { options, world } = await showCharacterCreate(ui, error, offline ? null : { mode: worldFromUrl() ? "join" : "new", code: worldFromUrl() ?? "" });
+    const { options, world } = await showCharacterCreate(ui, error, offline ? null : { mode: worldFromUrl() ? "join" : "new", code: worldFromUrl() ?? "" }, assets);
     loading("Waking up…");
     try {
       await assetsReady;

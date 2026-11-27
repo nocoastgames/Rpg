@@ -94,7 +94,6 @@ class Preview {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
-  private readonly assets = new AssetLibrary();
   private avatar: Avatar | null = null;
   private yaw = -0.5;
   private dragging = false;
@@ -103,7 +102,12 @@ class Preview {
   private last = performance.now();
   private key = "";
 
-  constructor() {
+  constructor(private readonly assets: AssetLibrary) {
+    // Redraw with the real models once they've loaded.
+    void assets.load().then(() => {
+      this.key = "";
+      if (this.shown) this.show(...this.shown);
+    });
     this.canvas = h("canvas.cc-preview-canvas");
     this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
@@ -130,7 +134,10 @@ class Preview {
     this.loop();
   }
 
+  private shown: [string, Appearance] | null = null;
+
   show(classId: string, appearance: Appearance): void {
+    this.shown = [classId, { ...appearance }];
     const key = `${classId}|${JSON.stringify(appearance)}`;
     if (key === this.key) return;
     this.key = key;
@@ -181,11 +188,12 @@ export function showCharacterCreate(
   root: HTMLElement,
   error?: string,
   initialWorld: { mode: "new" | "join"; code: string } | null = { mode: "new", code: "" },
+  assets: AssetLibrary = new AssetLibrary(),
 ): Promise<CreationResult> {
   const world = initialWorld ? { ...initialWorld } : null;
   const draft = loadDraft();
   let step: StepId = draft.backgroundId && draft.faithId ? "review" : "look";
-  const preview = new Preview();
+  const preview = new Preview(assets);
   const save = () => safeStorageSet(STORAGE_KEY, JSON.stringify(draft));
 
   return new Promise((resolve) => {
@@ -253,17 +261,19 @@ export function showCharacterCreate(
         field("Name", nameInput),
         field("Build", choiceRow(o.build, a.build, (b) => b.label, (i) => setApp("build", i))),
         field("Skin", choiceRow(o.skin, a.skin, (_c, i) => `Tone ${i + 1}`, (i) => setApp("skin", i), (c) => c)),
-        field("Hair", choiceRow(o.hair, a.hair, (x) => x.label, (i) => setApp("hair", i))),
+        field("Face & hair", choiceRow(o.head, a.head, (x) => x.label, (i) => setApp("head", i))),
         field("Hair colour", choiceRow(o.hairColor, a.hairColor, (_c, i) => `Colour ${i + 1}`, (i) => setApp("hairColor", i), (c) => c)),
-        field("Beard", choiceRow(o.beard, a.beard, (x) => x.label, (i) => setApp("beard", i))),
-        field("Ragged clothes", choiceRow(o.dye, a.dye, (d) => d.label, (i) => setApp("dye", i), (d) => d.color)),
+        field("Headwear", choiceRow(o.headwear, a.headwear, (x) => x.label, (i) => setApp("headwear", i))),
+        field("Clothes", choiceRow(o.outfit, a.outfit, (x) => x.label, (i) => setApp("outfit", i))),
+        field("Dye", choiceRow(o.dye, a.dye, (d) => d.label, (i) => setApp("dye", i), (d) => d.color)),
+        field("Cloak", choiceRow(o.cloak, a.cloak, (x) => x.label, (i) => setApp("cloak", i))),
         h(
           "button.btn.btn-small",
           {
             type: "button",
             onclick: () => {
               const r = (n: number) => Math.floor(Math.random() * n);
-              draft.appearance = { build: r(o.build.length), skin: r(o.skin.length), hair: r(o.hair.length), hairColor: r(o.hairColor.length), beard: r(o.beard.length), dye: r(o.dye.length) };
+              draft.appearance = { build: r(o.build.length), skin: r(o.skin.length), head: r(o.head.length), hairColor: r(o.hairColor.length), headwear: r(o.headwear.length), outfit: r(o.outfit.length), dye: r(o.dye.length), cloak: r(o.cloak.length) };
               render();
             },
           },

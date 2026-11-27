@@ -4,6 +4,8 @@ import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import type { PropKind } from "@rpg/shared";
 import { applyOcclusionCutout } from "./occlusion.ts";
 import { toToon } from "./toon.ts";
+import { KayKitLibrary } from "./KayKit.ts";
+import { setKitLibrary } from "./KitAvatars.ts";
 
 /**
  * Optional glTF model overrides.
@@ -43,14 +45,29 @@ interface Loaded {
   clips: THREE.AnimationClip[];
 }
 
-const BASE = "/assets/models/";
+const BASE = `${import.meta.env.BASE_URL}assets/models/`;
 
 export class AssetLibrary {
   private readonly characters = new Map<string, Loaded>();
   private readonly enemies = new Map<string, Loaded>();
   private readonly props = new Map<string, Loaded>();
+  /** The KayKit characters (people and the undead); procedural placeholders until loaded. */
+  readonly kaykit = new KayKitLibrary();
+  private loading: Promise<void> | null = null;
 
-  async load(onProgress?: (text: string) => void): Promise<void> {
+  /** Load once; later calls share the same promise. */
+  load(onProgress?: (text: string) => void): Promise<void> {
+    this.loading ??= this.loadAll(onProgress);
+    return this.loading;
+  }
+
+  private async loadAll(onProgress?: (text: string) => void): Promise<void> {
+    // ?placeholders keeps the procedural characters (weak devices, or comparing).
+    const skipKit = new URLSearchParams(location.search).has("placeholders");
+    const kit = (skipKit ? Promise.reject(new Error("placeholders requested")) : this.kaykit.load(BASE)).then(
+      () => setKitLibrary(this.kaykit),
+      (err) => console.warn("[assets] KayKit characters unavailable, using placeholders", err),
+    );
     let manifest: Manifest = {};
     try {
       const res = await fetch(`${BASE}manifest.json`, { cache: "no-cache" });
@@ -82,7 +99,7 @@ export class AssetLibrary {
     for (const [k, e] of Object.entries(manifest.characters ?? {})) queue(this.characters, k, e);
     for (const [k, e] of Object.entries(manifest.enemies ?? {})) queue(this.enemies, k, e);
     for (const [k, e] of Object.entries(manifest.props ?? {})) if (e) queue(this.props, k, e);
-    await Promise.all(jobs);
+    await Promise.all([...jobs, kit]);
   }
 
   character(classId: string, baseId: string): GltfInstance | null {

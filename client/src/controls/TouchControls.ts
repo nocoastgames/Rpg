@@ -1,6 +1,6 @@
 import { h } from "../ui/dom.ts";
 
-export type TouchAction = "attack" | "interact" | "bag" | "map" | "chat" | "help" | "fullscreen";
+export type TouchAction = "attack" | "interact" | "bag" | "diary" | "map" | "chat" | "help" | "fullscreen";
 
 export interface AbilityRelease {
   slot: number;
@@ -68,6 +68,7 @@ export class TouchControls {
       "div.touch-top",
       null,
       small("🎒", "bag", "Character & pack"),
+      small("📜", "diary", "Quest diary"),
       small("🗺", "map", "Map"),
       small("💬", "chat", "Chat"),
       small("?", "help", "Help"),

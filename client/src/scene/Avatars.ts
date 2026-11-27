@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { APPEARANCE_OPTIONS, DEFAULT_APPEARANCE, getAdventurer, getEnemy, resolveKit, type Appearance } from "@rpg/shared";
 import type { AnimName, AssetLibrary, GltfInstance } from "./Assets.ts";
 import { toonMaterial } from "./toon.ts";
+import { createKitHuman, createKitUndead, kitReady } from "./KitAvatars.ts";
 
 /**
  * Visual representation of a character or creature. The entity layer
@@ -348,9 +349,11 @@ function buildPlayerBody(app: Appearance, weaponId: string, armorId = ""): { roo
   const o = APPEARANCE_OPTIONS;
   const build = o.build[app.build] ?? o.build[1];
   const skin = o.skin[app.skin] ?? o.skin[2];
-  const hairStyle = (o.hair[app.hair] ?? o.hair[1]).id;
+  // The placeholder approximates the KayKit faces: cropped, bearded, swept back, long.
+  const face = (o.head[app.head] ?? o.head[0]).id;
+  const hairStyle: string = face === "long" ? "long" : face === "swept" ? "ponytail" : "short";
   const hairColor = o.hairColor[app.hairColor] ?? o.hairColor[2];
-  const beard = (o.beard[app.beard] ?? o.beard[0]).id;
+  const beard: string = face === "bearded" ? "long" : "none";
   const cloth = (o.dye[app.dye] ?? o.dye[0]).color;
   const clothDark = `#${new THREE.Color(cloth).multiplyScalar(0.7).getHexString()}`;
   const trousers = "#4a3e30";
@@ -751,6 +754,8 @@ export function createPlayerAvatar(assets: AssetLibrary, classId: string, weapon
   const path = kit?.path.map((n) => n.id) ?? [classId];
   const gltf = assets.character(classId, kit?.base.id ?? classId);
   if (gltf) return new GltfAvatar(gltf);
+  const held = weaponVisual(path, kit?.basicAttack.projectile, weapon);
+  if (kitReady()) return createKitHuman({ appearance, armor, weapon: held }, (id) => buildWeapon(id, kit?.color ?? "#888888"));
   return new ProceduralHumanoid({
     classId: "player",
     flavor: "",
@@ -764,6 +769,12 @@ export function createPlayerAvatar(assets: AssetLibrary, classId: string, weapon
 
 /** One of the King's soldiers: helmet, blue tabard, spear. */
 export function createGuardAvatar(): Avatar {
+  if (kitReady()) {
+    return createKitHuman(
+      { appearance: { build: 2, skin: Math.floor(Math.random() * 6), head: 0, hairColor: 1, headwear: 4, outfit: 0, dye: 0, cloak: 1 }, armor: "militia_brigandine", weapon: "splintered_spear", cloth: "#2e4a8a", height: 1.95 },
+      (id) => buildWeapon(id, "#2e4a8a"),
+    );
+  }
   const g = new ProceduralHumanoid({ classId: "warrior", flavor: "", color: "#2e4a8a", weapon: "splintered_spear", scale: 1.05 });
   g.root.traverse((o) => {
     if (o.position.y === 1.15 && (o as THREE.Mesh).isMesh) o.add(mesh(box(0.2, 0.2, 0.02), "#c8ccd4", 0, 0.1, 0.17));
@@ -775,18 +786,30 @@ export function createGuardAvatar(): Avatar {
 export function createAdventurerAvatar(id: string): Avatar {
   const def = getAdventurer(id);
   if (!def) return new ProceduralWisp("#ffffff", 1);
+  if (kitReady()) return createKitHuman({ appearance: def.appearance, armor: def.armor, weapon: def.weapon }, (w) => buildWeapon(w, def.color));
   return new ProceduralHumanoid({ classId: "player", flavor: "", color: def.color, weapon: def.weapon, appearance: def.appearance, armor: def.armor, ranged: def.power.ranged });
 }
 
 /** People in the world. Haskel: grey-bearded, in a travel-stained coat and a wide hat. */
 export function createNpcAvatar(npc: string): Avatar {
   if (npc.startsWith("adv_")) return createAdventurerAvatar(npc.slice(4));
+  if (kitReady()) {
+    // Haskel: grey beard, travel coat, a wide hat and a mug of something.
+    return createKitHuman(
+      {
+        appearance: { build: 2, skin: 2, head: 1, hairColor: 6, headwear: 3, outfit: 1, dye: 1, cloak: 0 },
+        armor: "peddler_coat",
+        offhand: { from: "Barbarian", node: "Mug" },
+      },
+      (w) => buildWeapon(w, "#6a7a4a"),
+    );
+  }
   const h = new ProceduralHumanoid({
     classId: "player",
     flavor: "",
     color: "#6a7a4a",
     weapon: "",
-    appearance: { build: 2, skin: 2, hair: 1, hairColor: 5, beard: 3, dye: 3 },
+    appearance: { build: 2, skin: 2, head: 1, hairColor: 6, headwear: 0, outfit: 1, dye: 1, cloak: 0 },
     armor: npc === "vendor" ? "peddler_coat" : "",
   });
   const hat = new THREE.Group();
@@ -997,6 +1020,21 @@ export function createEnemyAvatar(assets: AssetLibrary, kind: string): Avatar {
   const def = getEnemy(kind);
   const color = def?.color ?? "#777777";
   const scale = def?.scale ?? 1;
+  if (kitReady()) {
+    const extras: Array<{ object: THREE.Object3D; bone: string }> = [];
+    if (kind === "hollow_priest") {
+      // Thorns growing out of its back.
+      const thorns = new THREE.Group();
+      for (let i = 0; i < 6; i++) {
+        const t = mesh(new THREE.ConeGeometry(0.07, 0.7, 4), "#1c1620", (i - 2.5) * 0.16, 0.1 + (i % 2) * 0.25, -0.35);
+        t.rotation.x = -0.9;
+        thorns.add(t);
+      }
+      extras.push({ object: thorns, bone: "chest" });
+    }
+    const undead = createKitUndead(kind, scale, extras);
+    if (undead) return undead;
+  }
   if (kind === "wolf" || kind === "boar") return new ProceduralBeast(kind, color, scale);
   if (kind === "spider") return new ProceduralSpider(color, scale);
   if (kind === "hare") return new ProceduralBeast("hare", color, scale);

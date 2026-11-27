@@ -6,15 +6,21 @@ character as you build it.
 
 | Step | What you choose |
 | --- | --- |
-| 1. Appearance | Name, build (slight/average/broad), skin tone, hair style and colour, beard, and the dye of your ragged clothes |
+| 1. Appearance | Name, build (slight/average/broad), skin tone (8), face & hair (cropped, bearded, swept back, long), hair colour (8), headwear (none, hood, fur cap, wide hat, old helm), clothes (tunic, furs, robe), dye (8) and cloak |
 | 2. Calling | One of the four base classes (Fighter, Mage, Priest, Thief) with a preview of the whole class tree |
 | 3. First memory | One half-remembered image. This secretly picks your **background** |
 | 4. Faith | The god a prayer on your lips still calls to (flavour only) |
 | 5. Attributes | Point-buy: 10 points, raise a stat by up to +5, lower stats by up to 2 in total to get points back. Live preview of health, resource, damage and crit |
 | 6. Wake up | Review and start |
 
-Everyone starts in the same ragged clothes. Equipment that shows on the
-character will come later; for now only the weapon in hand is visible.
+Characters are KayKit models (CC0, see [ASSETS.md](ASSETS.md)) put together
+from parts: the face, headwear, clothes and cloak are separate pieces on one
+shared skeleton, and skin, hair and dye are painted into the model's colour
+palette. Everyone wakes in their own worn clothes; armour replaces them while
+worn (the militia brigandine is plate and a tabard in your dye, the hedge robe
+and chapel vestments are robes, the poacher's leathers a tunic), and the weapon
+in hand shows (swords, daggers, wands and staves are KayKit pieces; maces,
+bows, lutes and the rest are drawn procedurally).
 
 ## Backgrounds (hidden)
 

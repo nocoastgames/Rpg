@@ -8,17 +8,24 @@ import { NAME_MAX_LENGTH } from "./constants.ts";
 import { STAT_IDS, addStats, type StatId, type Stats } from "./stats.ts";
 
 // ---------------------------------------------------------------------------
-// Appearance (ragged clothes for everyone; equipment shows later)
+// Appearance: everyone wakes in their own worn clothes; armour shows once
+// equipped. The options map onto the KayKit character parts (see
+// client/src/scene/KayKit.ts); the procedural fallback approximates them.
 // ---------------------------------------------------------------------------
 
 export interface Appearance {
   build: number;
   skin: number;
-  hair: number;
+  /** Face and hairstyle. */
+  head: number;
   hairColor: number;
-  beard: number;
-  /** Colour of the ragged clothes. */
+  /** Hood, cap, hat or helm (cosmetic). */
+  headwear: number;
+  /** The clothes you woke up in (armour replaces them while worn). */
+  outfit: number;
+  /** Colour of those clothes. */
   dye: number;
+  cloak: number;
 }
 
 export const APPEARANCE_OPTIONS = {
@@ -27,33 +34,43 @@ export const APPEARANCE_OPTIONS = {
     { id: "average", label: "Average", width: 1, height: 1 },
     { id: "broad", label: "Broad", width: 1.14, height: 1.03 },
   ],
-  skin: ["#f2d4b8", "#e8c0a0", "#d8a882", "#c08a64", "#a06c48", "#7e5236", "#5e3a24", "#42281a"],
-  hair: [
-    { id: "none", label: "Shaved" },
-    { id: "short", label: "Short" },
-    { id: "long", label: "Long" },
-    { id: "ponytail", label: "Tied back" },
-    { id: "braid", label: "Braid" },
-    { id: "mohawk", label: "Crest" },
+  skin: ["#f6c9a6", "#ecb48c", "#d89c70", "#c08458", "#a06a44", "#7e5236", "#5e3a24", "#42281a"],
+  head: [
+    { id: "cropped", label: "Cropped" },
+    { id: "bearded", label: "Bearded" },
+    { id: "swept", label: "Swept back" },
+    { id: "long", label: "Long hair" },
   ],
-  hairColor: ["#16120e", "#3a2618", "#5e3e24", "#8a4a22", "#b0602e", "#d8b468", "#8c8a86", "#e8e4dc"],
-  beard: [
+  hairColor: ["#1a1614", "#3a2618", "#5e3e24", "#8a4a22", "#b0602e", "#d8b468", "#8c8a86", "#e8e4dc"],
+  headwear: [
     { id: "none", label: "None" },
-    { id: "stubble", label: "Stubble" },
-    { id: "short", label: "Short beard" },
-    { id: "long", label: "Long beard" },
+    { id: "hood", label: "Hood" },
+    { id: "furcap", label: "Fur cap" },
+    { id: "widehat", label: "Wide hat" },
+    { id: "helm", label: "Old helm" },
+  ],
+  outfit: [
+    { id: "tunic", label: "Tunic" },
+    { id: "furs", label: "Furs" },
+    { id: "robe", label: "Robe" },
   ],
   dye: [
     { label: "Undyed", color: "#8a7a5e" },
     { label: "Earth", color: "#6a4a30" },
-    { label: "Moss", color: "#4e5a34" },
-    { label: "Faded blue", color: "#4a5a6e" },
+    { label: "Moss", color: "#4e6a34" },
+    { label: "Faded blue", color: "#4a5a7e" },
     { label: "Ash", color: "#5c5a58" },
-    { label: "Rust", color: "#7a3e2a" },
+    { label: "Rust", color: "#8a3e2a" },
+    { label: "Plum", color: "#5a3a6a" },
+    { label: "Teal", color: "#2a6a66" },
+  ],
+  cloak: [
+    { id: "none", label: "None" },
+    { id: "cloak", label: "Cloak" },
   ],
 } as const;
 
-export const DEFAULT_APPEARANCE: Appearance = { build: 1, skin: 2, hair: 1, hairColor: 2, beard: 0, dye: 0 };
+export const DEFAULT_APPEARANCE: Appearance = { build: 1, skin: 1, head: 0, hairColor: 2, headwear: 0, outfit: 0, dye: 0, cloak: 0 };
 
 function optionCount(key: keyof Appearance): number {
   return APPEARANCE_OPTIONS[key].length;

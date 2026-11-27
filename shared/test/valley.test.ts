@@ -169,3 +169,26 @@ test("one adventurer of each class waits by the merchant, and level 4+ grounds h
   }
   for (const z of ZONES) if (z.levels[1] >= 4 && !z.ambient) assert.ok(z.pack && z.pack.minLevel <= 4, `${z.id} has packs`);
 });
+
+import { QUESTS, questTarget } from "../src/index.ts";
+
+test("every quest step points the map arrow somewhere inside the valley", () => {
+  const w = generateWorld(1337);
+  for (const q of QUESTS) {
+    q.steps.forEach((_, i) => {
+      for (const have of [0, 99]) {
+        const t = questTarget(q.id, i, { landmarks: w.landmarks, nodes: w.nodes, x: w.spawn.x, z: w.spawn.z, have: () => have, wantsNode: () => true });
+        assert.ok(t, `${q.id} step ${i} has a target`);
+        assert.ok(valleySdf(t.x, t.z) > -5, `${q.id} step ${i} points inside the valley`);
+        assert.ok(t.label.length > 0);
+      }
+    });
+  }
+  // A delivery points at the creatures that drop the item until you have enough, then at the giver.
+  const pelts = QUESTS.find((q) => q.id === "fetch_pelts")!;
+  const vendor = w.landmarks.find((l) => l.id === "vendor")!;
+  const hunt = questTarget(pelts.id, 0, { landmarks: w.landmarks, nodes: w.nodes, x: 0, z: 0, have: () => 0, wantsNode: () => true })!;
+  const home = questTarget(pelts.id, 0, { landmarks: w.landmarks, nodes: w.nodes, x: 0, z: 0, have: () => 3, wantsNode: () => true })!;
+  assert.equal(hunt.label, "Greypine Wood");
+  assert.deepEqual([home.x, home.z], [vendor.x, vendor.z]);
+});

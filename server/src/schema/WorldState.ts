@@ -56,10 +56,12 @@ export const AppearanceState = schema(
   {
     build: t.uint8().default(1),
     skin: t.uint8().default(0),
-    hair: t.uint8().default(0),
+    head: t.uint8().default(0),
     hairColor: t.uint8().default(0),
-    beard: t.uint8().default(0),
+    headwear: t.uint8().default(0),
+    outfit: t.uint8().default(0),
     dye: t.uint8().default(0),
+    cloak: t.uint8().default(0),
   },
   "Appearance",
 );

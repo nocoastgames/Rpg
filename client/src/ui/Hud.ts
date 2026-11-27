@@ -42,6 +42,8 @@ export interface HudCallbacks {
   onAdvance(classId: string): void;
   /** Take off the equipped weapon or armour. */
   onUnequip(slot: "weapon" | "armor"): void;
+  /** Open the quest diary (at a quest, when one was clicked). */
+  onOpenDiary(questId?: string): void;
 }
 
 interface Slot {
@@ -178,6 +180,7 @@ export class Hud {
       { onpointerdown: stop },
       h("div.panel-title", null, "Character", h("button.panel-close", { type: "button", onclick: () => this.toggleBag() }, "×")),
       this.charInfo,
+      h("button.btn.diary-open", { type: "button", onclick: () => cb.onOpenDiary() }, "📜 Quest diary (J)"),
       this.pastEl,
       this.pathEl,
       this.equip,
@@ -247,6 +250,7 @@ export class Hud {
         ["F", "Interact / inspect"],
         ["5 / 6", "Quick-use food / water"],
         ["I", "Character, path & pack"],
+        ["J", "Quest diary"],
         ["M", "Map"],
         ["Enter", "Chat"],
         ["Mouse wheel", "Zoom"],
@@ -260,7 +264,7 @@ export class Hud {
         ["B", "Interact / inspect · close menus"],
         ["D-pad ↑ / ↓", "Quick-use food / water"],
         ["D-pad ← / →", "Zoom out / in"],
-        ["View", "Character, path & pack"],
+        ["View", "Character, path & pack (quest diary inside)"],
         ["Right stick click", "Map"],
         ["Menu", "Toggle this help"],
       ]),
@@ -271,7 +275,7 @@ export class Hud {
         ["Ability buttons", "Tap to auto-aim, drag to aim (up to 4)"],
         ["✋", "Interact (appears when something is near)"],
         ["Pinch", "Zoom"],
-        ["🎒 🗺 💬", "Pack, map, chat"],
+        ["🎒 📜 🗺 💬", "Pack, quest diary, map, chat"],
       ]),
     );
   }
@@ -626,19 +630,26 @@ export class Hud {
     this.pathEl.replaceChildren(...children.filter((c): c is HTMLElement => !!c));
   }
 
-  /** Quest tracker: every active quest, the step you're on and your progress. */
+  /** Quest followed by the map arrow, and where it points ("Tusk Meadow · 240 m"). */
+  tracked = "";
+  trackedHint = "";
+
+  /** Quest tracker: the followed quest in full, the others in brief. Click one to open the diary. */
   private renderTracker(p: PlayerView): void {
-    const parts: string[] = [];
+    const parts: string[] = [this.tracked, this.trackedHint];
     p.active.forEach((q) => parts.push(`${q.id}|${q.step}|${q.count}`));
     p.inventory.forEach((s) => parts.push(`${s.itemId}:${s.qty}`));
     const key = parts.join(",");
     if (key === this.trackerKey) return;
     this.trackerKey = key;
     const blocks: HTMLElement[] = [];
-    p.active.forEach((qs) => {
+    const entries: Array<{ id: string; step: number; count: number }> = [];
+    p.active.forEach((qs) => entries.push({ id: qs.id, step: qs.step, count: qs.count }));
+    entries.sort((a, b) => Number(b.id === this.tracked) - Number(a.id === this.tracked));
+    for (const qs of entries) {
       const quest = getQuest(qs.id);
       const step = quest?.steps[qs.step];
-      if (!quest || !step) return;
+      if (!quest || !step) continue;
       const o = step.objective;
       let count = "";
       if (o.type === "gather" || o.type === "kill") count = ` (${qs.count}/${o.count})`;
@@ -649,17 +660,19 @@ export class Hud {
         });
         count = ` (${Math.min(have, o.count)}/${o.count})`;
       }
+      const followed = qs.id === this.tracked;
       blocks.push(
         h(
-          "div.tracker-entry",
-          null,
-          h("div.tracker-quest", null, quest.name),
+          `div.tracker-entry${followed ? ".followed" : ""}` as "div",
+          { onclick: () => this.cb.onOpenDiary(qs.id), title: "Open in the quest diary" },
+          h("div.tracker-quest", null, followed ? `➤ ${quest.name}` : quest.name),
           h("div.tracker-step", null, `${step.title}${count}`),
-          h("div.tracker-text", null, step.text),
-          quest.steps.length > 1 ? h("div.tracker-pips", null, ...quest.steps.map((_, i) => h(`span.pip${i < qs.step ? ".done" : i === qs.step ? ".now" : ""}` as "span"))) : null,
+          followed ? h("div.tracker-text", null, step.text) : null,
+          followed && this.trackedHint ? h("div.tracker-where", null, this.trackedHint) : null,
+          followed && quest.steps.length > 1 ? h("div.tracker-pips", null, ...quest.steps.map((_, i) => h(`span.pip${i < qs.step ? ".done" : i === qs.step ? ".now" : ""}` as "span"))) : null,
         ),
       );
-    });
+    }
     this.tracker.classList.toggle("hidden", blocks.length === 0);
     this.tracker.replaceChildren(...blocks);
   }

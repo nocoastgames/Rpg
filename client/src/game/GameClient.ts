@@ -7,6 +7,9 @@ import {
   generateWorld,
   getFaith,
   getQuest,
+  questTarget,
+  toUV,
+  type QuestTarget,
   prayedFlag,
   zoneAt,
   NODE_NAMES,
@@ -59,6 +62,7 @@ import { Hud, type PartyMember } from "../ui/Hud.ts";
 import { Minimap, type MapContext, type MapMarker } from "../ui/Minimap.ts";
 import { Overlay } from "../ui/Overlay.ts";
 import { VendorPanel } from "../ui/Vendor.ts";
+import { QuestDiary } from "../ui/QuestDiary.ts";
 import { Input } from "./Input.ts";
 
 interface Entity {
@@ -82,6 +86,7 @@ const ENEMY_DRAW_RADIUS = 110;
 const MOVE_DIR_MIN_INTERVAL = 50;
 const AUTO_ATTACK_REACQUIRE_MS = 350;
 const DISCOVERY_KEY = "rpg.discovered";
+const TRACKED_KEY = "rpg.trackedQuest";
 
 export function isLowPowerDevice(): boolean {
   return matchMedia("(pointer: coarse)").matches || (navigator.hardwareConcurrency ?? 8) <= 4;
@@ -100,6 +105,9 @@ export class GameClient {
   private readonly landmarks: Landmarks;
   private readonly questNodes: QuestNodes;
   private readonly vendor: VendorPanel;
+  private readonly diary: QuestDiary;
+  /** The quest the map arrow follows (chosen in the diary; remembered). */
+  private trackedPref = safeStorageGet(TRACKED_KEY) ?? "";
   /** People standing in the world (Haskel), by landmark id. */
   private readonly npcs = new Map<string, { avatar: Avatar; pos: THREE.Vector3; name: string }>();
   /** The King's soldiers waiting beyond the rockslide (shown once the road is clear). */
@@ -236,6 +244,10 @@ export class GameClient {
         onInteract: () => room.send(C2S.interact),
         onAdvance: (classId) => room.send(C2S.advance, { classId }),
         onUnequip: (slot) => room.send(C2S.unequip, { slot }),
+        onOpenDiary: (questId) => {
+          this.hud.toggleBag(false);
+          this.diary.toggle(true, questId);
+        },
       },
       this.minimap.el,
       this.touch.el,
@@ -252,7 +264,14 @@ export class GameClient {
       close: () => this.vendor.close(),
     });
     this.hud.root.append(this.vendor.el);
-    this.menuNav = new MenuNav(() => (this.vendor.isOpen ? this.vendor.el : this.hud.bagOpen ? this.hud.bag : this.hud.helpOpen ? this.hud.help : null));
+    this.diary = new QuestDiary({
+      track: (questId) => {
+        this.trackedPref = questId;
+        safeStorageSet(TRACKED_KEY, questId);
+      },
+    });
+    this.hud.root.append(this.diary.el);
+    this.menuNav = new MenuNav(() => (this.vendor.isOpen ? this.vendor.el : this.diary.isOpen ? this.diary.el : this.hud.bagOpen ? this.hud.bag : this.hud.helpOpen ? this.hud.help : null));
     this.mode = matchMedia("(pointer: coarse)").matches ? "touch" : "kbm";
     this.hud.setInputMode(this.mode);
 
@@ -299,6 +318,7 @@ export class GameClient {
       this.intent.target = null;
       this.attackTarget = null;
       this.vendor.close();
+      this.diary.toggle(false);
       this.hud.closePanels();
       this.hud.cutscene(e);
     });
@@ -492,7 +512,7 @@ export class GameClient {
 
     // --- Menus with a controller (bag / help) ----------------------------
     if (this.hud.bookOpen && (this.pad.pressed(PAD.A) || this.pad.pressed(PAD.B))) this.hud.closeBook();
-    const menuOpen = this.hud.bagOpen || this.hud.helpOpen || this.vendor.isOpen;
+    const menuOpen = this.hud.bagOpen || this.hud.helpOpen || this.vendor.isOpen || this.diary.isOpen;
     if (this.mode === "gamepad" && menuOpen) {
       const dir = this.pad.navDirection(now);
       if (dir) this.menuNav.move(dir);
@@ -500,6 +520,7 @@ export class GameClient {
       if (this.pad.pressed(PAD.A)) this.menuNav.activate();
       if (this.pad.pressed(PAD.B)) {
         this.vendor.close();
+        this.diary.toggle(false);
         this.hud.closePanels();
         this.hud.hideTooltip();
         this.menuNav.clear();
@@ -516,7 +537,9 @@ export class GameClient {
       else if (k === "i" || k === "b" || k === "c") this.hud.toggleBag();
       else if (k === "h" || k === "?") this.hud.toggleHelp();
       else if (k === "m") this.minimap.toggle();
+      else if (k === "j" || k === "l") this.diary.toggle();
       else if (k === "escape") {
+        this.diary.toggle(false);
         this.hud.closePanels();
         this.vendor.close();
         this.hud.closeBook();
@@ -558,6 +581,7 @@ export class GameClient {
       if (a === "attack") this.attackNearest(false);
       else if (a === "interact") this.room.send(C2S.interact);
       else if (a === "bag") this.hud.toggleBag();
+      else if (a === "diary") this.diary.toggle();
       else if (a === "map") this.minimap.toggle();
       else if (a === "help") this.hud.toggleHelp();
       else if (a === "chat") this.hud.focusChat();
@@ -720,6 +744,48 @@ export class GameClient {
     });
   }
 
+  /** The quest to follow: your pick while it's active, else the story quest you're on, else any. */
+  private trackedQuest(me: PlayerView): string {
+    if (this.trackedPref && me.active.some((q) => q.id === this.trackedPref)) return this.trackedPref;
+    const story = me.active.find((q) => !getQuest(q.id)?.repeatable);
+    if (story) return story.id;
+    let first = "";
+    me.active.forEach((q, i) => {
+      if (i === 0) first = q.id;
+    });
+    return first;
+  }
+
+  private questTargetFor(me: PlayerView, questId: string, step: number): QuestTarget | null {
+    return questTarget(questId, step, {
+      landmarks: this.world.landmarks,
+      nodes: this.world.nodes,
+      x: this.pred.x,
+      z: this.pred.z,
+      have: (item) => {
+        let n = 0;
+        me.inventory.forEach((s) => {
+          if (s.itemId === item) n += s.qty;
+        });
+        return n;
+      },
+      wantsNode: (n) => !me.gathered?.includes(n.id),
+    });
+  }
+
+  /** "Tusk Meadow · 240 m ↗", with the arrow in screen terms (the map is turned like the camera). */
+  private targetHint(t: QuestTarget): string {
+    const dx = t.x - this.pred.x;
+    const dz = t.z - this.pred.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist <= Math.max(6, t.radius * 0.8)) return `${t.label} · you're here`;
+    const d = toUV(dx, dz);
+    const arrows = ["→", "↘", "↓", "↙", "←", "↖", "↑", "↗"];
+    const idx = ((Math.round(Math.atan2(d.v, d.u) / (Math.PI / 4)) % 8) + 8) % 8;
+    const m = Math.max(0, dist - t.radius);
+    return `${t.label} · ${m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m / 10) * 10} m`} ${arrows[idx]}`;
+  }
+
   /** Does the local player's current quest step want this pick-up? (Mirrors the server.) */
   private wantsNode(me: PlayerView, n: GatherNode): boolean {
     if (me.gathered?.includes(n.id)) return false;
@@ -820,7 +886,7 @@ export class GameClient {
     state.players.forEach((p, id) => {
       seenP.add(id);
       const a = p.appearance;
-      const look = `${p.classId}.${p.weapon}.${p.armor}.${a.build}${a.skin}${a.hair}${a.hairColor}${a.beard}${a.dye}`;
+      const look = `${p.classId}.${p.weapon}.${p.armor}.${a.build}.${a.skin}.${a.head}.${a.hairColor}.${a.headwear}.${a.outfit}.${a.dye}.${a.cloak}`;
       let ent = this.players.get(id);
       if (ent && ent.look !== look) {
         this.removeEntity(ent);
@@ -828,7 +894,7 @@ export class GameClient {
       }
       if (!ent) {
         ent = this.makeEntity(
-          createPlayerAvatar(this.assets, p.classId, p.weapon, { build: a.build, skin: a.skin, hair: a.hair, hairColor: a.hairColor, beard: a.beard, dye: a.dye }, p.armor),
+          createPlayerAvatar(this.assets, p.classId, p.weapon, { build: a.build, skin: a.skin, head: a.head, hairColor: a.hairColor, headwear: a.headwear, outfit: a.outfit, dye: a.dye, cloak: a.cloak }, p.armor),
           p.x,
           p.z,
           look,
@@ -1067,6 +1133,13 @@ export class GameClient {
         const l = place ? this.world.landmarks.find((m) => m.id === place) : undefined;
         if (l && !zone) markers.push({ x: l.x, z: l.z, kind: "objective" });
       });
+      const tracked = this.trackedQuest(me);
+      const qs = tracked ? me.active.find((q) => q.id === tracked) : undefined;
+      const target = qs ? this.questTargetFor(me, qs.id, qs.step) : null;
+      if (target && me.region !== "dungeon") mapInfo.quest = target;
+      this.hud.tracked = tracked;
+      this.hud.trackedHint = target && me.region !== "dungeon" ? this.targetHint(target) : "";
+      this.diary.render(me, tracked);
       this.minimap.explore(this.pred.x, this.pred.z);
       this.hud.worldCode = state.code ?? "";
       this.hud.update(me, state.serverTime, others);

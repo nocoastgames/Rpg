@@ -18,7 +18,7 @@ heel of stale bread and an empty waterskin.
 | Rendering | [three.js](https://threejs.org) | MIT | Lightweight, mature WebGL renderer. Full control over the classic isometric look. |
 | Multiplayer | [Colyseus](https://colyseus.io) | MIT | Authoritative Node.js game server: rooms, matchmaking, delta-compressed state sync, reconnection, Redis scaling. |
 | Client build | [Vite](https://vite.dev) + TypeScript | MIT | Fast dev server, simple production build. |
-| Art | Procedural low-poly placeholders + optional **CC0** packs (KayKit, Quaternius, Kenney) | CC0 | Runs with zero downloads; real models drop in via a manifest. See [docs/ASSETS.md](docs/ASSETS.md). |
+| Art | **KayKit** Adventurers + Skeletons (people, companions, undead), procedural low-poly for the rest | CC0 | Characters are assembled from parts and recoloured; `?placeholders` falls back to procedural models. See [docs/ASSETS.md](docs/ASSETS.md). |
 
 Alternatives that were considered: Babylon.js (heavier, more built in),
 PlayCanvas (engine is MIT but the editor is hosted/proprietary), Phaser (2D
@@ -121,6 +121,7 @@ are all supported. The on-screen prompts switch to whatever you last used.
 | Interact / inspect | `F` | `B` | ✋ button (appears when something is near) |
 | Quick-use food / water | `5` / `6` | D-pad ↑ / ↓ | via the pack |
 | Character, path & pack (advance here) | `I` | View | 🎒 |
+| Quest diary (pick the quest the map arrow follows) | `J` | View, then *Quest diary* | 📜 |
 | Map | `M` | Right stick click | 🗺 |
 | Zoom | Mouse wheel | D-pad ← / → | Pinch |
 | Help | `H` | Menu | ? |
@@ -271,7 +272,7 @@ Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the pieces fit, [docs/
 
 Suggested next steps, roughly in order:
 
-1. **Art pass**: drop in KayKit/Quaternius CC0 packs via the model manifest (manual download for now; see [docs/ASSETS.md](docs/ASSETS.md)).
+1. **Art pass**: creatures (wolves, boars, spiders, thornlings) and props are still procedural; Quaternius and Kenney packs would fit (manual download; see [docs/ASSETS.md](docs/ASSETS.md)).
 2. **Persistence**: accounts and saved characters (Colyseus auth + a database such as SQLite/Postgres).
 3. **Loot & inventory**: drops, equipment slots, item rarity, vendor.
 4. **Abilities 2.0**: more status effects (slow, stun) and player-applied ones, forms (Primalist), taunts; companion commands and abilities.
