@@ -192,3 +192,17 @@ test("every quest step points the map arrow somewhere inside the valley", () => 
   assert.equal(hunt.label, "Greypine Wood");
   assert.deepEqual([home.x, home.z], [vendor.x, vendor.z]);
 });
+
+import { FIRST_QUEST, VOICES_QUEST, VILLAGE_QUEST as SILENT_VILLAGE, CAMP_QUEST as SHELTER } from "../src/index.ts";
+
+test("you wake within earshot of the caravan, and build your own fire beside it", () => {
+  const w = generateWorld(1337);
+  const vendor = w.landmarks.find((l) => l.id === "vendor")!;
+  const camp = w.landmarks.find((l) => l.id === "campsite")!;
+  const far = Math.hypot(vendor.x - w.spawn.x, vendor.z - w.spawn.z);
+  assert.ok(far > 120 && far < 260, `the voices are in the distance (${far.toFixed(0)} m)`);
+  assert.ok(Math.hypot(camp.x - vendor.x, camp.z - vendor.z) < 25, "the campsite is beside the caravan");
+  assert.equal(FIRST_QUEST, VOICES_QUEST.id);
+  assert.equal(VOICES_QUEST.next, SHELTER.id);
+  assert.equal(SILENT_VILLAGE.requires, SHELTER.id);
+});

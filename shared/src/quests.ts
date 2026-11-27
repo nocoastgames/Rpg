@@ -36,6 +36,8 @@ export interface QuestStepDef {
   doneText: string;
   /** Map hint: a landmark or hunting-ground id to mark. */
   marker?: string;
+  /** What the tracker calls the place it points to (instead of the landmark's name, e.g. before you've met someone). */
+  where?: string;
 }
 
 export interface QuestReward {
@@ -58,16 +60,47 @@ export interface QuestDef {
   reward?: QuestReward;
   /** Can be done again (fetch quests). */
   repeatable?: boolean;
+  /** Starts by itself when this one is finished. */
+  next?: string;
+  /** Only offered once this quest is done. */
+  requires?: string;
 }
+
+/** The first quest: you wake alone by the stream and hear people in the distance. */
+export const VOICES_QUEST: QuestDef = {
+  id: "voices",
+  name: "Voices in the Distance",
+  intro: "You wake on the bank of a cold stream, soaked and aching, with no memory of how you got here. Then, faint over the water, voices: people talking, a pot clanking. Somewhere to the west, someone has made camp.",
+  next: "make_camp",
+  steps: [
+    {
+      title: "Follow the voices",
+      text: "Follow the voices west, away from the stream.",
+      objective: { type: "reach", landmark: "vendor", radius: 18 },
+      where: "The voices",
+      xp: 30,
+      doneText: "A covered cart, a smoky cookfire and a handful of travellers. A grey-bearded man raises a hand: \"Easy, friend. You look half-drowned.\"",
+    },
+    {
+      title: "The peddler",
+      text: "Talk to the grey-bearded man by the cart.",
+      objective: { type: "interact", landmark: "vendor" },
+      where: "The grey-bearded man",
+      xp: 30,
+      doneText: "\"Haskel. You're welcome to stay near the caravan, but we've no wood to spare. You'll have to build your own campfire. That clearing beside us is yours.\"",
+    },
+  ],
+};
 
 export const CAMP_QUEST: QuestDef = {
   id: "make_camp",
   name: "Shelter",
-  intro: "You're cold, soaked and alone. Night will come. You need a fire and a roof, and the sheltered clearing just west of the stream will do.",
+  giver: "vendor",
+  intro: "Haskel will let you stay near the caravan, but you must build your own campfire in the clearing beside it. Night will come.",
   steps: [
     {
       title: "Firewood",
-      text: "Gather dry branches from the deadfall in the woods around the clearing.",
+      text: "Gather dry branches from the deadfall in the woods around the caravan.",
       objective: { type: "gather", node: "deadfall", count: 8, seconds: 1.5 },
       xp: 40,
       doneText: "An armful of dry wood. Enough to keep a fire going through the night.",
@@ -89,10 +122,10 @@ export const CAMP_QUEST: QuestDef = {
     },
     {
       title: "Make camp",
-      text: "Return to the clearing and build your camp.",
+      text: "Return to the clearing beside the caravan and build your campfire.",
       objective: { type: "interact", landmark: "campsite", seconds: 4, verb: "Build your camp", effect: "build_camp" },
       xp: 120,
-      doneText: "The fire catches. For the first time since you woke, you're warm.",
+      doneText: "The fire catches. For the first time since you woke, you're warm. Haskel nods across at you from his cart: he has something to ask.",
     },
   ],
 };
@@ -102,11 +135,12 @@ export const VILLAGE_QUEST: QuestDef = {
   id: "silent_village",
   name: "The Silent Village",
   giver: "vendor",
-  intro: "Haskel wants to know what happened to Ashford, the village down the old west road.",
+  requires: "make_camp",
+  intro: "Haskel wants to know what happened to Ashford, the farming village on the old road east of the ford.",
   steps: [
     {
       title: "The old west road",
-      text: "Follow the old road west from Haskel's cart and find Ashford.",
+      text: "Cross the stream at the ford and follow the old road east to Ashford.",
       objective: { type: "reach", landmark: "village", radius: 13 },
       xp: 40,
       doneText: "Doors hang open. Nothing moves in Ashford but the dead.",
@@ -201,10 +235,10 @@ export const FETCH_QUESTS: readonly QuestDef[] = [
   fetch("thorns", "Curious Thorns", "thorn_splinter", 4, 16, 60, "Bring Haskel 4 black thorns. He knows a scholar who'd pay for them."),
 ];
 
-export const QUESTS: readonly QuestDef[] = [CAMP_QUEST, VILLAGE_QUEST, ...FETCH_QUESTS];
+export const QUESTS: readonly QuestDef[] = [VOICES_QUEST, CAMP_QUEST, VILLAGE_QUEST, ...FETCH_QUESTS];
 
 /** The quest every new character starts with. */
-export const FIRST_QUEST = CAMP_QUEST.id;
+export const FIRST_QUEST = VOICES_QUEST.id;
 
 export function getQuest(id: string): QuestDef | undefined {
   return QUESTS.find((q) => q.id === id);

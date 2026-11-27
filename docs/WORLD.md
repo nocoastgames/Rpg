@@ -75,7 +75,7 @@ elder ruins and monsters.
   one of the Ferryman's cradles, where you were rebuilt. The cave is a
   cracked Rot vault leaking thornlings. The rockfall that buried the road may
   be no accident: Valdris sealing a quarantine.
-- **What you do there:** build a camp (the first quest, *Shelter*), find your
+- **What you do there:** follow voices to Haskel's caravan and build your own campfire beside it (*Voices in the Distance*, then *Shelter*), find your
   god's shrine, and hunt the valley's grounds up to level 5. Haskel, a peddler
   stranded by the rockfall, sends you to **Ashford**, a village overrun by the
   dead. See [VALLEY.md](VALLEY.md).

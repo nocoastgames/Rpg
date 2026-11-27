@@ -86,12 +86,17 @@ export const RUINS_ROTATION = 0.35;
 /** Where you wake: the west bank of the stream, south of the valley's middle. */
 const SPAWN_V = 700;
 
-/** Sheltered clearing west of where you wake: the campsite you build in the first quest. */
-export const CAMP = { u: streamU(SPAWN_V) - streamHalfWidth(SPAWN_V) - 3.2 - 70, v: SPAWN_V - 25 };
-export const CAMP_CLEARING_RADIUS = 8;
+/**
+ * Haskel's caravan: a clearing west of where you wake, far enough that you
+ * only hear voices at first. He pulled back here when the pass came down.
+ */
+export const VENDOR = { u: streamU(SPAWN_V) - streamHalfWidth(SPAWN_V) - 3.2 - 165, v: SPAWN_V - 45 };
+/** How much open ground the caravan has around it (cart, travellers, your campfire). */
+export const CARAVAN_CLEARING_RADIUS = 16;
 
-/** Haskel the peddler's cart, by the road where it leaves for the pass. */
-export const VENDOR = { u: 1080, v: -90 };
+/** Your own campfire, built in the first quests: in the clearing beside the caravan. */
+export const CAMP = { u: VENDOR.u + 15, v: VENDOR.v + 6 };
+export const CAMP_CLEARING_RADIUS = 8;
 
 /** Ashford: the farming village on the old road between the ford and the pass, overrun by the dead. */
 export const VILLAGE = { u: 740, v: 160 };
@@ -277,8 +282,8 @@ export function trails(): UV[][] {
   const sp = spawnUV();
   const ford = { u: streamU(FORD_V), v: FORD_V };
   return [
-    // Spawn clearing → the campsite clearing.
-    [sp, { u: (sp.u + CAMP.u) / 2, v: (sp.v + CAMP.v) / 2 - 4 }, CAMP],
+    // Spawn clearing → your campsite → the caravan (the way the voices lead).
+    [sp, { u: sp.u - 50, v: sp.v - 10 }, { u: (sp.u + CAMP.u) / 2, v: (sp.v + CAMP.v) / 2 - 8 }, CAMP, { u: VENDOR.u + 3, v: VENDOR.v + 1 }],
     // The old road: spawn → ford → east through Ashford → Haskel's cart → the pass.
     [
       sp,
@@ -291,7 +296,7 @@ export function trails(): UV[][] {
       { u: VILLAGE.u - 13, v: VILLAGE.v + 0.5 },
       { u: VILLAGE.u + 13, v: VILLAGE.v - 0.5 },
       { u: 900, v: 40 },
-      { u: VENDOR.u - 20, v: VENDOR.v + 20 },
+      { u: 1060, v: -70 },
       PASS_START,
       { u: PASS_END.u - 80, v: PASS_END.v + 16 },
     ],

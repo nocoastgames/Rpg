@@ -1,4 +1,4 @@
-/** People in the world. For now: Haskel, the peddler stranded by the rockslide. */
+/** People in the world. For now: Haskel, the peddler stranded by the rockslide, camped west of the stream. */
 
 export interface ShopEntry {
   item: string;
@@ -32,13 +32,19 @@ export const VENDOR_NPC: NpcDef = {
 
 /** What Haskel says, depending on where you are in his story. */
 export const VENDOR_LINES = {
+  /** While you're building your campfire. */
+  welcome: [
+    "\"Haskel. I bring salt, needles and news over the pass twice a year. These four are stuck here with me.\"",
+    "\"Stay near the caravan, friend, you're welcome to. But wood's dear and we've none to spare: build your own campfire, in the clearing just beside us.\"",
+    "\"Dry branches from the woods round about. Stones from the stream to ring it. And hides for a lean-to: the boars in the meadow across the ford have plenty.\"",
+  ],
   intro: [
-    "\"Easy there, friend. Haskel. I bring salt, needles and news over the pass twice a year.\"",
-    "\"Not this year. Half the mountain came down behind my cart. The road's buried, and we're stuck in this valley until the kingdom's men dig it out.\"",
-    "\"And worse. Ashford, the village down the old west road: I've traded there twenty years. I went first thing. It's full of the dead. Walking dead, friend.\"",
+    "\"That's a proper fire. You'll do.\"",
+    "\"Here's how things stand. Half the mountain came down on the pass road behind my cart. It's buried, and we're stuck in this valley until the kingdom's men dig it out. I pulled back here to wait.\"",
+    "\"And worse. Ashford, the village on the old road east of the ford: I've traded there twenty years. I went first thing. It's full of the dead. Walking dead, friend.\"",
   ],
   ask: "\"Would you go and find out what happened there? I'm too old for it. I'll make it worth your while.\"",
-  during: "\"Ashford's a short walk down the old west road, toward the ford. Mind yourself.\"",
+  during: "\"Ashford's across the ford and east along the old road. Mind yourself.\"",
   after: "\"The road's open, thanks to you. I'll be on my way soon enough. Still buying, still selling.\"",
   noWeapon: "\"No weapon? Out here? Take this. It's not much, but it's better than your fists.\"",
 };

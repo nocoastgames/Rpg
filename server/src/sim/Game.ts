@@ -864,6 +864,7 @@ export class Game {
     this.events.notice(id, `Quest complete: ${quest.name}.${got.length ? ` You receive ${got.join(" and ")}.` : ""}`);
     if (quest.repeatable && quest.giver === "vendor") p.fetchOffer = this.randomFetch(p.fetchOffer);
     if (r?.opensGate && !this.state.gates.get(r.opensGate)) this.scheduleRoadClearing(r.opensGate);
+    if (quest.next && !p.quests.includes(quest.next)) this.startQuest(id, p, quest.next);
   }
 
   private randomFetch(except: string): string {
@@ -964,6 +965,7 @@ export class Game {
     if (q.repeatable) {
       if (p.fetchOffer !== questId || p.active.some((a) => getQuest(a.id)?.repeatable)) return;
     } else if (p.quests.includes(questId)) return;
+    if (q.requires && !p.quests.includes(q.requires)) return;
     this.startQuest(id, p, questId);
   }
 

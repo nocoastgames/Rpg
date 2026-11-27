@@ -822,6 +822,8 @@ export class GameClient {
       }
     });
     if (ready) return "❓ ";
+    // Nothing to offer until your campfire's built.
+    if (VILLAGE_QUEST.requires && !me.quests.includes(VILLAGE_QUEST.requires)) return "";
     const villageOpen = !me.quests.includes(VILLAGE_QUEST.id) && !me.active.some((q) => q.id === VILLAGE_QUEST.id);
     const jobOpen = !me.active.some((q) => !!getQuest(q.id)?.repeatable);
     return villageOpen || jobOpen ? "❗ " : "";

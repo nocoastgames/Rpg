@@ -11,6 +11,7 @@ import { mulberry32, randRange } from "./rng.ts";
 import {
   CAMP,
   CAMP_CLEARING_RADIUS,
+  CARAVAN_CLEARING_RADIUS,
   DUNGEON_CELL,
   dungeonSdf,
   inDungeon,
@@ -497,7 +498,7 @@ function generateChunk(world: World, cx: number, cz: number): Prop[] {
       const campDist = Math.hypot(x - campPos.x, z - campPos.z);
       const villageDist = Math.hypot(x - villagePos.x, z - villagePos.z);
       const vendorDist = Math.hypot(x - vendorPos.x, z - vendorPos.z);
-      const open = water < 1.3 || spawnDist < SPAWN_CLEARING_RADIUS || campDist < CAMP_CLEARING_RADIUS || villageDist < VILLAGE_CLEARING_RADIUS || vendorDist < 7 || trail < 2 || ruinsDist < 14 || inPass || inAlcove || nearMark;
+      const open = water < 1.3 || spawnDist < SPAWN_CLEARING_RADIUS || campDist < CAMP_CLEARING_RADIUS || villageDist < VILLAGE_CLEARING_RADIUS || vendorDist < CARAVAN_CLEARING_RADIUS || trail < 2 || ruinsDist < 14 || inPass || inAlcove || nearMark;
 
       // Rocks: everywhere, more along the banks.
       if (roll < (water < 1.5 ? 0.08 : 0.022) && spawnDist > 3 && trail > 1.2 && ruinsDist > 12) {

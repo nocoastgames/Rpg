@@ -23,10 +23,10 @@ North is up (away from the camera); distances are walking time from where you wa
  The Thornbrake (4-5)
    Shrine of the Deep Rot
                          Shrine of the Green Mother          Shrine of the Oathshield
-                                                       Haskel   The Narrow Pass (sealed)
+                                                                The Narrow Pass (sealed)
   Shrine of the Hunger                        Ashford (2-3)        (5 min east)
                          Shrine of the Roads   ford
-                   The Clearing (camp) * you wake      Tusk Meadow (1-2)   Shrine of the Dawn
+   Haskel's caravan + your camp  * you wake    Tusk Meadow (1-2)   Shrine of the Dawn
   Shrine of the Hidden Ledger            Shrine of the Far Shore
      Unknown Ruins (sealed)
                                      Webbed Hollow (3-4, spiders; 3 min south)
@@ -34,7 +34,8 @@ North is up (away from the camera); distances are walking time from where you wa
 ```
 
 The **old road** runs from the wake-up clearing across the ford, east through
-Ashford, past Haskel's cart and up into the pass. Fainter trails lead
+Ashford and up into the pass. A path leads west from where you wake to
+Haskel's caravan, about half a minute's walk. Fainter trails lead
 south-west to the ruins and up the western valley to the cave.
 
 ## Hunting grounds
@@ -124,8 +125,8 @@ Deep Rot's stump is split by black thorns near the cave.
 
 ## The campsite
 
-The Clearing, just west of where you wake, is where you build your camp in the
-first quest. Once it's built:
+The clearing beside Haskel's caravan, west of where you wake, is where you
+build your own campfire in the Shelter quest. Once it's built:
 
 - **Rest by the fire** (interact). You're fully healed, your resource is
   restored and status effects are cured. You become **Well Rested** (+15%
@@ -139,18 +140,32 @@ The camp belongs to the world, not one player: once anyone builds it, everyone
 in that world can rest there. Players who haven't done the quest yet still
 finish it by adding their supplies to the camp.
 
-## First quest: Shelter
+## First quest: Voices in the Distance
 
-About ten minutes for a new player. Gathering spots glint and are marked on
+You wake on the stream bank with no memory, and hear voices somewhere to the
+west. The tracker and map arrow just say "The voices" (you haven't met anyone
+yet).
+
+| Step | Task | Reward |
+| --- | --- | --- |
+| 1. Follow the voices | Walk west (about 170 m) until you find the caravan | 30 XP |
+| 2. The peddler | Talk to the grey-bearded man by the cart | 30 XP |
+
+Haskel tells you you're welcome to stay near the caravan, but there's no wood
+to spare: you must build your own campfire. **Shelter** starts at once.
+
+## Second quest: Shelter
+
+From Haskel. About ten minutes for a new player. Gathering spots glint and are marked on
 your map while you need them; the tracker (top left) shows the step and your
 progress.
 
 | Step | Task | Reward |
 | --- | --- | --- |
-| 1. Firewood | Gather 8 bundles of dry branches from the deadfall in the woods around the clearing (1.5 s each) | 40 XP |
+| 1. Firewood | Gather 8 bundles of dry branches from the deadfall in the woods around the caravan (1.5 s each) | 40 XP |
 | 2. A ring of stones | Collect 6 smooth stones from the stream banks (1.5 s each) | 50 XP |
 | 3. Hides | Hunt boars in Tusk Meadow for 4 good hides (nearly a third of hides come out torn and useless) | 80 XP |
-| 4. Make camp | Return to the clearing and build the camp (4 s) | 120 XP |
+| 4. Make camp | Return to the clearing beside the caravan and build your campfire (4 s) | 120 XP |
 
 Gathering and building are timed actions with a progress bar. Moving,
 attacking or being hit interrupts them. Quest rewards aren't boosted by Well
@@ -158,10 +173,13 @@ Rested or background bonuses.
 
 ## Haskel the Peddler
 
-A traveling merchant camped by the old signpost on the road to the pass. A
-rockfall buried the road behind his cart; everyone is stuck in the valley
-until the kingdom beyond digs it out. He used to trade with **Ashford**, a
-farming village down the old west road, and found it overrun by the dead.
+A traveling merchant. A rockfall buried the pass road behind his cart, so he
+pulled back to a sheltered clearing west of the stream to wait, with four
+other stranded travellers; everyone is stuck in the valley until the kingdom
+beyond digs the road out. He used to trade with **Ashford**, a farming
+village on the old road east of the ford, and found it overrun by the dead.
+Until your campfire is built he only talks about that; afterwards he asks
+you to find out what happened in Ashford.
 
 Talk to him (interact) to open his window:
 
@@ -262,9 +280,9 @@ lists:
 You follow the story quest you're on unless you pick another; the choice is
 remembered on this device.
 
-## Second quest: The Silent Village
+## Third quest: The Silent Village
 
-From Haskel. About twenty minutes; the village's dead are level 2–3 and the
+From Haskel, once your campfire is built. About twenty minutes; the village's dead are level 2–3 and the
 Hollow Priest is a level 4 boss.
 
 | Step | Task | Reward |
@@ -316,6 +334,6 @@ crypt and it rises again for you.
 | `/tp camp`, `/tp shrine_<god>`, `/tp tusk_meadow` (any zone id) | Teleport |
 | `/tp vendor`, `/tp village`, `/tp crypt` | Teleport to Haskel, Ashford, the crypt |
 | `/step [quest]` | Finish the current step of a quest (default: your first active one) |
-| `/quest make_camp`, `/quest silent_village` | Start (if needed) and finish a whole quest |
+| `/quest voices`, `/quest make_camp`, `/quest silent_village` | Start (if needed) and finish a whole quest |
 | `/coins <n>` | Set your coins |
 | `/near <creature>` | Teleport next to the nearest creature of a kind (`skeleton`, `risen`, `wolf`…) |

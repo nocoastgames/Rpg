@@ -56,6 +56,12 @@ function nearestZoneFor(enemies: readonly string[], x: number, z: number): ZoneD
 
 /** Where step `stepIndex` of a quest sends you, or null if it points nowhere in particular. */
 export function questTarget(questId: string, stepIndex: number, ctx: QuestTargetContext): QuestTarget | null {
+  const t = rawTarget(questId, stepIndex, ctx);
+  const where = getQuest(questId)?.steps[stepIndex]?.where;
+  return t && where ? { ...t, label: where } : t;
+}
+
+function rawTarget(questId: string, stepIndex: number, ctx: QuestTargetContext): QuestTarget | null {
   const quest = getQuest(questId);
   const step = quest?.steps[stepIndex];
   if (!quest || !step) return null;

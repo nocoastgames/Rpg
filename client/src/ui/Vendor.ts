@@ -88,8 +88,10 @@ export class VendorPanel {
     const say = (text: string) => out.push(h("p.vendor-line", null, text));
     const village = p.active.find((q) => q.id === VILLAGE_QUEST.id);
     const done = p.quests.includes(VILLAGE_QUEST.id);
+    const campDone = p.quests.includes(VILLAGE_QUEST.requires ?? "");
     if (done) say(VENDOR_LINES.after);
     else if (village) say(VENDOR_LINES.during);
+    else if (!campDone) VENDOR_LINES.welcome.forEach(say);
     else {
       VENDOR_LINES.intro.forEach(say);
       say(VENDOR_LINES.ask);

@@ -191,8 +191,11 @@ screen to run full-screen (it ships a web app manifest).
     draughts heal at once in it, and raw meat cooks at the camp fire.
   - **No map until you find one**: the map fills in as you explore, or buy
     Haskel's.
-  - **A campsite** you build in the first quest, *Shelter* (gather firewood
-    and river stones, hunt boars for hides, make camp; about ten minutes).
+  - **An opening that leads you in**: you wake alone by the stream and follow
+    voices west to Haskel's caravan (*Voices in the Distance*). He lets you
+    stay near, but you must build **your own campfire** beside it (*Shelter*:
+    gather firewood and river stones, hunt boars for hides, make camp; about
+    ten minutes).
     Resting there heals you, makes you Well Rested (+15% XP) and brings every
     hunting ground back to full strength. You respawn at the camp once it's
     built.
