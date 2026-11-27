@@ -6,9 +6,15 @@
 | --- | --- | --- | --- |
 | [KayKit Character Pack: Adventurers 1.0](https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0) | Kay Lousberg ([kaylousberg.com](https://www.kaylousberg.com)) | Players, Haskel, the camp's travellers, the King's guards; swords, daggers, wands, staves, hats, helm, hood, capes | CC0 |
 | [KayKit Character Pack: Skeletons 1.0](https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0) | Kay Lousberg | Ashford's undead (skeletons, the risen, Old Corwin, the Hollow Priest) and the shared animation set | CC0 |
+| [Ultimate Animated Animal Pack](https://quaternius.com/packs/ultimateanimatedanimals.html) | Quaternius | Wolves and Greyjaw, red deer, old stags (and wolf and hound pets) | CC0 |
+| [Easy Enemy Pack](https://quaternius.com/packs/easyenemy.html) | Quaternius | Hollow spiders, giant rats, bristle wasps, black adders, bog toads | CC0 |
 
-Both are CC0 (no attribution required); they're credited here anyway. The
-packs are on GitHub, so they download from the cloud dev environment too.
+All are CC0 (no attribution required); they're credited here anyway. The
+KayKit packs are on GitHub. Quaternius publishes through itch.io, which the
+cloud dev environment can't reach, so the creatures come from
+[trebeljahr/quaternius-showcase](https://github.com/trebeljahr/quaternius-showcase),
+a fan-made viewer that redistributes the unmodified .glb files (its
+`LICENSES.md` lists every pack as CC0 upstream).
 
 `scripts/build-models.ts` turns them into what's in
 `client/public/assets/models/kaykit/` (about 4 MB in all, down from ~37 MB):
@@ -19,8 +25,20 @@ source file carries the same ~3 MB of clips), the skeletons' weapons as
 ```bash
 git clone --depth 1 https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0 /tmp/kk-adv
 git clone --depth 1 https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0 /tmp/kk-skel
-node --experimental-strip-types scripts/build-models.ts /tmp/kk-adv /tmp/kk-skel
+# The creatures (only the .glb files needed are fetched):
+git clone --depth 1 --filter=blob:none --no-checkout https://github.com/trebeljahr/quaternius-showcase /tmp/qs
+git -C /tmp/qs checkout HEAD -- public/glb/animals_pack public/glb/easy_enemies_pack
+node --experimental-strip-types scripts/build-models.ts /tmp/kk-adv /tmp/kk-skel /tmp/qs/public/glb
 ```
+
+The creatures go to `client/public/assets/models/quaternius/` (about 3.5 MB):
+each is scaled to a length in metres when it loads (`client/src/scene/Creatures.ts`),
+plays its own idle, walk/run, attack and death clips, and is tinted where a
+kind reuses a model (Greyjaw is a big dark wolf; pets take their own colour).
+Creatures without a model (boars, hares, thornlings) stay procedural.
+
+**Model gallery:** open the game with `?gallery` to see every creature and
+person side by side, animated (click to cycle idle, walk, attack, dead).
 
 How the game uses them (`client/src/scene/KayKit.ts`, `KitAvatars.ts`):
 

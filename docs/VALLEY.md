@@ -42,13 +42,16 @@ south-west to the ruins and up the western valley to the cave.
 
 | Zone | Levels | Creatures | Status effect | Where |
 | --- | --- | --- | --- | --- |
-| Tusk Meadow | 1–2 | Tusked boars, wild hares | none | Open grassland east of the ford, a minute from the clearing |
+| Tusk Meadow | 1–2 | Tusked boars, wild hares, bristle wasps | Wasps poison (15% of stings) | Open grassland east of the ford, a minute from the clearing |
 | Greypine Wood | 2–3 | Grey wolves, hares; Greyjaw (named, level 2) at the wolves' den on its south edge | Bleeding (20% of hits): 3 damage a second for 5 s | The dense pine forest filling the north |
-| Ashford (the village) | 2–3 | Risen villagers, skeletons; Old Corwin the Gravedigger (named, level 3); the Hollow Priest (boss, level 4) | none (the Priest's blast blights) | On the old road, east of the ford |
+| Ashford (the village) | 2–3 | Risen villagers, skeletons, giant rats; Old Corwin the Gravedigger (named, level 3); the Hollow Priest (boss, level 4) | none (the Priest's blast blights) | On the old road, east of the ford |
+| The Reedbeds | 2–3 | Black adders, bog toads | Adders poison (35% of bites) | Along the stream around the Drowned Mill, south of where you wake |
 | Webbed Hollow | 3–4 | Hollow spiders | Poisoned (35%): 2 damage a second for 8 s | The south, toward the gorge |
 | The Thornbrake | 4–5 | Thornlings | Blighted (25%): you deal 25% less damage for 10 s | The far north-west, in front of the cave |
 
-Wild hares live everywhere else in the valley.
+Wild hares, red deer and old stags roam everywhere else in the valley. Deer
+and stags never fight back; they drop venison (cook it at the fire for Roast
+Venison, 60% health), hides and antlers to sell.
 
 - **Spread out.** Every creature keeps its distance from the others (30–40 m
   in the wild, 8 m inside Ashford), and aggro ranges are short (6–8 m), so you
@@ -119,6 +122,33 @@ level 2, 799 to level 3, 1,271 to level 4, 1,774 to level 5):
 
 A test (`pacing` in `shared/test/valley.test.ts`) checks these against the
 fewest and most kills each quest is likely to take.
+
+## Valley lore
+
+Nine old places around the valley tell its story, each in its own voice: a
+miller's ledger, soldiers' carvings, a hermit's journal, a warning on a
+stake. Walk up and interact to read. The first time:
+
+- it's written into the **Valley lore** section of your quest diary
+  (re-read it there any time; the diary counts how many you've found);
+- you get 25 experience;
+- you learn of one god's **epic quest** (each site tells of a different
+  god, so finding all nine names every epic quest).
+
+| Site | Where | Tells of |
+| --- | --- | --- |
+| The Drowned Mill | On the stream, among the Reedbeds, south of where you wake | Mirevel |
+| The Old Watchtower | On a rise beside the road to Ashford | Valdris |
+| The Eight Stones | A stone ring in the open meadows of the west | The Green Mother |
+| The Barrow of the River's Dead | A grassy mound in the south-west, toward the ruins | The Grey Ferryman |
+| The Hermit's Hut | Deep in Greypine Wood | Solenne |
+| The Blackened Field | Dead ground near the Thornbrake | The Rot Below |
+| The Broken Waystone | On the old road between the ford and Ashford | Orren |
+| The Giant's Ribs | A hillside in the far east | Kaelthar |
+| The Glass Hollow | A crater of green glass in the north-east woods | The Veiled One |
+
+The lore is Act I lore: folk tales, grumbling and rumour. Read closely, it
+hints at what's really going on (see [WORLD.md](WORLD.md), spoilers).
 
 ## Shrines
 
@@ -392,4 +422,5 @@ door stays open, and once the thorns are burned they stay burned.
 | `/quest voices`, `/quest make_camp`, `/quest grey_pack`, `/quest silent_village` | Start (if needed) and finish a whole quest |
 | `/tp wolf_den`, `/tp crypt_stairs`, `/tp crypt_thorns` | Teleport to Greyjaw's den, into the crypt, to the thorn chamber |
 | `/coins <n>` | Set your coins |
-| `/near <creature>` | Teleport next to the nearest creature of a kind (`skeleton`, `risen`, `wolf`…) |
+| `/near <creature>` | Teleport next to the nearest creature of a kind (`skeleton`, `risen`, `wolf`, `deer`…) |
+| `/tp drowned_mill` (any lore site id) | Teleport to a lore site |

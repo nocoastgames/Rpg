@@ -1,4 +1,4 @@
-import { FAITHS, getItem, getQuest, loreFlag, type QuestDef } from "@rpg/shared";
+import { FAITHS, LORE_SITES, getItem, getQuest, loreFlag, loreReadFlag, type QuestDef } from "@rpg/shared";
 import type { PlayerView } from "../types.ts";
 import { h } from "./dom.ts";
 
@@ -62,7 +62,8 @@ export class QuestDiary {
     const rumours = FAITHS.filter((f) => f.favorQuest && p.quests.includes(loreFlag(f.id)) && !p.quests.includes(f.favorQuest.id));
 
     const ids = [...active, ...done].map((q) => q.id);
-    if (!ids.includes(this.selected) && !this.selected.startsWith("rumour:")) this.selected = tracked && ids.includes(tracked) ? tracked : (ids[0] ?? "");
+    const lore = LORE_SITES.filter((l) => p.quests.includes(loreReadFlag(l.id)));
+    if (!ids.includes(this.selected) && !this.selected.startsWith("rumour:") && !this.selected.startsWith("lore:")) this.selected = tracked && ids.includes(tracked) ? tracked : (ids[0] ?? "");
 
     const entry = (id: string, name: string, sub: string, cls = "") =>
       h(
@@ -85,11 +86,19 @@ export class QuestDiary {
       listChildren.push(h("div.panel-sub", null, "Rumours"));
       for (const f of rumours) listChildren.push(entry(`rumour:${f.id}`, f.favorQuest!.name, `An epic quest of ${f.name}`, ".rumour"));
     }
+    listChildren.push(h("div.panel-sub", null, `Valley lore (${lore.length}/${LORE_SITES.length})`));
+    if (!lore.length) listChildren.push(h("div.diary-empty", null, "Old places have stories. Stop and look."));
+    for (const l of lore) listChildren.push(entry(`lore:${l.id}`, l.title, l.name, ".lore"));
     this.list.replaceChildren(...listChildren);
     this.page.replaceChildren(...this.pageFor(p, tracked));
   }
 
   private pageFor(p: PlayerView, tracked: string): HTMLElement[] {
+    if (this.selected.startsWith("lore:")) {
+      const l = LORE_SITES.find((s) => `lore:${s.id}` === this.selected);
+      if (!l) return [];
+      return [h("h3.diary-title", null, l.title), h("p.diary-note", null, l.name), ...l.text.map((t) => h("p.diary-lore", null, t))];
+    }
     if (this.selected.startsWith("rumour:")) {
       const f = FAITHS.find((g) => `rumour:${g.id}` === this.selected);
       if (!f?.favorQuest) return [];

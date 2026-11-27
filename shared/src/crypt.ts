@@ -71,4 +71,6 @@ export const CRYPT_SPAWNS: ReadonlyArray<{ kind: string; level: number; lx: numb
   { kind: "risen", level: 3, lx: 16.5, lz: 18 },
   { kind: "risen", level: 3, lx: 25.5, lz: 23 },
   { kind: "skeleton", level: 4, lx: 21, lz: 22.5 },
+  { kind: "giant_rat", level: 3, lx: 33, lz: 20 },
+  { kind: "giant_rat", level: 3, lx: 10, lz: 0 },
 ];

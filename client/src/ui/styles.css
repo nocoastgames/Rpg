@@ -2367,3 +2367,12 @@ body[data-input="gamepad"] .interact-hint {
     overflow: visible;
   }
 }
+
+.diary-lore {
+  margin: 0 0 8px;
+  line-height: 1.45;
+  font-size: 0.9rem;
+}
+.diary-entry.lore .diary-entry-name {
+  color: #c8b890;
+}

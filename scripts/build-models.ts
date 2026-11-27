@@ -9,15 +9,19 @@
  * Every KayKit character uses the same skeleton, so any clip plays on any
  * character, and parts (heads, hats, capes) can be swapped between them.
  *
+ * - creatures from Quaternius's Ultimate Animated Animal and Easy Enemy packs
+ *   (CC0) into ../quaternius/, if a third directory is given (the
+ *   `public/glb` folder of github.com/trebeljahr/quaternius-showcase).
+ *
  * Usage (after cloning the two packs from github.com/KayKit-Game-Assets):
- *   node --experimental-strip-types scripts/build-models.ts <adventurers-pack-dir> <skeletons-pack-dir>
+ *   node --experimental-strip-types scripts/build-models.ts <adventurers-pack-dir> <skeletons-pack-dir> [quaternius-glb-dir]
  */
 import { mkdirSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { NodeIO, type Animation, type Document } from "@gltf-transform/core";
 import { dedup, prune, resample } from "@gltf-transform/functions";
 
-const [advDir, skelDir] = process.argv.slice(2);
+const [advDir, skelDir, quatDir] = process.argv.slice(2);
 if (!advDir || !skelDir) {
   console.error("usage: build-models.ts <kaykit-character-pack-adventures-1.0> <kaykit-character-pack-skeletons-1.0>");
   process.exit(1);
@@ -108,3 +112,18 @@ const missing = CLIPS.filter((c) => !anim.getRoot().listAnimations().some((a) =>
 if (missing.length) console.warn("missing clips:", missing.join(", "));
 await anim.transform(resample());
 await finish(anim, "animations.glb");
+
+// Creatures: Quaternius animals and easy enemies, animations kept (each has its own few clips).
+if (quatDir) {
+  const out = new URL("../client/public/assets/models/quaternius/", import.meta.url).pathname;
+  mkdirSync(out, { recursive: true });
+  const CREATURES = ["animals_pack/Wolf", "animals_pack/Deer", "animals_pack/Stag", "easy_enemies_pack/Spider", "easy_enemies_pack/Rat", "easy_enemies_pack/Wasp", "easy_enemies_pack/Snake_angry", "easy_enemies_pack/Frog"];
+  for (const c of CREATURES) {
+    const doc = await io.read(join(quatDir, `${c}.glb`));
+    await doc.transform(resample(), prune(), dedup());
+    const file = `${c.split("/")[1]}.glb`;
+    await io.write(join(out, file), doc);
+    console.log(`quaternius/${file}: ${(statSync(join(out, file)).size / 1024).toFixed(0)} KB`);
+  }
+}
+

@@ -8,12 +8,15 @@
  */
 import { PLAYER_RADIUS, WATER_INTERACT_RANGE, WORLD_HALF } from "./constants.ts";
 import { CRYPT_ORIGIN, cryptPoint, cryptSdf, inCrypt } from "./crypt.ts";
+import { LORE_SITES, type LoreSiteKind } from "./lore.ts";
 import { mulberry32, randRange } from "./rng.ts";
 import {
   CAMP,
   CAMP_CLEARING_RADIUS,
   CARAVAN_CLEARING_RADIUS,
   WOLF_DEN,
+  LORE_CLEARING,
+  loreSitePosition,
   DUNGEON_CELL,
   dungeonSdf,
   inDungeon,
@@ -94,6 +97,8 @@ export type StructureKind =
   | "crypt_dungeon"
   /** Greyjaw's den in Greypine Wood. */
   | "wolf_den"
+  /** The valley's lore sites (lore.ts). */
+  | LoreSiteKind
   /** Ashford's buildings and yard (see VILLAGE_PIECES). */
   | VillagePieceKind;
 
@@ -364,6 +369,19 @@ function buildStructures(): { structures: Structure[]; colliders: Collider[] } {
     }
   }
 
+  // The lore sites. Most are solid in the middle; the stone ring and the giant's ribs are solid at their stones.
+  for (const site of LORE_SITES) {
+    const p = loreSitePosition(site);
+    add({ kind: site.kind, ...p, rotation: site.rotation, scale: 1 }, site.radius || undefined);
+    const local = (lx: number, lz: number) => ({ x: p.x + lx * Math.cos(site.rotation) + lz * Math.sin(site.rotation), z: p.z - lx * Math.sin(site.rotation) + lz * Math.cos(site.rotation) });
+    if (site.kind === "standing_stones") {
+      for (let i = 0; i < 8; i++) colliders.push({ ...local(Math.cos((i / 8) * Math.PI * 2) * 4.5, Math.sin((i / 8) * Math.PI * 2) * 4.5), r: 0.55 });
+    }
+    if (site.kind === "giant_ribs") {
+      for (let i = 0; i < 5; i++) for (const side of [-1, 1]) colliders.push({ ...local(side * 3.2, -5 + i * 2.5), r: 0.45 });
+    }
+  }
+
   // The wolves' den in Greypine Wood: a root hollow and rocks.
   const den = fromUV(WOLF_DEN.u, WOLF_DEN.v);
   add({ kind: "wolf_den", ...den, rotation: 0.3, scale: 1 }, 1.4);
@@ -462,6 +480,9 @@ export function chunkProps(world: World, cx: number, cz: number): Prop[] {
   return props;
 }
 
+/** Lore sites and the open ground each needs. */
+const LORE_POSITIONS = LORE_SITES.map((s) => ({ ...loreSitePosition(s), r: LORE_CLEARING[s.kind] }));
+
 function generateChunk(world: World, cx: number, cz: number): Prop[] {
   const seed = world.seed;
   const props: Prop[] = [];
@@ -516,7 +537,8 @@ function generateChunk(world: World, cx: number, cz: number): Prop[] {
       const campDist = Math.hypot(x - campPos.x, z - campPos.z);
       const villageDist = Math.hypot(x - villagePos.x, z - villagePos.z);
       const vendorDist = Math.hypot(x - vendorPos.x, z - vendorPos.z);
-      const open = water < 1.3 || spawnDist < SPAWN_CLEARING_RADIUS || campDist < CAMP_CLEARING_RADIUS || villageDist < VILLAGE_CLEARING_RADIUS || vendorDist < CARAVAN_CLEARING_RADIUS || trail < 2 || ruinsDist < 14 || inPass || inAlcove || nearMark;
+      const nearLore = LORE_POSITIONS.some((l) => Math.abs(x - l.x) < l.r && Math.abs(z - l.z) < l.r && Math.hypot(x - l.x, z - l.z) < l.r);
+      const open = water < 1.3 || spawnDist < SPAWN_CLEARING_RADIUS || campDist < CAMP_CLEARING_RADIUS || villageDist < VILLAGE_CLEARING_RADIUS || vendorDist < CARAVAN_CLEARING_RADIUS || nearLore || trail < 2 || ruinsDist < 14 || inPass || inAlcove || nearMark;
 
       // Rocks: everywhere, more along the banks.
       if (roll < (water < 1.5 ? 0.08 : 0.022) && spawnDist > 3 && trail > 1.2 && ruinsDist > 12) {

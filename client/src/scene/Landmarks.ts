@@ -411,6 +411,17 @@ export class Landmarks {
       case "wolf_den":
         this.buildWolfDen(g, rng);
         break;
+      case "drowned_mill":
+      case "watchtower":
+      case "standing_stones":
+      case "barrow":
+      case "hermit_hut":
+      case "blackened_field":
+      case "waystone":
+      case "giant_ribs":
+      case "glass_hollow":
+        buildLoreSite(g, s.kind, rng);
+        break;
       default:
         return null;
     }
@@ -896,3 +907,162 @@ export class Landmarks {
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Lore sites (shared/src/lore.ts). Local +z is the front, where you stand to read.
+// ---------------------------------------------------------------------------
+
+const WOOD = "#6b4e33";
+const WOOD_DARK = "#4a3826";
+const THATCH = "#8a7a48";
+
+function buildLoreSite(g: THREE.Group, kind: string, rng: () => number): void {
+  const add = (geo: THREE.BufferGeometry, color: string, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0, emissive?: string) => {
+    const m = mesh(geo, mat(color, emissive), x, y, z);
+    m.rotation.set(rx, ry, rz);
+    g.add(m);
+    return m;
+  };
+  const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
+  switch (kind) {
+    case "drowned_mill": {
+      // Stone footing, timber walls leaning, half a roof, and the wheel in the stream behind.
+      add(box(5.2, 1.1, 4.4), STONE_DARK, 0, 0.45, 0);
+      add(box(4.4, 2.6, 3.6), WOOD, 0, 2.2, 0, 0, 0, 0.04);
+      add(box(1.0, 1.8, 0.1), "#1a1410", 0.6, 1.9, 1.82);
+      const roof = add(box(4.8, 0.15, 2.6), THATCH, 0, 3.9, 0.85, 0.55, 0, 0);
+      roof.scale.x = 1;
+      add(box(3.2, 0.15, 2.6), THATCH, -0.8, 3.7, -0.9, -0.6, 0, 0.1);
+      // Broken rafters where the rest of the roof fell in.
+      for (let i = 0; i < 3; i++) add(box(0.12, 0.12, 2.4), WOOD_DARK, 1.0 + i * 0.5, 3.75, -0.9, -0.6, 0, 0);
+      const wheel = new THREE.Group();
+      wheel.add(mesh(new THREE.TorusGeometry(1.7, 0.12, 6, 18), mat(WOOD_DARK)));
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2;
+        const paddle = mesh(box(0.5, 0.08, 0.55), mat(WOOD), Math.cos(a) * 1.7, Math.sin(a) * 1.7, 0);
+        paddle.rotation.z = a;
+        wheel.add(paddle);
+        const spoke = mesh(box(0.08, 1.7, 0.08), mat(WOOD_DARK), Math.cos(a) * 0.85, Math.sin(a) * 0.85, 0);
+        spoke.rotation.z = a + Math.PI / 2;
+        wheel.add(spoke);
+      }
+      wheel.position.set(1.2, 1.2, -3.1);
+      wheel.rotation.set(0, Math.PI / 2, 0.25);
+      g.add(wheel);
+      for (let i = 0; i < 14; i++) add(new THREE.CylinderGeometry(0.02, 0.03, 0.9 + rng() * 0.6, 4), "#7a8a4a", (rng() - 0.5) * 6, 0.5, -2.2 + (rng() - 0.5) * 1.6, (rng() - 0.5) * 0.3, 0, (rng() - 0.5) * 0.3);
+      break;
+    }
+    case "watchtower": {
+      // A round stone tower, broken off unevenly, with its door facing the road.
+      add(new THREE.CylinderGeometry(1.9, 2.1, 5.5, 12), STONE, 0, 2.75, 0);
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const h = 0.4 + rng() * 1.4;
+        if (rng() < 0.3) continue;
+        add(box(0.7, h, 0.5), STONE, Math.cos(a) * 1.75, 5.5 + h / 2, Math.sin(a) * 1.75, 0, -a, 0);
+      }
+      add(box(0.9, 1.9, 0.2), "#1a1410", 0, 0.95, 1.98);
+      add(box(1.2, 0.18, 0.3), STONE_DARK, 0, 2.0, 2.0);
+      for (let i = 0; i < 6; i++) add(new THREE.DodecahedronGeometry(0.35 + rng() * 0.3, 0), STONE_DARK, -1.5 + rng() * 3, 0.25, -2.6 + rng() * 1.2, rng(), rng(), rng());
+      // Arrow slits.
+      for (const y of [2.6, 4.2]) add(box(0.12, 0.7, 0.1), "#1a1410", 1.2, y, 1.5, 0, 0.7, 0);
+      break;
+    }
+    case "standing_stones": {
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const stone = add(box(0.9, 2.2 + rng() * 0.5, 0.55), "#8a8680", Math.cos(a) * 4.5, 1.1, Math.sin(a) * 4.5, 0, -a + Math.PI / 2, (rng() - 0.5) * 0.08);
+        // The inside face, unweathered.
+        const face = mesh(box(0.8, 2.0, 0.02), mat("#b8b4ac"), 0, 0, 0.29);
+        stone.add(face);
+        if (i % 3 === 0) stone.add(mesh(box(0.3, 0.4, 0.02), mat(["#a83a2a", "#3a6aa8", "#c8a040"][i % 3]!), 0.2, -0.2, -0.29));
+      }
+      add(new THREE.CylinderGeometry(1.1, 1.2, 0.25, 8), "#8a8680", 0, 0.12, 0);
+      break;
+    }
+    case "barrow": {
+      const mound = add(new THREE.SphereGeometry(4, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), "#5e7a3e", 0, -0.4, -0.6);
+      mound.scale.set(1.25, 0.6, 1.6);
+      // The door: two uprights, a lintel, and a slab sealed with clay.
+      add(box(0.5, 2.0, 0.6), STONE, -1.0, 1.0, 3.6);
+      add(box(0.5, 2.0, 0.6), STONE, 1.0, 1.0, 3.6);
+      add(box(2.7, 0.5, 0.7), STONE, 0, 2.2, 3.6);
+      add(box(1.5, 1.9, 0.25), "#9a958a", 0, 0.95, 3.75);
+      for (let i = 0; i < 5; i++) add(new THREE.CylinderGeometry(0.06, 0.06, 0.02, 8), "#c8a040", -0.5 + i * 0.25, 1.3 + (i % 2) * 0.15, 3.9, Math.PI / 2);
+      break;
+    }
+    case "hermit_hut": {
+      add(box(3.0, 2.1, 3.0), WOOD, 0, 1.05, 0);
+      const roof = add(new THREE.ConeGeometry(2.6, 1.8, 4), THATCH, 0, 3.0, 0, 0, Math.PI / 4, 0);
+      roof.scale.y = 1;
+      add(box(0.9, 1.7, 0.1), "#1a1410", 0, 0.85, 1.52);
+      add(box(0.45, 1.6, 0.45), STONE_DARK, 1.0, 3.2, -0.8);
+      // Woodpile, a stool, herbs drying on a rack.
+      for (let i = 0; i < 6; i++) add(new THREE.CylinderGeometry(0.1, 0.1, 0.9, 5), WOOD_DARK, -2.0, 0.12 + Math.floor(i / 3) * 0.2, -0.6 + (i % 3) * 0.22, 0, 0, Math.PI / 2);
+      add(new THREE.CylinderGeometry(0.22, 0.22, 0.45, 6), WOOD_DARK, 1.2, 0.22, 2.2);
+      add(box(1.4, 0.06, 0.06), WOOD_DARK, -0.6, 1.8, 1.65);
+      for (let i = 0; i < 5; i++) add(box(0.12, 0.35, 0.06), "#7a8a4a", -1.1 + i * 0.25, 1.6, 1.68);
+      break;
+    }
+    case "blackened_field": {
+      // Patches of black, glassy earth rather than one disc.
+      for (let i = 0; i < 9; i++) {
+        const a = rng() * Math.PI * 2;
+        const r = i === 0 ? 0 : 3 + rng() * 5;
+        const patch = new THREE.Mesh(new THREE.CircleGeometry(2.2 + rng() * 2.6, 9), mat(i % 2 ? "#3a332a" : "#2c2722"));
+        patch.rotation.x = -Math.PI / 2;
+        patch.rotation.z = rng() * 3;
+        patch.position.set(Math.cos(a) * r, 0.04 + i * 0.002, Math.sin(a) * r);
+        patch.scale.y = 0.6 + rng() * 0.5;
+        patch.receiveShadow = true;
+        g.add(patch);
+      }
+      for (let i = 0; i < 46; i++) {
+        const a = rng() * Math.PI * 2;
+        const r = 2 + rng() * 8.5;
+        const h = 0.3 + rng() * 1.3;
+        add(new THREE.ConeGeometry(0.06 + rng() * 0.08, h, 4), rng() < 0.2 ? "#5a1a2e" : "#1c1424", Math.cos(a) * r, h / 2, Math.sin(a) * r, (rng() - 0.5) * 0.6, rng() * 3, (rng() - 0.5) * 0.6);
+      }
+      // The warning board on its stake.
+      add(new THREE.CylinderGeometry(0.06, 0.07, 1.6, 5), WOOD_DARK, 0, 0.8, 0);
+      add(box(1.1, 0.6, 0.06), WOOD, 0, 1.35, 0.06, 0, 0, 0.06);
+      break;
+    }
+    case "waystone": {
+      add(box(0.55, 1.15, 0.38), "#8a8680", 0, 0.57, 0);
+      add(box(0.55, 1.0, 0.38), "#8a8680", 0.35, 0.55, -0.55, 0.9, 0.3, 0.2);
+      add(new THREE.TorusGeometry(0.08, 0.02, 4, 8), "#b08a40", 0, 0.95, 0.21, 0, 0, 0, "#3a2a10");
+      for (let i = 0; i < 4; i++) add(box(0.32, 0.04, 0.01), "#4a4640", 0, 0.35 + i * 0.16, 0.2);
+      break;
+    }
+    case "giant_ribs": {
+      // Pale ribs as straight as rulers, arching out of the ground, smaller toward the ends.
+      const bone = "#d8d2c2";
+      for (let i = 0; i < 5; i++) {
+        const z = -5 + i * 2.5;
+        const k = 1 - Math.abs(i - 2) * 0.18;
+        for (const side of [-1, 1]) add(box(0.45, 5.2 * k, 0.45), bone, side * 3.2 * k, 2.3 * k, z, 0, 0, side * 0.42);
+      }
+      add(box(0.6, 0.6, 12), bone, 0, 0.2, 0, 0.05, 0, 0);
+      // The red hand on the biggest rib.
+      add(box(0.02, 0.45, 0.35), "#a82a1a", 3.0, 1.6, 0.0, 0, 0, 0.42);
+      break;
+    }
+    case "glass_hollow": {
+      const rim = add(new THREE.TorusGeometry(8.5, 1.6, 6, 28), "#6a5a44", 0, -0.6, 0, Math.PI / 2);
+      rim.scale.z = 0.5;
+      const glass = new THREE.Mesh(new THREE.CircleGeometry(7.5, 28), mat("#2e6a56", "#06241a"));
+      glass.rotation.x = -Math.PI / 2;
+      glass.position.y = 0.05;
+      g.add(glass);
+      for (let i = 0; i < 18; i++) {
+        const a = rng() * Math.PI * 2;
+        const r = rng() * 6.5;
+        add(new THREE.DodecahedronGeometry(0.2 + rng() * 0.25, 0), "#4aa07a", Math.cos(a) * r, 0.1, Math.sin(a) * r, rng(), rng(), rng(), "#0a3a2a");
+      }
+      add(box(0.35, 0.02, 0.25), "#c8d0d8", 0.8, 0.08, 0.6, 0, 0.5, 0);
+      break;
+    }
+  }
+}
+

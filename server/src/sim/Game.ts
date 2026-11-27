@@ -15,6 +15,9 @@ import {
   VENDOR,
   VENDOR_NPC,
   CRYPT_ENTRY,
+  LORE_SITES,
+  LORE_XP,
+  loreReadFlag,
   CRYPT_PRIEST,
   CRYPT_SPAWNS,
   WOLF_DEN,
@@ -605,6 +608,7 @@ export class Game {
       }
       if (l.kind === "shrine") this.pray(id, p, rt, l);
       else if (l.kind === "camp") this.useCamp(id, p, rt, l);
+      else if (l.lore) this.readLore(id, p, l.lore);
       else if (l.id === "crypt_stairs") this.leaveCrypt(id, p);
       else if (l.id === "crypt_heart") this.events.notice(id, this.state.cryptBurned ? "Ash and charred roots. Nothing stirs." : l.lockedText);
       else if (l.kind === "npc") this.events.dialog(id, l.id.startsWith("adv_") ? { npc: "vendor", tab: "party" } : { npc: l.id });
@@ -657,6 +661,23 @@ export class Game {
         ? "You go down the stone stairs. The air still smells of burnt thorns."
         : "You go down the stone stairs into the cold. Far ahead, something is singing.",
     );
+  }
+
+  /** Read one of the valley's lore sites: into the diary, a little experience, and a god's epic quest learned. */
+  private readLore(id: string, p: Player, loreId: string): void {
+    const site = LORE_SITES.find((s) => s.id === loreId);
+    if (!site) return;
+    this.events.read(id, { title: site.title, text: [...site.text] });
+    const flag = loreReadFlag(site.id);
+    if (p.quests.includes(flag)) return;
+    p.quests.push(flag);
+    this.grantXp(id, p, LORE_XP, false);
+    this.events.notice(id, `"${site.title}" is written into your diary. (+${LORE_XP} experience)`);
+    if (!p.quests.includes(loreFlag(site.reveals))) {
+      p.quests.push(loreFlag(site.reveals));
+      const god = getFaith(site.reveals);
+      if (god?.favorQuest) this.events.notice(id, `You have learned of ${god.favorQuest.name}, an epic quest of ${god.name}.`);
+    }
   }
 
   /** Back up the stairs into Ashford's chapel yard. */

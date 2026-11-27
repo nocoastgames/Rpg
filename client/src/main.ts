@@ -16,6 +16,12 @@ function loading(text: string): void {
 async function boot(): Promise<void> {
   const assets = new AssetLibrary();
   const assetsReady = assets.load();
+  if (new URLSearchParams(location.search).has("gallery")) {
+    loading("Loading models…");
+    await assetsReady;
+    (await import("./dev/Gallery.ts")).showGallery(ui, assets);
+    return;
+  }
 
   let error: string | undefined;
   let room: GameRoom | null = null;

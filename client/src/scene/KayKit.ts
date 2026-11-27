@@ -262,7 +262,7 @@ const GLB_MAGIC = 0x46546c67;
  * nothing goes through data: or blob: URLs, which some hosts' security
  * policies block.
  */
-async function loadModel(loader: GLTFLoader, dir: string, name: string): Promise<GLTF> {
+export async function loadModel(loader: GLTFLoader, dir: string, name: string): Promise<GLTF> {
   let json: GltfJson | null = null;
   let bin: Uint8Array | null = null;
   try {

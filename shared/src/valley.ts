@@ -1,3 +1,4 @@
+import { LORE_SITES, type LoreSite } from "./lore.ts";
 import { CRYPT_HEART, CRYPT_STAIRS, cryptPoint, inCrypt } from "./crypt.ts";
 import { ADVENTURERS } from "./adventurers.ts";
 
@@ -82,6 +83,33 @@ export const CAVE_ALCOVE_START = { u: -900, v: -1450 };
 export const CAVE_ALCOVE_RADIUS = 5;
 
 export const RUINS_CENTER = { u: -800, v: 1250 };
+
+/** Where a lore site stands (the Drowned Mill sits on the stream's east bank). */
+export function loreSitePosition(site: LoreSite): { x: number; z: number } {
+  const u = site.kind === "drowned_mill" ? streamU(site.v) + streamHalfWidth(site.v) + 5 : site.u;
+  return fromUV(u, site.v);
+}
+
+/** Where you stand to read a lore site: in front of it (its local +z) if it's solid, else in the middle. */
+export function loreReadingSpot(site: LoreSite): { x: number; z: number } {
+  const p = loreSitePosition(site);
+  if (!site.radius) return p;
+  const d = site.radius + 1.3;
+  return { x: p.x + Math.sin(site.rotation) * d, z: p.z + Math.cos(site.rotation) * d };
+}
+
+/** How much open ground each kind of lore site needs around it (m). */
+export const LORE_CLEARING: Record<LoreSite["kind"], number> = {
+  drowned_mill: 9,
+  watchtower: 8,
+  standing_stones: 8,
+  barrow: 9,
+  hermit_hut: 7,
+  blackened_field: 13,
+  waystone: 4,
+  giant_ribs: 10,
+  glass_hollow: 11,
+};
 
 /** The wolves' den: a hollow under the roots in the south of Greypine Wood, where Greyjaw lairs. */
 export const WOLF_DEN = { u: 200, v: -420 };
@@ -451,6 +479,8 @@ export interface LandmarkDef {
   openText?: string;
   /** Radius at which the zone-name banner appears the first time. */
   discoverRadius: number;
+  /** A lore site (see lore.ts): reading it records it in your diary. */
+  lore?: string;
 }
 
 function at(u: number, v: number) {
@@ -597,6 +627,17 @@ export function landmarks(): LandmarkDef[] {
       lockedText: "A knot of black thorns as thick as a man, pulsing faintly. The roots run down into the rock, deeper than you can see.",
       discoverRadius: 0,
     },
+    ...LORE_SITES.map((site): LandmarkDef => ({
+      id: site.id,
+      kind: "inspect",
+      name: site.name,
+      ...loreReadingSpot(site),
+      interactRadius: 2.8,
+      verb: site.verb,
+      lockedText: "",
+      discoverRadius: 20,
+      lore: site.id,
+    })),
     {
       id: "wolf_den",
       kind: "inspect",
@@ -727,13 +768,15 @@ export interface ZoneDef {
 }
 
 export const ZONES: readonly ZoneDef[] = [
-  { id: "tusk_meadow", name: "Tusk Meadow", levels: [1, 2], u: 560, v: 640, radius: 240, enemies: [{ id: "boar", weight: 3 }, { id: "hare", weight: 1 }], population: 40, spacing: 30 },
+  { id: "tusk_meadow", name: "Tusk Meadow", levels: [1, 2], u: 560, v: 640, radius: 240, enemies: [{ id: "boar", weight: 3 }, { id: "hare", weight: 1 }, { id: "wasp", weight: 0.8 }], population: 44, spacing: 28 },
   { id: "greypine_wood", name: "Greypine Wood", levels: [2, 3], u: 120, v: -800, radius: 560, enemies: [{ id: "wolf", weight: 4 }, { id: "hare", weight: 1 }], population: 70, spacing: 40 },
-  { id: "ashford", name: "Ashford", levels: [2, 3], u: VILLAGE.u, v: VILLAGE.v, radius: 26, enemies: [{ id: "risen", weight: 11 }, { id: "skeleton", weight: 9 }], population: 10, spacing: 8 },
+  { id: "ashford", name: "Ashford", levels: [2, 3], u: VILLAGE.u, v: VILLAGE.v, radius: 26, enemies: [{ id: "risen", weight: 11 }, { id: "skeleton", weight: 9 }, { id: "giant_rat", weight: 3 }], population: 11, spacing: 8 },
+  // The reeds around the Drowned Mill, where the stream ran black.
+  { id: "reedbeds", name: "The Reedbeds", levels: [2, 3], u: streamU(1120), v: 1120, radius: 130, enemies: [{ id: "adder", weight: 2 }, { id: "bog_toad", weight: 2 }], population: 16, spacing: 22 },
   { id: "webbed_hollow", name: "Webbed Hollow", levels: [3, 4], u: 260, v: 1700, radius: 420, enemies: [{ id: "spider", weight: 1 }], population: 55, spacing: 42, pack: { size: [2, 3], minLevel: 4 } },
   { id: "thornbrake", name: "The Thornbrake", levels: [4, 5], u: -860, v: -1250, radius: 340, enemies: [{ id: "thornling", weight: 1 }], population: 42, spacing: 45, pack: { size: [2, 3], minLevel: 4 } },
   // Hares everywhere else.
-  { id: "valley_wilds", name: "The Unknown Forest", levels: [1, 1], u: 0, v: 0, radius: 2600, enemies: [{ id: "hare", weight: 1 }], population: 50, spacing: 60, ambient: true },
+  { id: "valley_wilds", name: "The Unknown Forest", levels: [1, 1], u: 0, v: 0, radius: 2600, enemies: [{ id: "hare", weight: 1 }, { id: "deer", weight: 0.45 }, { id: "stag", weight: 0.15 }], population: 60, spacing: 55, ambient: true },
 ];
 
 /** The named hunting ground at a point (wildlife-only areas don't count). */

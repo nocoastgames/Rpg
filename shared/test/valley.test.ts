@@ -253,3 +253,22 @@ test("pacing: level 2 as Shelter is finished, level 3 as Teeth in the Pines is",
   const atPriest = questXp(SILENT_VILLAGE, toPriest) + kills;
   assert.ok(atPriest >= xpForNextLevel(3), `level 4 before the Hollow Priest (${atPriest} >= ${xpForNextLevel(3)})`);
 });
+
+import { LORE_SITES, FAITHS as GODS, loreReadingSpot, loreSitePosition } from "../src/index.ts";
+
+test("valley lore: nine sites, one per god, each readable from open ground and apart from the rest", () => {
+  const w = generateWorld(1337);
+  const gods = GODS.filter((f) => f.favorQuest).map((f) => f.id).sort();
+  assert.deepEqual(LORE_SITES.map((l) => l.reveals).sort(), gods, "each god's epic quest is told somewhere");
+  for (const site of LORE_SITES) {
+    const spot = loreReadingSpot(site);
+    assert.ok(isFree(w, spot.x, spot.z, 0.5), `${site.id}: room to stand and read`);
+    assert.ok(!isInWater(spot.x, spot.z), `${site.id}: not in the stream`);
+    assert.ok(site.text.length >= 3 && site.title.length > 0, `${site.id}: has something to read`);
+    const at = loreSitePosition(site);
+    for (const l of w.landmarks) {
+      if (l.lore || inDungeon(l.x, l.z) || l.id.startsWith("adv_")) continue;
+      assert.ok(Math.hypot(l.x - at.x, l.z - at.z) > 40, `${site.id} is apart from ${l.id}`);
+    }
+  }
+});

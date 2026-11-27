@@ -5,6 +5,7 @@ import type { PropKind } from "@rpg/shared";
 import { applyOcclusionCutout } from "./occlusion.ts";
 import { toToon } from "./toon.ts";
 import { KayKitLibrary } from "./KayKit.ts";
+import { CreatureLibrary } from "./Creatures.ts";
 import { setKitLibrary } from "./KitAvatars.ts";
 
 /**
@@ -53,6 +54,8 @@ export class AssetLibrary {
   private readonly props = new Map<string, Loaded>();
   /** The KayKit characters (people and the undead); procedural placeholders until loaded. */
   readonly kaykit = new KayKitLibrary();
+  /** Quaternius creatures (wolves, spiders, deer…); procedural beasts until loaded. */
+  readonly creatures = new CreatureLibrary();
   /** Why the character models didn't load (shown under the creation preview). */
   kitError = "";
   private loading: Promise<void> | null = null;
@@ -104,7 +107,10 @@ export class AssetLibrary {
     for (const [k, e] of Object.entries(manifest.characters ?? {})) queue(this.characters, k, e);
     for (const [k, e] of Object.entries(manifest.enemies ?? {})) queue(this.enemies, k, e);
     for (const [k, e] of Object.entries(manifest.props ?? {})) if (e) queue(this.props, k, e);
-    await Promise.all([...jobs, kit]);
+    const creatures = (skipKit ? Promise.reject(new Error("placeholders requested")) : this.creatures.load(BASE)).catch((err) => {
+      console.warn("[assets] creature models unavailable, using placeholders", err);
+    });
+    await Promise.all([...jobs, kit, creatures]);
   }
 
   character(classId: string, baseId: string): GltfInstance | null {

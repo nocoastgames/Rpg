@@ -3,6 +3,7 @@ import { APPEARANCE_OPTIONS, DEFAULT_APPEARANCE, getAdventurer, getEnemy, resolv
 import type { AnimName, AssetLibrary, GltfInstance } from "./Assets.ts";
 import { toonMaterial } from "./toon.ts";
 import { createKitHuman, createKitUndead, kitReady } from "./KitAvatars.ts";
+import { createCreatureAvatar, createCreatureCompanion } from "./Creatures.ts";
 
 /**
  * Visual representation of a character or creature. The entity layer
@@ -960,6 +961,8 @@ function ghostify(av: ProceduralHumanoid, opacity: number): void {
 
 export function createCompanionAvatar(kind: string, color: string, scale: number): Avatar {
   if (kind.startsWith("adv:")) return createAdventurerAvatar(kind.slice(4));
+  const creature = createCreatureCompanion(kind, color, scale);
+  if (creature) return creature;
   switch (kind) {
     case "hound":
     case "wolf":
@@ -1017,6 +1020,8 @@ export function createCompanionAvatar(kind: string, color: string, scale: number
 export function createEnemyAvatar(assets: AssetLibrary, kind: string): Avatar {
   const gltf = assets.enemy(kind);
   if (gltf) return new GltfAvatar(gltf);
+  const creature = createCreatureAvatar(kind);
+  if (creature) return creature;
   const def = getEnemy(kind);
   const color = def?.color ?? "#777777";
   const scale = def?.scale ?? 1;
@@ -1037,6 +1042,10 @@ export function createEnemyAvatar(assets: AssetLibrary, kind: string): Avatar {
   }
   if (kind === "wolf" || kind === "boar") return new ProceduralBeast(kind, color, scale);
   if (kind === "greyjaw") return new ProceduralBeast("wolf", color, scale);
+  if (kind === "giant_rat") return new ProceduralBeast("rat", color, scale * 0.8);
+  if (kind === "deer" || kind === "stag") return new ProceduralBeast("hound", color, scale * 1.2);
+  if (kind === "adder" || kind === "bog_toad") return new ProceduralBeast("hare", color, scale * 1.1);
+  if (kind === "wasp") return new ProceduralBird("songbird", color, scale);
   if (kind === "spider") return new ProceduralSpider(color, scale);
   if (kind === "hare") return new ProceduralBeast("hare", color, scale);
   if (kind === "skeleton") {

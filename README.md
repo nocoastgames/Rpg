@@ -18,7 +18,7 @@ heel of stale bread and an empty waterskin.
 | Rendering | [three.js](https://threejs.org) | MIT | Lightweight, mature WebGL renderer. Full control over the classic isometric look. |
 | Multiplayer | [Colyseus](https://colyseus.io) | MIT | Authoritative Node.js game server: rooms, matchmaking, delta-compressed state sync, reconnection, Redis scaling. |
 | Client build | [Vite](https://vite.dev) + TypeScript | MIT | Fast dev server, simple production build. |
-| Art | **KayKit** Adventurers + Skeletons (people, companions, undead), procedural low-poly for the rest | CC0 | Characters are assembled from parts and recoloured; `?placeholders` falls back to procedural models. See [docs/ASSETS.md](docs/ASSETS.md). |
+| Art | **KayKit** Adventurers + Skeletons (people, companions, undead), **Quaternius** animals and easy enemies (wolves, spiders, deer, rats, wasps, adders, toads), procedural low-poly for the rest | CC0 | Characters are assembled from parts and recoloured; `?placeholders` falls back to procedural models. See [docs/ASSETS.md](docs/ASSETS.md). |
 
 Alternatives that were considered: Babylon.js (heavier, more built in),
 PlayCanvas (engine is MIT but the editor is hosted/proprietary), Phaser (2D
@@ -199,6 +199,9 @@ screen to run full-screen (it ships a web app manifest).
     their leader Greyjaw (*Teeth in the Pines*) before trusting you with
     Ashford, whose story ends in **a small crypt dungeon** under the chapel.
     Levelling is slow: level 2 as Shelter ends, 3 as the wolf hunt does.
+  - **Valley lore**: nine old places (a drowned mill, a watchtower, a stone
+    ring, a barrow, a hermit's hut…) to find and read. Each is kept in your
+    quest diary and tells of one god's epic quest.
     Resting there heals you, makes you Well Rested (+15% XP) and brings every
     hunting ground back to full strength. You respawn at the camp once it's
     built.

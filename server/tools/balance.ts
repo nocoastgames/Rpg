@@ -117,18 +117,21 @@ function summary(playerLevel: number, kind: string, enemyLevel: number, perClass
 const PARTY_ONLY = process.env.PARTY_ONLY === "1";
 /** Only the named creatures (NAMED_ONLY=1). */
 const NAMED_ONLY = process.env.NAMED_ONLY === "1";
-const creatures: Array<[string, number[]]> = [["boar", [1, 2]], ["wolf", [2, 3]], ["skeleton", [2, 3]], ["spider", [3, 4]], ["thornling", [4, 5]]];
+const ALL_CREATURES: Array<[string, number[]]> = [["boar", [1, 2]], ["wasp", [1, 2]], ["wolf", [2, 3]], ["giant_rat", [2, 3]], ["adder", [2, 3]], ["bog_toad", [2, 3]], ["skeleton", [2, 3]], ["spider", [3, 4]], ["thornling", [4, 5]]];
+/** KINDS=wasp,adder limits the table to those creatures. */
+const KINDS = process.env.KINDS?.split(",");
+const creatures = KINDS ? ALL_CREATURES.filter(([k]) => KINDS.includes(k)) : ALL_CREATURES;
 console.log("win rate / average health left (%)\n");
-for (const pl of PARTY_ONLY || NAMED_ONLY ? [] : [1, 2, 3, 4, 5]) {
+for (const pl of PARTY_ONLY || NAMED_ONLY ? [] : KINDS ? [1, 2, 3] : [1, 2, 3, 4, 5]) {
   const row = creatures.flatMap(([kind, levels]) => levels.map((el) => `${kind}${el} ${summary(pl, kind, el)}`));
   console.log(`player L${pl}:  ${row.join("  ")}`);
 }
 console.log("\nNamed creatures:");
-for (const [kind, el] of PARTY_ONLY ? [] : ([["greyjaw", 3], ["gravedigger", 3], ["hollow_priest", 4]] as const)) {
+for (const [kind, el] of PARTY_ONLY || KINDS ? [] : ([["greyjaw", 3], ["gravedigger", 3], ["hollow_priest", 4]] as const)) {
   for (const pl of [2, 3, 4, 5]) console.log(`  L${pl} vs ${kind} (L${el}): ${summary(pl, kind, el, true)}`);
 }
 
 console.log("\nParty encounters (you alone, or with each adventurer):");
-for (const [pl, kind, el, count] of NAMED_ONLY ? ([[2, "greyjaw", 3, 1], [2, "greyjaw", 2, 1], [3, "hollow_priest", 4, 1], [3, "skeleton", 3, 2]] as const) : (process.env.ONLY_THORN === "1" ? [[4, "thornling", 4, 3], [5, "thornling", 5, 3]] : [[4, "thornling", 4, 3], [5, "thornling", 5, 3], [4, "spider", 4, 3], [4, "hollow_priest", 4, 1]]) as ReadonlyArray<readonly [number, string, number, number]>) {
+for (const [pl, kind, el, count] of KINDS ? [] : NAMED_ONLY ? ([[2, "greyjaw", 3, 1], [2, "greyjaw", 2, 1], [3, "hollow_priest", 4, 1], [3, "skeleton", 3, 2]] as const) : (process.env.ONLY_THORN === "1" ? [[4, "thornling", 4, 3], [5, "thornling", 5, 3]] : [[4, "thornling", 4, 3], [5, "thornling", 5, 3], [4, "spider", 4, 3], [4, "hollow_priest", 4, 1]]) as ReadonlyArray<readonly [number, string, number, number]>) {
   console.log(`  L${pl} vs ${count} x ${kind} (L${el}): ${partySummary(pl, kind, el, count)}`);
 }
