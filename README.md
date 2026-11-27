@@ -1,4 +1,4 @@
-# RPG (working title)
+# The Returned
 
 An old-school, third-person **isometric action RPG / dungeon crawler** that runs
 in the browser, with **online multiplayer**. You wake up on the bank of a stream

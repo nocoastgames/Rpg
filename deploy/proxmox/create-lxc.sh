@@ -2,12 +2,12 @@
 # Run on the Proxmox host as root. Creates an unprivileged Debian 12 LXC with
 # nesting (so Docker runs inside it), then runs deploy/setup.sh in it.
 #
-#   CTID=120 NAME=rpg-game STORAGE=local-lvm BRIDGE=vmbr0 \
+#   CTID=107 NAME=the-returned STORAGE=local-lvm BRIDGE=vmbr0 \
 #   REPO_URL=https://github.com/nocoastgames/Rpg.git BRANCH=main TUNNEL_TOKEN=... \
 #   bash create-lxc.sh
 set -euo pipefail
 CTID="${CTID:?Pick a free container id, e.g. CTID=120}"
-NAME="${NAME:-rpg-game}"
+NAME="${NAME:-the-returned}"
 STORAGE="${STORAGE:-local-lvm}"
 TEMPLATE_STORAGE="${TEMPLATE_STORAGE:-local}"
 BRIDGE="${BRIDGE:-vmbr0}"

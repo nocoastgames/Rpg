@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     {
       name: "offline-title",
-      transformIndexHtml: (html: string) => (mode === "offline" ? html.replace("<title>RPG</title>", "<title>RPG Valley Playtest</title>") : html),
+      transformIndexHtml: (html: string) => (mode === "offline" ? html.replace("<title>The Returned</title>", "<title>The Returned: Playtest</title>") : html),
     },
   ],
   server: {
