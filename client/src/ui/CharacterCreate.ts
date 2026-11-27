@@ -599,7 +599,7 @@ export function showCharacterCreate(
       error ? h("div.cc-error", null, error) : null,
       errorBox,
       tabs,
-      h("div.cc-body", null, h("div.cc-preview", null, preview.canvas, h("div.cc-preview-hint", null, "Drag to turn")), h("div.cc-detail", null, content)),
+      h("div.cc-body", null, h("div.cc-preview", null, preview.canvas, h("div.cc-preview-hint", null, assets.kitError ? `Simple models (character models didn't load: ${assets.kitError})` : "Drag to turn")), h("div.cc-detail", null, content)),
       h("footer.cc-footer", null, back, next),
     );
 

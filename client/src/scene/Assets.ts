@@ -53,6 +53,8 @@ export class AssetLibrary {
   private readonly props = new Map<string, Loaded>();
   /** The KayKit characters (people and the undead); procedural placeholders until loaded. */
   readonly kaykit = new KayKitLibrary();
+  /** Why the character models didn't load (shown under the creation preview). */
+  kitError = "";
   private loading: Promise<void> | null = null;
 
   /** Load once; later calls share the same promise. */
@@ -66,7 +68,10 @@ export class AssetLibrary {
     const skipKit = new URLSearchParams(location.search).has("placeholders");
     const kit = (skipKit ? Promise.reject(new Error("placeholders requested")) : this.kaykit.load(BASE)).then(
       () => setKitLibrary(this.kaykit),
-      (err) => console.warn("[assets] KayKit characters unavailable, using placeholders", err),
+      (err) => {
+        if (!skipKit) this.kitError = String((err as Error)?.message ?? err);
+        console.warn("[assets] KayKit characters unavailable, using placeholders", err);
+      },
     );
     let manifest: Manifest = {};
     try {

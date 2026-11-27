@@ -95,9 +95,7 @@ export class KayKitLibrary {
   async load(base: string): Promise<void> {
     const loader = new GLTFLoader();
     const dir = `${base}kaykit/`;
-    // Hosts that won't serve .glb get the same models as embedded glTF JSON.
-    const get = (name: string) => loader.loadAsync(`${dir}${name}.glb`).catch(() => loader.loadAsync(`${dir}${name}.gltf.json`));
-    const [anim, ...models] = await Promise.all([get("animations"), ...SOURCES.map((s) => get(s))]);
+    const [anim, ...models] = await Promise.all([loadModel(loader, dir, "animations"), ...SOURCES.map((s) => loadModel(loader, dir, s))]);
     SOURCES.forEach((s, i) => this.sources.set(s, models[i]!));
     this.clips = new Map(anim!.animations.map((c) => [c.name, c]));
     const knight = this.sources.get("Knight")!.scene;
@@ -240,4 +238,119 @@ export class KayKitLibrary {
     this.palettes.set(key, tex);
     return tex;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Loading that works on strict hosts
+// ---------------------------------------------------------------------------
+
+interface GltfJson {
+  buffers?: Array<{ byteLength: number; uri?: string }>;
+  bufferViews: Array<{ byteOffset?: number; byteLength: number }>;
+  images?: Array<{ bufferView?: number; mimeType?: string }>;
+  textures?: Array<{ source?: number }>;
+  samplers?: unknown[];
+  materials?: Array<{ name?: string; pbrMetallicRoughness?: { baseColorTexture?: { index: number } } }>;
+}
+
+const GLB_MAGIC = 0x46546c67;
+
+/**
+ * Load a model as `.glb`, or as `.gltf.json` (the same model with its data
+ * inlined, for hosts that won't serve .glb). Textures are decoded here
+ * rather than by GLTFLoader, and the binary data is handed over directly, so
+ * nothing goes through data: or blob: URLs, which some hosts' security
+ * policies block.
+ */
+async function loadModel(loader: GLTFLoader, dir: string, name: string): Promise<GLTF> {
+  let json: GltfJson | null = null;
+  let bin: Uint8Array | null = null;
+  try {
+    const res = await fetch(`${dir}${name}.glb`);
+    const buf = res.ok ? await res.arrayBuffer() : null;
+    if (buf && buf.byteLength > 20 && new DataView(buf).getUint32(0, true) === GLB_MAGIC) {
+      const dv = new DataView(buf);
+      const jsonLen = dv.getUint32(12, true);
+      json = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 20, jsonLen))) as GltfJson;
+      const binLen = dv.getUint32(20 + jsonLen, true);
+      bin = new Uint8Array(buf, 28 + jsonLen, binLen);
+    }
+  } catch {
+    // Fall through to the JSON copy.
+  }
+  if (!json || !bin) {
+    const res = await fetch(`${dir}${name}.gltf.json`);
+    if (!res.ok) throw new Error(`${name}: ${res.status}`);
+    json = (await res.json()) as GltfJson;
+    const uri = json.buffers?.[0]?.uri ?? "";
+    const raw = atob(uri.slice(uri.indexOf(",") + 1));
+    bin = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) bin[i] = raw.charCodeAt(i);
+  }
+
+  // Take the textures out; they're decoded below and put back on the materials.
+  const images = (json.images ?? []).map((img) => {
+    const bv = json!.bufferViews[img.bufferView ?? -1];
+    return bv ? { bytes: bin!.slice(bv.byteOffset ?? 0, (bv.byteOffset ?? 0) + bv.byteLength), mime: img.mimeType ?? "image/png" } : null;
+  });
+  const imageFor = new Map<string, number>();
+  for (const m of json.materials ?? []) {
+    const ti = m.pbrMetallicRoughness?.baseColorTexture?.index;
+    if (ti === undefined) continue;
+    const src = json.textures?.[ti]?.source;
+    if (src !== undefined && m.name) imageFor.set(m.name, src);
+    delete m.pbrMetallicRoughness!.baseColorTexture;
+  }
+  delete json.images;
+  delete json.textures;
+  delete json.samplers;
+  if (json.buffers?.[0]) delete json.buffers[0].uri;
+
+  const gltf = await loader.parseAsync(packGlb(json, bin), dir);
+  const textures = await Promise.all(
+    images.map(async (img) => {
+      if (!img) return null;
+      const bitmap = await createImageBitmap(new Blob([img.bytes], { type: img.mime }), { premultiplyAlpha: "none", colorSpaceConversion: "none" });
+      const tex = new THREE.Texture(bitmap as unknown as HTMLImageElement);
+      tex.flipY = false;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.needsUpdate = true;
+      return tex;
+    }),
+  );
+  gltf.scene.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    for (const mat of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+      const i = imageFor.get(mat.name);
+      const tex = i !== undefined ? textures[i] : null;
+      if (tex) {
+        (mat as THREE.MeshStandardMaterial).map = tex;
+        mat.needsUpdate = true;
+      }
+    }
+  });
+  return gltf;
+}
+
+function packGlb(json: GltfJson, bin: Uint8Array): ArrayBuffer {
+  const text = new TextEncoder().encode(JSON.stringify(json));
+  const jsonLen = (text.length + 3) & ~3;
+  const binLen = (bin.length + 3) & ~3;
+  const total = 12 + 8 + jsonLen + 8 + binLen;
+  const out = new ArrayBuffer(total);
+  const dv = new DataView(out);
+  const u8 = new Uint8Array(out);
+  dv.setUint32(0, GLB_MAGIC, true);
+  dv.setUint32(4, 2, true);
+  dv.setUint32(8, total, true);
+  dv.setUint32(12, jsonLen, true);
+  dv.setUint32(16, 0x4e4f534a, true); // JSON
+  u8.set(text, 20);
+  u8.fill(0x20, 20 + text.length, 20 + jsonLen);
+  const o = 20 + jsonLen;
+  dv.setUint32(o, binLen, true);
+  dv.setUint32(o + 4, 0x004e4942, true); // BIN
+  u8.set(bin, o + 8);
+  return out;
 }
