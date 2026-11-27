@@ -10,6 +10,7 @@ export * from "./status.ts";
 export * from "./quests.ts";
 export * from "./npcs.ts";
 export * from "./worlds.ts";
+export * from "./adventurers.ts";
 export * from "./valley.ts";
 export * from "./world.ts";
 export * from "./movement.ts";

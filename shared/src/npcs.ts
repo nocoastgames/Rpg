@@ -46,5 +46,5 @@ export const VENDOR_LINES = {
 /** Flag in the quest log once you own a map of the valley. */
 export const MAP_FLAG = "map_valley";
 
-/** How close you must stand to trade. */
-export const TRADE_RANGE = 5;
+/** How close to Haskel you must be to trade or talk with his camp (the adventurers stand around him). */
+export const TRADE_RANGE = 14;

@@ -52,6 +52,11 @@ Wild hares live everywhere else in the valley.
 - **Spread out.** Every creature keeps its distance from the others (30–40 m
   in the wild, 8 m inside Ashford), and aggro ranges are short (6–8 m), so you
   can pick your fights instead of pulling a crowd.
+- **Packs (party encounters).** In the Webbed Hollow and the Thornbrake,
+  creatures of level 4 and up come in packs of 2–3 that fight together: hit
+  or get spotted by one and every packmate within 18 m joins in. A pack
+  returns only once every member is dead. These fights are designed for two:
+  you and a companion from Haskel's camp (below), or another player.
 - A creature killed returns to its own zone after 20 seconds.
 - Creatures spawn at a level inside the zone's range. Health, damage and
   experience scale with level (`enemyStats`).
@@ -78,9 +83,20 @@ food):
 | Level 2 | win, ~70–90% left | win, ~25–45% left | always lose |
 | Level 3 | win | Thornling (4): about half your fights | lose |
 
+Party encounters (`PARTY_ONLY=1 npm run balance -w server`), at level 4, no
+potions:
+
+| Encounter | Alone | + Brannoc | + Ilse | + Sister Maren | + Wren |
+| --- | --- | --- | --- | --- | --- |
+| 3 thornlings | always lose | win, ~60% left | win, ~65% left | win 3 in 4, ~60% left | win half, ~15% left |
+| 3 hollow spiders | always lose | win, ~80% left | win, ~75% left | win, ~75% left | win, ~35% left |
+| The Hollow Priest | always lose | win, ~70% left | win, ~65% left | win, ~70% left | win, ~50% left |
+
+Wren hits hardest against a single target and is weakest against a pack;
+Brannoc and Ilse are the safe picks for the Thornbrake.
+
 Old Corwin (level 3) is a fair fight at level 3. The Hollow Priest (level 4
-boss) needs level 4: Fighters, Priests and Thieves win with 25–45% health left,
-and a Mage should keep its distance and bring a draught.
+boss) is a party fight: take a companion.
 
 Rough pacing: the first quest takes you to about level 3, and the hunting
 grounds carry you to 5 (about 1,150 experience in total).
@@ -167,6 +183,8 @@ Talk to him (interact) to open his window:
 - **Sell:** loot, rusty gear and anything else with a value. "Sell all loot"
   sells every material in your pack.
 
+- **Companions:** see *The stranded travellers* below.
+
 A **❗** over his head means he has something for you; **❓** means you have
 something to hand in.
 
@@ -175,6 +193,28 @@ something to hand in.
 He offers one at a time, at random: 3 wolf pelts, 4 raw hares, 3 boar hides,
 3 spider silk, 5 old bones or 4 black thorns, for 8–16 coins and some
 experience. Hand the items over in his window; a new job is offered after.
+
+### The stranded travellers (companions)
+
+Four travellers were caught on this side of the rockslide with Haskel and
+wait around his camp, one of each calling. Talk to any of them (or open
+Haskel's **Companions** tab) and ask **one** to adventure with you:
+
+| Companion | Calling | Role | Special |
+| --- | --- | --- | --- |
+| Brannoc the Sellsword | Fighter | Protector: tough, steady damage | **Taunt** (every 6 s): creatures attacking you turn on him |
+| Ilse the Hedge-Witch | Mage | Damage at range | **Fire Burst** (every 8 s): burns everything around her target |
+| Sister Maren the Wandering Priest | Priest | Healer | **Mend** (every 3 s): heals you below 70% health, else cures a status |
+| Wren the Pickpocket | Thief | Damage up close | **Backstab** (every 7 s): a hit for 2.5× damage |
+
+- **One at a time.** You can travel with only one; part ways (in the same
+  tab) to ask someone else. Each traveller goes with one player at a time, so
+  in a shared world the others see "Travelling with <name>".
+- They follow you, attack what you attack, defend you, scale with your level,
+  and get back up 12 seconds after being downed. They show in your party
+  frame.
+- They go home if you leave the world, and the soldiers send them back down
+  the road when you're arrested at the pass.
 
 ## Food, potions, loot and money
 

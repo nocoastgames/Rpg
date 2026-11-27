@@ -1,4 +1,4 @@
-import { VENDOR_LINES, VENDOR_NPC, VILLAGE_QUEST, canEquip, getItem, getQuest, type QuestDef } from "@rpg/shared";
+import { ADVENTURERS, VENDOR_LINES, VENDOR_NPC, VILLAGE_QUEST, canEquip, getItem, getQuest, type QuestDef } from "@rpg/shared";
 import type { PlayerView } from "../types.ts";
 import { h } from "./dom.ts";
 
@@ -9,10 +9,12 @@ export interface VendorCallbacks {
   accept(questId: string): void;
   turnIn(questId: string): void;
   requestWeapon(): void;
+  hire(adventurerId: string): void;
+  dismiss(): void;
   close(): void;
 }
 
-type Tab = "talk" | "buy" | "sell";
+type Tab = "talk" | "party" | "buy" | "sell";
 
 /**
  * Talking and trading with Haskel: his story and quests, his odd jobs, a
@@ -30,7 +32,7 @@ export class VendorPanel {
   constructor(private readonly cb: VendorCallbacks) {
     const stop = (e: Event) => e.stopPropagation();
     const mkTab = (t: Tab, label: string) => h("button.vendor-tab", { type: "button", onclick: () => this.show(t) }, label) as HTMLButtonElement;
-    this.tabs = { talk: mkTab("talk", "Talk"), buy: mkTab("buy", "Buy"), sell: mkTab("sell", "Sell") };
+    this.tabs = { talk: mkTab("talk", "Talk"), party: mkTab("party", "Companions"), buy: mkTab("buy", "Buy"), sell: mkTab("sell", "Sell") };
     this.body = h("div.vendor-body");
     this.coinsEl = h("div.vendor-coins");
     this.el = h(
@@ -42,7 +44,7 @@ export class VendorPanel {
         `${VENDOR_NPC.name}, ${VENDOR_NPC.title}`,
         h("button.panel-close", { type: "button", onclick: () => cb.close() }, "×"),
       ),
-      h("div.vendor-tabs", null, this.tabs.talk, this.tabs.buy, this.tabs.sell),
+      h("div.vendor-tabs", null, this.tabs.talk, this.tabs.party, this.tabs.buy, this.tabs.sell),
       this.body,
       this.coinsEl,
     );
@@ -52,9 +54,9 @@ export class VendorPanel {
     return !this.el.classList.contains("hidden");
   }
 
-  open(): void {
+  open(tab: Tab = "talk"): void {
     this.el.classList.remove("hidden");
-    this.show("talk");
+    this.show(tab);
   }
 
   close(): void {
@@ -67,16 +69,18 @@ export class VendorPanel {
     for (const [id, b] of Object.entries(this.tabs)) b.setAttribute("aria-pressed", String(id === t));
   }
 
-  render(p: PlayerView, baseClass: string): void {
+  render(p: PlayerView, baseClass: string, hiredBy: ReadonlyMap<string, string> = new Map()): void {
     if (!this.isOpen) return;
-    const parts = [this.tab, p.coins, p.fetchOffer, p.weapon, p.quests.length];
+    const parts = [this.tab, p.coins, p.fetchOffer, p.weapon, p.quests.length, p.adventurer, [...hiredBy].join()];
     p.active.forEach((q) => parts.push(`${q.id}:${q.step}:${q.count}`));
     p.inventory.forEach((s) => parts.push(`${s.itemId}:${s.qty}`));
     const key = parts.join("|");
     if (key === this.key) return;
     this.key = key;
     this.coinsEl.textContent = `🪙 ${p.coins} coins`;
-    this.body.replaceChildren(...(this.tab === "talk" ? this.talk(p, baseClass) : this.tab === "buy" ? this.shop(p) : this.sellList(p)));
+    this.body.replaceChildren(
+      ...(this.tab === "talk" ? this.talk(p, baseClass) : this.tab === "party" ? this.party(p, hiredBy) : this.tab === "buy" ? this.shop(p) : this.sellList(p)),
+    );
   }
 
   private talk(p: PlayerView, baseClass: string): HTMLElement[] {
@@ -121,6 +125,35 @@ export class VendorPanel {
       say(VENDOR_LINES.noWeapon);
       out.push(this.button("Take a weapon", () => this.cb.requestWeapon(), true));
     }
+    return out;
+  }
+
+  /** The travellers stranded at the camp: ask ONE of them to come with you. */
+  private party(p: PlayerView, hiredBy: ReadonlyMap<string, string>): HTMLElement[] {
+    const out: HTMLElement[] = [
+      h("p.vendor-line", null, "\"Four of us got stuck on this side of the rockslide. Any one of them would rather be out there with you than sitting by my fire. Ask one. Just the one, mind.\""),
+    ];
+    const ROLE: Record<string, string> = { tank: "Protector", damage: "Damage", healer: "Healer" };
+    for (const a of ADVENTURERS) {
+      const mine = p.adventurer === a.id;
+      const other = hiredBy.get(a.id);
+      const action = mine
+        ? this.button("Part ways", () => this.cb.dismiss(), true)
+        : other
+          ? h("span.adv-status", null, `Travelling with ${other}`)
+          : this.button("Ask to join you", () => this.cb.hire(a.id), !p.adventurer);
+      out.push(
+        h(
+          `div.adv-card${mine ? ".mine" : ""}` as "div",
+          { style: `--adv:${a.color}` },
+          h("div.adv-head", null, h("b", null, `${a.name}`), h("span.adv-title", null, ` the ${a.title}`), h("span.adv-role", null, `${a.classId[0]!.toUpperCase()}${a.classId.slice(1)} · ${ROLE[a.role]}`)),
+          h("p.vendor-line", null, a.intro),
+          h("div.adv-special", null, h("b", null, `${a.special.name}: `), a.special.description),
+          h("div.adv-action", null, mine ? h("span.adv-status", null, "Travelling with you") : null, action),
+        ),
+      );
+    }
+    if (p.adventurer) out.push(h("p.cc-hint", null, "You can only take one companion at a time. Part ways to ask someone else."));
     return out;
   }
 

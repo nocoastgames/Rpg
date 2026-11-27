@@ -115,7 +115,7 @@ are all supported. The on-screen prompts switch to whatever you last used.
 
 | Action | Mouse & keyboard | Xbox controller | Touch |
 | --- | --- | --- | --- |
-| Move | Left click (hold) / `W A S D` | Left stick (analog: push lightly to walk) | Drag on the left half of the screen |
+| Move | Left click the ground (walks there; hold to steer) / `W A S D` | Left stick (analog: push lightly to walk) | Tap the ground to walk there, or drag on the left half of the screen |
 | Attack | Left click an enemy | `A` (auto-targets, hold to keep fighting) | ⚔ button, or tap an enemy |
 | Abilities 1-4 | Right click or `1`, then `2` `3` `4` | `X` `Y` `RB` `RT` (aim with right stick, else auto-aim) | Ability buttons (tap to auto-aim, drag to aim) |
 | Interact / inspect | `F` | `B` | ✋ button (appears when something is near) |
@@ -156,6 +156,10 @@ screen to run full-screen (it ships a web app manifest).
   into something several times stronger, while every other end class gains a
   lesser familiar. Companions follow you, fight your target, defend you and
   return if downed.
+- **Party play**: four stranded travellers (a fighter, a mage, a priest and a
+  thief) wait at the merchant's camp; ask **one** to adventure with you. From
+  level 4, creatures hunt in packs built for two. See
+  [docs/VALLEY.md](docs/VALLEY.md#the-stranded-travellers-companions).
 - **Character creation** in six steps with a live 3D preview: appearance
   (build, skin, hair, beard, clothes dye; everyone starts in ragged clothes),
   calling (base class), a **first memory** that secretly picks your background

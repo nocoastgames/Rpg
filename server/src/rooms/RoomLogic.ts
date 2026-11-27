@@ -134,6 +134,12 @@ export class RoomLogic {
       case C2S.quickUse:
         if (m?.kind === "heal" || m?.kind === "drink") g.quickUse(id, m.kind);
         return;
+      case C2S.hire:
+        if (typeof m?.adventurerId === "string") g.hire(id, m.adventurerId);
+        return;
+      case C2S.dismiss:
+        g.dismissAdventurer(id);
+        return;
       case C2S.advance:
         if (typeof m?.classId === "string") g.advance(id, m.classId);
         return;

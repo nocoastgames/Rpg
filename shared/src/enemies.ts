@@ -203,8 +203,8 @@ export const ENEMIES: readonly EnemyDef[] = [
   {
     id: "hollow_priest",
     name: "The Hollow Priest",
-    maxHp: 125,
-    damage: [4, 5],
+    maxHp: 170,
+    damage: [5, 6],
     attackRange: 2.0,
     attackCooldown: 1.6,
     moveSpeed: 3.4,

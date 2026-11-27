@@ -54,6 +54,8 @@ export interface PlayerView {
   statuses: ArrayLike<{ id: string; expiresAt: number }> & { forEach(cb: (s: { id: string; expiresAt: number }, i: number) => void): void };
   /** Quests in progress: current step and progress toward it. */
   active: ArrayLike<QuestStateView> & { forEach(cb: (q: QuestStateView, i: number) => void): void; find(cb: (q: QuestStateView) => boolean): QuestStateView | undefined; some(cb: (q: QuestStateView) => boolean): boolean };
+  /** The adventurer from Haskel's camp travelling with you ("" if none). */
+  adventurer: string;
   /** The odd job the merchant is offering right now. */
   fetchOffer: string;
   coins: number;

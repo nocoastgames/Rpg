@@ -1,3 +1,5 @@
+import { ADVENTURERS } from "./adventurers.ts";
+
 /**
  * Layout of the starting zone: a small forested valley ringed by mountains.
  *
@@ -518,6 +520,18 @@ export function landmarks(): LandmarkDef[] {
       lockedText: "",
       discoverRadius: 14,
     },
+    ...ADVENTURERS.map(
+      (a): LandmarkDef => ({
+        id: `adv_${a.id}`,
+        kind: "npc",
+        name: `${a.name} the ${a.title}`,
+        ...at(VENDOR.u + a.du, VENDOR.v + a.dv),
+        interactRadius: 2.4,
+        verb: `Talk to ${a.name}`,
+        lockedText: "",
+        discoverRadius: 0,
+      }),
+    ),
     {
       id: "village",
       kind: "inspect",
@@ -650,14 +664,19 @@ export interface ZoneDef {
   spacing: number;
   /** Wildlife spread over the whole valley: no banner, not a hunting ground on the map. */
   ambient?: boolean;
+  /**
+   * Party encounters: creatures of at least `minLevel` come in packs of
+   * `size` that fight together (pull one, pull the pack).
+   */
+  pack?: { size: [number, number]; minLevel: number };
 }
 
 export const ZONES: readonly ZoneDef[] = [
   { id: "tusk_meadow", name: "Tusk Meadow", levels: [1, 2], u: 560, v: 640, radius: 240, enemies: [{ id: "boar", weight: 3 }, { id: "hare", weight: 1 }], population: 40, spacing: 30 },
   { id: "greypine_wood", name: "Greypine Wood", levels: [2, 3], u: 120, v: -800, radius: 560, enemies: [{ id: "wolf", weight: 4 }, { id: "hare", weight: 1 }], population: 70, spacing: 40 },
   { id: "ashford", name: "Ashford", levels: [2, 3], u: VILLAGE.u, v: VILLAGE.v, radius: 26, enemies: [{ id: "risen", weight: 11 }, { id: "skeleton", weight: 9 }], population: 10, spacing: 8 },
-  { id: "webbed_hollow", name: "Webbed Hollow", levels: [3, 4], u: 260, v: 1700, radius: 420, enemies: [{ id: "spider", weight: 1 }], population: 50, spacing: 38 },
-  { id: "thornbrake", name: "The Thornbrake", levels: [4, 5], u: -860, v: -1250, radius: 340, enemies: [{ id: "thornling", weight: 1 }], population: 40, spacing: 34 },
+  { id: "webbed_hollow", name: "Webbed Hollow", levels: [3, 4], u: 260, v: 1700, radius: 420, enemies: [{ id: "spider", weight: 1 }], population: 55, spacing: 42, pack: { size: [2, 3], minLevel: 4 } },
+  { id: "thornbrake", name: "The Thornbrake", levels: [4, 5], u: -860, v: -1250, radius: 340, enemies: [{ id: "thornling", weight: 1 }], population: 42, spacing: 45, pack: { size: [2, 3], minLevel: 4 } },
   // Hares everywhere else.
   { id: "valley_wilds", name: "The Unknown Forest", levels: [1, 1], u: 0, v: 0, radius: 2600, enemies: [{ id: "hare", weight: 1 }], population: 50, spacing: 60, ambient: true },
 ];

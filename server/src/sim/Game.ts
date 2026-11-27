@@ -78,6 +78,9 @@ import {
   type QuestObjective,
   type StatusId,
   type ZoneDef,
+  type AdventurerDef,
+  getAdventurer,
+  adventurerKind,
   type FxEvent,
   type GateId,
   type HitEvent,
@@ -147,6 +150,8 @@ interface EnemyRuntime {
   zone?: ZoneDef;
   /** Named creature id (gravedigger, hollow_priest). */
   special?: string;
+  /** Creatures that spawned together and fight together. */
+  packId?: number;
   /** Boss timers. */
   nextNovaAt: number;
   summoned: boolean;
@@ -168,6 +173,9 @@ interface EnemyRuntime {
 interface CompanionRuntime {
   ownerId: string;
   power: CompanionPower;
+  /** A hired adventurer (rather than a pet or familiar). */
+  adv?: AdventurerDef;
+  nextSpecialAt: number;
   ranged: boolean;
   nextAttackAt: number;
   targetId: string | null;
@@ -184,6 +192,11 @@ const COMPANION_POWER: Record<CompanionPower, { hp: number; damage: number; cool
 const FLYING_KINDS = new Set(["hawk", "raven", "owl", "dove", "crane", "parrot", "songbird", "phoenix", "wisp"]);
 const COMPANION_SPEED = 6.5;
 const COMPANION_RESPAWN_MS = 12_000;
+/** Ids of companions: "c:<owner>" for pets and familiars, "a:<owner>" for hired adventurers. */
+const isCompanionId = (id: string) => id.startsWith("c:") || id.startsWith("a:");
+const ownerOf = (id: string) => (isCompanionId(id) ? id.slice(2) : id);
+/** Pack members within this distance join the fight. */
+const PACK_ALERT_RADIUS = 18;
 
 /** Creatures don't spawn this close to where players wake, the campsite or Haskel. */
 const SPAWN_SAFE_RADIUS = 45;
@@ -229,6 +242,7 @@ export class Game {
   private readonly companions = new Map<string, CompanionRuntime>();
   private readonly rng: () => number;
   private nextEnemyId = 1;
+  private nextPackId = 1;
   private pendingSpawns: Array<{ at: number; zone: ZoneDef }> = [];
   private pendingSpecials: Array<{ at: number; kind: string }> = [];
   private readonly campPos: { x: number; z: number };
@@ -309,6 +323,7 @@ export class Game {
 
   removePlayer(id: string): void {
     this.removeCompanion(id);
+    this.dismissAdventurer(id, true);
     this.state.players.delete(id);
     this.players.delete(id);
     for (const e of this.enemies.values()) if (e.targetId === id) e.targetId = null;
@@ -579,7 +594,7 @@ export class Game {
       }
       if (l.kind === "shrine") this.pray(id, p, rt, l);
       else if (l.kind === "camp") this.useCamp(id, p, rt, l);
-      else if (l.kind === "npc") this.events.dialog(id, { npc: l.id });
+      else if (l.kind === "npc") this.events.dialog(id, l.id.startsWith("adv_") ? { npc: "vendor", tab: "party" } : { npc: l.id });
       else if (l.id === "crypt") this.inspectCrypt(id, p, l);
       else {
         const open = l.gate ? this.state.gates.get(l.gate) === true : false;
@@ -1214,6 +1229,7 @@ export class Game {
       power: want.power,
       ranged: FLYING_KINDS.has(want.def.kind),
       nextAttackAt: 0,
+      nextSpecialAt: 0,
       targetId: null,
       respawnAt: 0,
     });
@@ -1232,7 +1248,7 @@ export class Game {
     const owner = rt ? this.state.players.get(rt.ownerId) : undefined;
     const ort = rt ? this.players.get(rt.ownerId) : undefined;
     if (!rt || !owner || !ort) return;
-    const power = COMPANION_POWER[rt.power];
+    const power = rt.adv ? rt.adv.power : COMPANION_POWER[rt.power];
     c.maxHp = Math.round(owner.maxHp * power.hp);
 
     if (c.anim === "dead") {
@@ -1274,6 +1290,7 @@ export class Game {
       }
     }
     target = rt.targetId ? this.state.enemies.get(rt.targetId) : undefined;
+    if (rt.adv && owner.anim !== "dead") this.adventurerSpecial(cid, c, rt, rt.adv, owner, ort, target);
 
     if (target && Math.hypot(target.x - owner.x, target.z - owner.z) < 20) {
       const reach = (rt.ranged ? 7 : 1.4) + (getEnemy(target.kind)?.radius ?? 0.5);
@@ -1306,10 +1323,110 @@ export class Game {
     }
     rt.targetId = null;
 
-    // Follow: keep a spot just behind and beside the owner.
-    const behind = { x: owner.x - Math.sin(owner.facing) * 1.6 + Math.cos(owner.facing) * 1.1, z: owner.z - Math.cos(owner.facing) * 1.6 - Math.sin(owner.facing) * 1.1 };
+    // Follow: keep a spot just behind and beside the owner (pets on one side, adventurers on the other).
+    const side = rt.adv ? -1.3 : 1.1;
+    const behind = { x: owner.x - Math.sin(owner.facing) * 1.6 + Math.cos(owner.facing) * side, z: owner.z - Math.cos(owner.facing) * 1.6 - Math.sin(owner.facing) * side };
     if (Math.hypot(behind.x - c.x, behind.z - c.z) > 1.2) this.moveCompanion(c, behind, dt);
     else c.anim = "idle";
+  }
+
+  // -------------------------------------------------------------------------
+  // Adventurers: one of Haskel's stranded companions fights at your side
+  // -------------------------------------------------------------------------
+
+  /** Ask an adventurer at Haskel's camp to travel with you. One at a time, and each goes with one player. */
+  hire(id: string, advId: string): void {
+    const p = this.state.players.get(id);
+    const def = getAdventurer(advId);
+    if (!p || !def) return;
+    const camp = this.world.landmarks.find((l) => l.id === `adv_${advId}`);
+    if (!camp || Math.hypot(p.x - camp.x, p.z - camp.z) > 16) return;
+    if (p.adventurer) {
+      this.events.notice(id, `You're already travelling with ${getAdventurer(p.adventurer)?.name ?? "someone"}. Part ways first.`);
+      return;
+    }
+    for (const [oid, other] of this.state.players) {
+      if (oid !== id && other.adventurer === advId) {
+        this.events.notice(id, `${def.name} is already travelling with ${other.name}.`);
+        return;
+      }
+    }
+    p.adventurer = advId;
+    const cid = `a:${id}`;
+    const c = new Companion();
+    c.owner = id;
+    c.kind = adventurerKind(advId);
+    c.name = def.name;
+    c.color = def.color;
+    c.scale = 1;
+    c.power = "adventurer";
+    c.maxHp = Math.round(p.maxHp * def.power.hp);
+    c.hp = c.maxHp;
+    const spot = this.findFreeSpotNear(camp.x, camp.z, 1);
+    c.x = spot.x;
+    c.z = spot.z;
+    this.state.companions.set(cid, c);
+    this.companions.set(cid, { ownerId: id, power: "pet", adv: def, ranged: def.power.ranged, nextAttackAt: 0, nextSpecialAt: 0, targetId: null, respawnAt: 0 });
+    this.events.notice(id, `${def.name}: ${def.join}`);
+    this.events.announce(`${def.name} the ${def.title} joins ${p.name}.`);
+  }
+
+  /** Part ways: they walk back to Haskel's camp. */
+  dismissAdventurer(id: string, quiet = false): void {
+    const p = this.state.players.get(id);
+    if (!p?.adventurer) return;
+    const def = getAdventurer(p.adventurer);
+    p.adventurer = "";
+    const cid = `a:${id}`;
+    this.state.companions.delete(cid);
+    this.companions.delete(cid);
+    for (const e of this.enemies.values()) if (e.targetId === cid) e.targetId = null;
+    if (def && !quiet) this.events.notice(id, `${def.name}: ${def.leave}`);
+  }
+
+  /** Each calling's signature move, used when it helps. */
+  private adventurerSpecial(cid: string, c: Companion, rt: CompanionRuntime, def: AdventurerDef, owner: Player, ort: PlayerRuntime, target: Enemy | undefined): void {
+    if (this.now < rt.nextSpecialAt || c.anim === "dead") return;
+    const hit = averageHit(owner, ort.ch, this.now) * def.power.damage;
+    let used = false;
+    if (def.role === "healer") {
+      if (owner.hp < owner.maxHp * 0.7) {
+        this.healPlayer(rt.ownerId, owner, owner.maxHp * 0.24, cid);
+        this.events.fx({ kind: "heal", sourceId: cid, fromX: c.x, fromZ: c.z, toX: owner.x, toZ: owner.z, radius: 1.2, color: def.color });
+        used = true;
+      } else if (owner.statuses.length > 0) {
+        owner.statuses.splice(0, 1);
+        this.events.fx({ kind: "heal", sourceId: cid, fromX: c.x, fromZ: c.z, toX: owner.x, toZ: owner.z, radius: 1, color: def.color });
+        used = true;
+      } else if (c.hp < c.maxHp * 0.5) {
+        c.hp = Math.min(c.maxHp, c.hp + c.maxHp * 0.25);
+        used = true;
+      }
+    } else if (def.role === "tank") {
+      // Taunt: whatever is attacking the owner turns on the tank.
+      for (const e of this.enemies.values()) {
+        if (e.targetId === rt.ownerId) {
+          e.targetId = cid;
+          used = true;
+        }
+      }
+      if (used) this.events.fx({ kind: "buff", sourceId: cid, fromX: c.x, fromZ: c.z, toX: c.x, toZ: c.z, radius: 2, variant: "taunt", color: def.color });
+    } else if (target && Math.hypot(target.x - c.x, target.z - c.z) < (def.power.ranged ? 9 : 2.5)) {
+      const id = rt.targetId!;
+      if (def.classId === "mage") {
+        this.events.fx({ kind: "nova", sourceId: cid, fromX: target.x, fromZ: target.z, toX: target.x, toZ: target.z, radius: 3.5, color: "#ff7a2a" });
+        for (const [eid, e] of this.enemiesInRadius(target.x, target.z, 3.5)) this.damageEnemy(eid, e, Math.round(hit * 1.6), cid);
+      } else {
+        this.events.fx({ kind: "strike", sourceId: cid, fromX: c.x, fromZ: c.z, toX: target.x, toZ: target.z, radius: 0, color: def.color });
+        this.damageEnemy(id, target, Math.round(hit * 2.5), cid, true);
+      }
+      used = true;
+    }
+    if (used) {
+      rt.nextSpecialAt = this.now + def.special.every * 1000;
+      c.anim = "cast";
+      c.actionSeq = (c.actionSeq + 1) % 65535;
+    }
   }
 
   private moveCompanion(c: Companion, to: { x: number; z: number }, dt: number): void {
@@ -1382,7 +1499,12 @@ export class Game {
     p.facing = Math.PI;
     p.hp = p.maxHp;
     p.statuses.clear();
-    for (const e of this.enemies.values()) if (e.targetId === id || e.targetId === `c:${id}`) e.targetId = null;
+    for (const e of this.enemies.values()) if (e.targetId === id || (e.targetId && isCompanionId(e.targetId) && ownerOf(e.targetId) === id)) e.targetId = null;
+    if (p.adventurer) {
+      const def = getAdventurer(p.adventurer);
+      this.dismissAdventurer(id, true);
+      if (def) this.events.notice(id, `The soldiers send ${def.name} back down the road. You're on your own.`);
+    }
   }
 
   /** Open or seal a gate (story hook; also exposed as a dev chat command). */
@@ -1405,7 +1527,8 @@ export class Game {
     for (const [id, c] of this.state.companions) this.updateCompanion(id, c, dtSec);
     for (const [id, e] of this.state.enemies) this.updateEnemy(id, e, dtSec);
     while (this.pendingSpawns.length && this.pendingSpawns[0]!.at <= nowMs) {
-      this.spawnEnemy(this.pendingSpawns.shift()!.zone);
+      const zone = this.pendingSpawns.shift()!.zone;
+      if (this.zoneCount(zone) < zone.population) this.spawnEnemy(zone);
     }
     for (let i = this.pendingSpecials.length - 1; i >= 0; i--) {
       const ps = this.pendingSpecials[i]!;
@@ -1623,7 +1746,7 @@ export class Game {
   private damageEnemy(enemyId: string, e: Enemy, amount: number, sourceId: string, crit = false): void {
     if (e.hp <= 0) return;
     // Fighting above your level: blows land weaker (and below it, harder).
-    const attacker = this.state.players.get(sourceId.startsWith("c:") ? sourceId.slice(2) : sourceId);
+    const attacker = this.state.players.get(ownerOf(sourceId));
     if (attacker) amount = Math.max(1, Math.round(amount * levelGapMultiplier(attacker.level, e.level)));
     // Trappers know where beasts are soft.
     const src = this.state.players.get(sourceId);
@@ -1634,7 +1757,7 @@ export class Game {
     e.hp = Math.max(0, e.hp - amount);
     this.events.hit({ targetId: enemyId, sourceId, amount, crit });
     // Whoever (or whose companion) struck the blow is now fighting.
-    const killerId = sourceId.startsWith("c:") ? sourceId.slice(2) : sourceId;
+    const killerId = ownerOf(sourceId);
     const kp = this.state.players.get(killerId);
     const krt = this.players.get(killerId);
     if (kp && krt) this.enterCombat(kp, krt);
@@ -1642,7 +1765,10 @@ export class Game {
     if (ert?.def.passive) {
       ert.fleeUntil = this.now + 4000;
       ert.fleeFrom = { x: kp?.x ?? e.x, z: kp?.z ?? e.z };
-    } else if (ert && !ert.returning) ert.targetId = sourceId;
+    } else if (ert && !ert.returning) {
+      ert.targetId = sourceId;
+      this.alertPack(ert, e.x, e.z, sourceId);
+    }
     if (e.hp <= 0) this.killEnemy(enemyId, e, kp ? killerId : null);
   }
 
@@ -1654,8 +1780,12 @@ export class Game {
     for (const rt of this.players.values()) if (rt.attackTargetId === enemyId) rt.attackTargetId = null;
     if (!ert) return;
     if (ert.zone) {
-      this.pendingSpawns.push({ at: this.now + ENEMY_RESPAWN_MS, zone: ert.zone });
-      this.pendingSpawns.sort((a, b) => a.at - b.at);
+      // A pack comes back together, once its last member is gone.
+      const packLeft = ert.packId !== undefined && [...this.enemies.values()].some((o) => o.packId === ert.packId);
+      if (!packLeft) {
+        this.pendingSpawns.push({ at: this.now + ENEMY_RESPAWN_MS, zone: ert.zone });
+        this.pendingSpawns.sort((a, b) => a.at - b.at);
+      }
     } else if (ert.special && SPECIALS[ert.special]?.respawnMs) {
       this.pendingSpecials.push({ at: this.now + SPECIALS[ert.special]!.respawnMs!, kind: ert.special });
     }
@@ -1776,15 +1906,28 @@ export class Game {
     this.pendingSpawns = [];
     let n = 0;
     for (const zone of ZONES) {
-      let living = 0;
-      for (const rt of this.enemies.values()) if (rt.zone === zone) living++;
-      for (let i = living; i < zone.population; i++) if (this.spawnEnemy(zone)) n++;
+      let living = this.zoneCount(zone);
+      while (living < zone.population) {
+        const added = this.spawnEnemy(zone);
+        if (!added) break;
+        living += added;
+        n += added;
+      }
     }
     return n;
   }
 
-  /** Spawn one creature somewhere in a hunting ground, at a level within the zone's range. */
-  private spawnEnemy(zone: ZoneDef): boolean {
+  private zoneCount(zone: ZoneDef): number {
+    let n = 0;
+    for (const rt of this.enemies.values()) if (rt.zone === zone) n++;
+    return n;
+  }
+
+  /**
+   * Spawn a creature (or, for party encounters, a pack) somewhere in a
+   * hunting ground at a level within the zone's range. Returns how many appeared.
+   */
+  private spawnEnemy(zone: ZoneDef): number {
     const totalWeight = zone.enemies.reduce((t, e) => t + e.weight, 0);
     for (let attempt = 0; attempt < 60; attempt++) {
       const a = randRange(this.rng, 0, Math.PI * 2);
@@ -1806,13 +1949,36 @@ export class Game {
       let roll = this.rng() * totalWeight;
       const pick = zone.enemies.find((e) => (roll -= e.weight) <= 0) ?? zone.enemies[0]!;
       const def = getEnemy(pick.id);
-      if (!def) return false;
+      if (!def) return 0;
       if (isInWater(pos.x, pos.z) || !isFree(this.world, pos.x, pos.z, Math.max(0.8, def.radius))) continue;
       const level = zone.levels[0] + Math.floor(this.rng() * (zone.levels[1] - zone.levels[0] + 1));
+      // Party encounters: tougher creatures come in packs.
+      if (zone.pack && level >= zone.pack.minLevel) {
+        const size = zone.pack.size[0] + Math.floor(this.rng() * (zone.pack.size[1] - zone.pack.size[0] + 1));
+        const packId = this.nextPackId++;
+        let made = 0;
+        for (let i = 0; i < size; i++) {
+          const spot = i === 0 ? pos : this.findFreeSpotNear(pos.x, pos.z, 3.5);
+          const eid = this.createEnemy(def, level, spot, { zone });
+          this.enemies.get(eid)!.packId = packId;
+          made++;
+        }
+        return made;
+      }
       this.createEnemy(def, level, pos, { zone });
-      return true;
+      return 1;
     }
-    return false;
+    return 0;
+  }
+
+  /** Pull one, pull the pack: idle members nearby join the fight. */
+  private alertPack(rt: EnemyRuntime, x: number, z: number, targetId: string): void {
+    if (!rt.packId) return;
+    for (const [eid, other] of this.enemies) {
+      if (other === rt || other.packId !== rt.packId || other.targetId || other.returning) continue;
+      const e = this.state.enemies.get(eid);
+      if (e && Math.hypot(e.x - x, e.z - z) < PACK_ALERT_RADIUS) other.targetId = targetId;
+    }
   }
 
   private createEnemy(def: EnemyDef, level: number, pos: { x: number; z: number }, opts: { zone?: ZoneDef; special?: string; leash?: number } = {}): string {
@@ -1936,13 +2102,17 @@ export class Game {
         }
       }
       rt.targetId = best;
+      if (best) this.alertPack(rt, e.x, e.z, best);
     }
 
-    const target = rt.targetId ? (rt.targetId.startsWith("c:") ? this.state.companions.get(rt.targetId) : this.state.players.get(rt.targetId)) : undefined;
+    const target = rt.targetId ? (isCompanionId(rt.targetId) ? this.state.companions.get(rt.targetId) : this.state.players.get(rt.targetId)) : undefined;
     if (rt.targetId && (!target || target.anim === "dead")) rt.targetId = null;
 
-    if (target && target.anim !== "dead") {
+    if (target && target.anim !== "dead" && rt.targetId) {
+      const targetId = rt.targetId;
       this.bossMoves(id, e, rt);
+      // The blast may have finished them off.
+      if (target.anim === "dead") return;
       const dist = Math.hypot(target.x - e.x, target.z - e.z);
       if (dist > def.attackRange) {
         this.moveEnemy(e, def, { x: target.x, z: target.z }, def.moveSpeed, dt);
@@ -1953,12 +2123,12 @@ export class Game {
           e.anim = "attack";
           e.actionSeq = (e.actionSeq + 1) % 65535;
           this.events.fx({ kind: "swing", sourceId: id, fromX: e.x, fromZ: e.z, toX: target.x, toZ: target.z });
-          const victimLevel = rt.targetId!.startsWith("c:") ? (this.state.players.get(rt.targetId!.slice(2))?.level ?? rt.level) : (target as Player).level;
+          const victimLevel = isCompanionId(targetId) ? (this.state.players.get(ownerOf(targetId))?.level ?? rt.level) : (target as Player).level;
           const dmg = randRange(this.rng, rt.damage[0], rt.damage[1]) * levelGapMultiplier(rt.level, victimLevel);
-          if (rt.targetId!.startsWith("c:")) this.damageCompanion(rt.targetId!, target as Companion, dmg, id);
+          if (isCompanionId(targetId)) this.damageCompanion(targetId, target as Companion, dmg, id);
           else {
             const victim = target as Player;
-            this.damagePlayer(rt.targetId!, victim, dmg, id);
+            this.damagePlayer(targetId, victim, dmg, id);
             if (def.inflicts && victim.anim !== "dead" && this.rng() < def.inflicts.chance) this.inflict(victim, def.inflicts.status);
           }
         } else if (this.now > rt.nextAttackAt - def.attackCooldown * 1000 + ANIM_HOLD_MS) {

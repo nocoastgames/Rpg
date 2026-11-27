@@ -43,6 +43,7 @@ import { TouchControls } from "../controls/TouchControls.ts";
 import type { GameRoom } from "../net.ts";
 import type { AssetLibrary } from "../scene/Assets.ts";
 import { createCompanionAvatar, createEnemyAvatar, createGuardAvatar, createNpcAvatar, createPlayerAvatar, type Avatar } from "../scene/Avatars.ts";
+import { getAdventurer } from "@rpg/shared";
 import { CelPost } from "../scene/CelPost.ts";
 import { DEFAULT_HOUR, dungeonLighting, lightingAt, type LightingPreset } from "../scene/Lighting.ts";
 import { Environment, groundHeight } from "../scene/Environment.ts";
@@ -103,6 +104,12 @@ export class GameClient {
   private readonly npcs = new Map<string, { avatar: Avatar; pos: THREE.Vector3; name: string }>();
   /** The King's soldiers waiting beyond the rockslide (shown once the road is clear). */
   private readonly guards: Avatar[] = [];
+  /** Ring on the ground where a click or tap sent you. */
+  private readonly moveMarker = new THREE.Mesh(
+    new THREE.RingGeometry(0.35, 0.5, 24).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: "#fff3b0", transparent: true, opacity: 0, depthWrite: false }),
+  );
+  private moveMarkerT = 0;
   /** Controls are locked until then (scripted scenes). */
   private cutsceneUntil = 0;
   private region = "valley";
@@ -207,7 +214,8 @@ export class GameClient {
     this.minimap = new Minimap(this.world);
     this.reticle = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: "#ffd54a", transparent: true, opacity: 0.85, depthWrite: false }));
     this.reticle.visible = false;
-    this.scene.add(this.reticle, this.lantern);
+    this.scene.add(this.reticle, this.lantern, this.moveMarker);
+    this.moveMarker.visible = false;
 
     try {
       this.discovered = new Set(JSON.parse(safeStorageGet(DISCOVERY_KEY) ?? "[]") as string[]);
@@ -239,6 +247,8 @@ export class GameClient {
       accept: (questId) => room.send(C2S.acceptQuest, { questId }),
       turnIn: (questId) => room.send(C2S.turnIn, { questId }),
       requestWeapon: () => room.send(C2S.requestWeapon),
+      hire: (adventurerId) => room.send(C2S.hire, { adventurerId }),
+      dismiss: () => room.send(C2S.dismiss),
       close: () => this.vendor.close(),
     });
     this.hud.root.append(this.vendor.el);
@@ -295,7 +305,7 @@ export class GameClient {
     this.room.onMessage(S2C.dialog, (e: DialogEvent) => {
       if (e.npc === "vendor") {
         this.hud.closePanels();
-        this.vendor.open();
+        this.vendor.open(e.tab === "party" ? "party" : "talk");
       }
     });
     this.room.onLeave.once((code: number) => {
@@ -343,7 +353,13 @@ export class GameClient {
   private updateCursor(): void {
     const ndc = new THREE.Vector2((this.input.mouseX / this.input.width) * 2 - 1, -(this.input.mouseY / this.input.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.iso.camera);
-    this.raycaster.ray.intersectPlane(this.groundPlane, this.cursor);
+    // The valley floor isn't flat: intersect at the terrain's height, refined a few times.
+    let h = groundHeight(this.pred.x, this.pred.z);
+    for (let i = 0; i < 3; i++) {
+      this.groundPlane.constant = -h;
+      if (!this.raycaster.ray.intersectPlane(this.groundPlane, this.cursor)) break;
+      h = groundHeight(this.cursor.x, this.cursor.z);
+    }
 
     const hitboxes: THREE.Object3D[] = [];
     for (const e of this.enemies.values()) if (e.hitbox) hitboxes.push(e.hitbox);
@@ -596,6 +612,9 @@ export class GameClient {
         this.room.send(C2S.attack, { targetId: this.hovered });
       } else {
         this.sendMoveTo(now);
+        this.moveMarker.position.set(this.cursor.x, groundHeight(this.cursor.x, this.cursor.z) + 0.05, this.cursor.z);
+        this.moveMarker.visible = true;
+        this.moveMarkerT = 0.7;
       }
     } else if (inp.leftDown && !this.attackTarget && now - this.lastMoveSent > MOVE_RESEND_MS) {
       this.sendMoveTo(now);
@@ -954,7 +973,22 @@ export class GameClient {
     this.landmarks.update(time);
     this.landmarks.setCampBuilt(!!state.campBuilt);
     this.landmarks.setCrypt(!!state.cryptOpen, !!state.cryptBurned);
-    for (const npc of this.npcs.values()) npc.avatar.update(dt, 0);
+    // Adventurers who are out travelling with someone aren't at the camp.
+    const away = new Set<string>();
+    state.companions?.forEach((c) => {
+      if (c.kind.startsWith("adv:")) away.add(`adv_${c.kind.slice(4)}`);
+    });
+    for (const [id, npc] of this.npcs) {
+      npc.avatar.root.visible = !away.has(id);
+      if (npc.avatar.root.visible) npc.avatar.update(dt, 0);
+    }
+    // Where a click or tap sent you.
+    if (this.moveMarkerT > 0) {
+      this.moveMarkerT = Math.max(0, this.moveMarkerT - dt);
+      this.moveMarker.visible = this.moveMarkerT > 0;
+      (this.moveMarker.material as THREE.MeshBasicMaterial).opacity = this.moveMarkerT / 0.7;
+      this.moveMarker.scale.setScalar(0.6 + (0.7 - this.moveMarkerT) * 0.8);
+    }
     const roadOpen = this.world.openGates.has("valley_exit");
     for (const g of this.guards) {
       g.root.visible = roadOpen;
@@ -982,7 +1016,7 @@ export class GameClient {
       if (ent) this.overlay.plate(id, ent.pos.clone().setY(ent.pos.y + ent.avatar.height + 0.2), `${p.name}`, p.hp / Math.max(1, p.maxHp), "player");
     });
     for (const [id, npc] of this.npcs) {
-      if (npc.pos.distanceToSquared(new THREE.Vector3(this.pred.x, npc.pos.y, this.pred.z)) > 40 * 40) continue;
+      if (!npc.avatar.root.visible || npc.pos.distanceToSquared(new THREE.Vector3(this.pred.x, npc.pos.y, this.pred.z)) > 40 * 40) continue;
       const mark = me ? this.npcMarker(me, id) : "";
       this.overlay.plate(`npc:${id}`, npc.pos.clone().setY(npc.pos.y + npc.avatar.height + 0.2), `${mark}${npc.name}`, null, "npc");
     }
@@ -1007,6 +1041,10 @@ export class GameClient {
       this.hudTimer = 1 / 15;
       const others: PartyMember[] = [];
       const markers: MapMarker[] = [{ x: this.pred.x, z: this.pred.z, kind: "self", facing: this.players.get(this.room.sessionId)?.facing ?? 0 }];
+      // Your adventurer is part of your party.
+      const mine = state.companions?.get(`a:${this.room.sessionId}`);
+      const myAdv = mine ? getAdventurer(mine.kind.slice(4)) : undefined;
+      if (mine && myAdv) others.push({ name: mine.name, level: me.level, classId: myAdv.classId, hp: mine.anim === "dead" ? 0 : mine.hp, maxHp: mine.maxHp });
       state.players.forEach((p, id) => {
         if (id === this.room.sessionId) return;
         others.push({ name: p.name, level: p.level, classId: p.classId, hp: p.hp, maxHp: p.maxHp });
@@ -1035,7 +1073,13 @@ export class GameClient {
       if (this.vendor.isOpen) {
         const v = this.world.landmarks.find((l) => l.id === "vendor");
         if (v && Math.hypot(v.x - this.pred.x, v.z - this.pred.z) > TRADE_RANGE + 1) this.vendor.close();
-        else this.vendor.render(me, resolveKit(me.classId)?.base.id ?? "");
+        else {
+          const hiredBy = new Map<string, string>();
+          state.players.forEach((p, pid) => {
+            if (p.adventurer && pid !== this.room.sessionId) hiredBy.set(p.adventurer, p.name);
+          });
+          this.vendor.render(me, resolveKit(me.classId)?.base.id ?? "", hiredBy);
+        }
       }
       this.minimap.draw(markers, this.discovered, this.world.openGates, mapInfo);
 

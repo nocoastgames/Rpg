@@ -74,6 +74,8 @@ export const Player = schema(
     quests: t.array("string"),
     /** Quests in progress (shared/src/quests.ts): current step and progress toward that step's count. */
     active: t.array(QuestState),
+    /** The adventurer from Haskel's camp travelling with you ("" if none). */
+    adventurer: t.string().default(""),
     /** The odd job Haskel is offering this character right now. */
     fetchOffer: t.string().default(""),
     coins: t.uint32().default(0),

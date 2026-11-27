@@ -32,6 +32,7 @@ export class TouchControls {
   private readonly knob: HTMLElement;
   private stickId: number | null = null;
   private stickOrigin = { x: 0, y: 0 };
+  private stickStart = { x: 0, y: 0, t: 0, moved: 0 };
   private readonly worldTouches = new Map<number, { x: number; y: number; t: number; sx: number; sy: number }>();
   private pinchDist = 0;
   readonly abilityButtons: HTMLButtonElement[] = [];
@@ -187,6 +188,7 @@ export class TouchControls {
       if (this.stickId === null && x < r.width * 0.45 && this.worldTouches.size === 0) {
         this.stickId = e.pointerId;
         this.stickOrigin = { x: e.clientX, y: e.clientY };
+        this.stickStart = { x, y, t: performance.now(), moved: 0 };
         this.stick.style.left = `${e.clientX}px`;
         this.stick.style.top = `${e.clientY}px`;
         this.stick.classList.remove("hidden");
@@ -204,6 +206,7 @@ export class TouchControls {
         const dx = e.clientX - this.stickOrigin.x;
         const dy = e.clientY - this.stickOrigin.y;
         const d = Math.hypot(dx, dy);
+        this.stickStart.moved = Math.max(this.stickStart.moved, d);
         const k = d > STICK_RADIUS ? STICK_RADIUS / d : 1;
         this.knob.style.transform = `translate(calc(-50% + ${dx * k}px), calc(-50% + ${dy * k}px))`;
         const mag = Math.min(1, d / STICK_RADIUS);
@@ -227,6 +230,10 @@ export class TouchControls {
         this.stickId = null;
         this.move = { x: 0, y: 0 };
         this.stick.classList.add("hidden");
+        // A quick tap (no drag) on the joystick side is a tap on the world: walk there.
+        if (e.type === "pointerup" && this.stickStart.moved < 12 && performance.now() - this.stickStart.t < 300) {
+          this.taps.push({ x: this.stickStart.x, y: this.stickStart.y });
+        }
         return;
       }
       const t = this.worldTouches.get(e.pointerId);

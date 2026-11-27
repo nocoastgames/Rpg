@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { APPEARANCE_OPTIONS, DEFAULT_APPEARANCE, getEnemy, resolveKit, type Appearance } from "@rpg/shared";
+import { APPEARANCE_OPTIONS, DEFAULT_APPEARANCE, getAdventurer, getEnemy, resolveKit, type Appearance } from "@rpg/shared";
 import type { AnimName, AssetLibrary, GltfInstance } from "./Assets.ts";
 import { toonMaterial } from "./toon.ts";
 
@@ -771,8 +771,16 @@ export function createGuardAvatar(): Avatar {
   return g;
 }
 
+/** One of the adventurers from Haskel's camp, in their own gear. */
+export function createAdventurerAvatar(id: string): Avatar {
+  const def = getAdventurer(id);
+  if (!def) return new ProceduralWisp("#ffffff", 1);
+  return new ProceduralHumanoid({ classId: "player", flavor: "", color: def.color, weapon: def.weapon, appearance: def.appearance, armor: def.armor, ranged: def.power.ranged });
+}
+
 /** People in the world. Haskel: grey-bearded, in a travel-stained coat and a wide hat. */
 export function createNpcAvatar(npc: string): Avatar {
+  if (npc.startsWith("adv_")) return createAdventurerAvatar(npc.slice(4));
   const h = new ProceduralHumanoid({
     classId: "player",
     flavor: "",
@@ -928,6 +936,7 @@ function ghostify(av: ProceduralHumanoid, opacity: number): void {
 }
 
 export function createCompanionAvatar(kind: string, color: string, scale: number): Avatar {
+  if (kind.startsWith("adv:")) return createAdventurerAvatar(kind.slice(4));
   switch (kind) {
     case "hound":
     case "wolf":

@@ -154,3 +154,18 @@ test("starting zone content: a shrine per god, campsite, quest nodes, hunting gr
   for (const z of ZONES) for (const e of z.enemies) assert.ok(getEnemy(e.id), e.id);
   for (const def of ENEMIES) assert.ok(enemyStats(def, 5).maxHp > enemyStats(def, 1).maxHp);
 });
+
+import { ADVENTURERS, BASE_CLASSES } from "../src/index.ts";
+
+test("one adventurer of each class waits by the merchant, and level 4+ grounds hunt in packs", () => {
+  const w = generateWorld(1337);
+  assert.deepEqual(ADVENTURERS.map((a) => a.classId).sort(), Object.keys(BASE_CLASSES).sort(), "one per class");
+  const vendor = w.landmarks.find((l) => l.id === "vendor")!;
+  for (const a of ADVENTURERS) {
+    const l = w.landmarks.find((m) => m.id === `adv_${a.id}`);
+    assert.ok(l, `adv_${a.id} placed`);
+    assert.ok(Math.hypot(l.x - vendor.x, l.z - vendor.z) < 14, `${a.id} near the merchant`);
+    assert.ok(isFree(w, l.x, l.z, 0.5) && !isInWater(l.x, l.z), `${a.id} stands on open ground`);
+  }
+  for (const z of ZONES) if (z.levels[1] >= 4 && !z.ambient) assert.ok(z.pack && z.pack.minLevel <= 4, `${z.id} has packs`);
+});

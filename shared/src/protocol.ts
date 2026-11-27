@@ -91,6 +91,9 @@ export const C2S = {
   requestWeapon: "requestWeapon",
   unequip: "unequip",
   quickUse: "quickUse",
+  hire: "hire",
+  /** Part ways with your adventurer. */
+  dismiss: "dismiss",
 } as const;
 
 /** Number of ability slots (one per tier). */
@@ -140,9 +143,15 @@ export interface ReadEvent {
   text: string[];
 }
 
-/** Open a conversation (and shop) with someone. */
+/** Open a conversation (and shop) with someone, optionally on a given tab ("party"). */
 export interface DialogEvent {
   npc: string;
+  tab?: string;
+}
+
+/** Ask an adventurer at Haskel's camp to travel with you. */
+export interface HireMsg {
+  adventurerId: string;
 }
 
 /** A short scripted scene: lines shown in turn over a darkening screen; controls are locked meanwhile. */
