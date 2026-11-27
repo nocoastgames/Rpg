@@ -173,6 +173,8 @@ export class Environment {
   setOutdoors(outdoors: boolean): void {
     this.motes.visible = outdoors;
     this.mist.visible = outdoors;
+    // Underground there's no valley floor under the rooms, just dark.
+    this.terrain.visible = outdoors;
   }
 
   /** Keep the shadow frustum centred on the player; animate water and particles. */

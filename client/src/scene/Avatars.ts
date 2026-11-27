@@ -1036,6 +1036,7 @@ export function createEnemyAvatar(assets: AssetLibrary, kind: string): Avatar {
     if (undead) return undead;
   }
   if (kind === "wolf" || kind === "boar") return new ProceduralBeast(kind, color, scale);
+  if (kind === "greyjaw") return new ProceduralBeast("wolf", color, scale);
   if (kind === "spider") return new ProceduralSpider(color, scale);
   if (kind === "hare") return new ProceduralBeast("hare", color, scale);
   if (kind === "skeleton") {

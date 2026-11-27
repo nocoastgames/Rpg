@@ -43,7 +43,16 @@ export const VENDOR_LINES = {
     "\"Here's how things stand. Half the mountain came down on the pass road behind my cart. It's buried, and we're stuck in this valley until the kingdom's men dig it out. I pulled back here to wait.\"",
     "\"And worse. Ashford, the village on the old road east of the ford: I've traded there twenty years. I went first thing. It's full of the dead. Walking dead, friend.\"",
   ],
-  ask: "\"Would you go and find out what happened there? I'm too old for it. I'll make it worth your while.\"",
+  /** Once the wolves are dealt with. */
+  ready: "\"That's the old grey's hide, right enough. You'll do.\"",
+  /** Before Ashford: he wants to see you can handle yourself. */
+  wolves: [
+    "\"But you're green, friend, and Ashford would eat you alive. Prove me wrong first.\"",
+    "\"Wolves out of Greypine Wood have been at my mules every night, and there's an old grey brute leading them. Thin the pack and bring me that one's hide.\"",
+  ],
+  wolvesDuring: "\"Greypine's north of here, the dark woods. The old grey one dens somewhere at its southern edge. Bring me his hide.\"",
+  notYet: "\"You did well with the wolves. Get a little more seasoning first; Ashford's no place to learn.\"",
+  ask: "\"Would you go and find out what happened in Ashford? I'm too old for it. I'll make it worth your while.\"",
   during: "\"Ashford's across the ford and east along the old road. Mind yourself.\"",
   after: "\"The road's open, thanks to you. I'll be on my way soon enough. Still buying, still selling.\"",
   noWeapon: "\"No weapon? Out here? Take this. It's not much, but it's better than your fists.\"",

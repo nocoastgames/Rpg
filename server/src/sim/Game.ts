@@ -14,7 +14,12 @@ import {
   TRADE_RANGE,
   VENDOR,
   VENDOR_NPC,
-  VILLAGE_CRYPT,
+  CRYPT_ENTRY,
+  CRYPT_PRIEST,
+  CRYPT_SPAWNS,
+  WOLF_DEN,
+  cryptPoint,
+  inCrypt,
   VILLAGE_GRAVEYARD,
   canEquip,
   villagePoint,
@@ -221,11 +226,17 @@ const ARREST_LINES = [
   "You wake on wet straw in a cell. Wherever this is, it's a long way from the valley.",
 ];
 
-/** Named creatures: where they appear and whether they come back. */
-const SPECIALS: Record<string, { level: number; at: () => { x: number; z: number }; respawnMs: number | null; leash: number }> = {
+/** Creatures with a fixed spot: named ones, and the crypt's dead. `kind` defaults to the key. */
+const SPECIALS: Record<string, { kind?: string; level: number; at: () => { x: number; z: number }; respawnMs: number | null; leash: number }> = {
   gravedigger: { level: 3, at: () => villagePoint(VILLAGE_GRAVEYARD.du, VILLAGE_GRAVEYARD.dv), respawnMs: 45_000, leash: 16 },
-  hollow_priest: { level: 4, at: () => villagePoint(VILLAGE_CRYPT.du + 1.5, VILLAGE_CRYPT.dv + 2), respawnMs: null, leash: 22 },
+  hollow_priest: { level: 4, at: () => CRYPT_PRIEST, respawnMs: null, leash: 12 },
+  greyjaw: { level: 2, at: () => fromUV(WOLF_DEN.u, WOLF_DEN.v + 4), respawnMs: 60_000, leash: 14 },
+  ...Object.fromEntries(
+    CRYPT_SPAWNS.map((c, i) => [`crypt_${i}`, { kind: c.kind, level: c.level, at: () => cryptPoint(c.lx, c.lz), respawnMs: 90_000, leash: 9 }]),
+  ),
 };
+/** Spawned when the world starts (the Hollow Priest waits for the crypt to be opened). */
+const STARTING_SPECIALS = Object.keys(SPECIALS).filter((k) => k !== "hollow_priest");
 /** Enemies this close and chasing you stop you from resting. */
 const REST_DANGER_RADIUS = 16;
 
@@ -263,7 +274,7 @@ export class Game {
     this.campPos = fromUV(CAMP.u, CAMP.v);
     this.vendorPos = fromUV(VENDOR.u, VENDOR.v);
     this.repopulate();
-    this.spawnSpecial("gravedigger");
+    for (const key of STARTING_SPECIALS) this.spawnSpecial(key);
   }
 
   // -------------------------------------------------------------------------
@@ -594,6 +605,8 @@ export class Game {
       }
       if (l.kind === "shrine") this.pray(id, p, rt, l);
       else if (l.kind === "camp") this.useCamp(id, p, rt, l);
+      else if (l.id === "crypt_stairs") this.leaveCrypt(id, p);
+      else if (l.id === "crypt_heart") this.events.notice(id, this.state.cryptBurned ? "Ash and charred roots. Nothing stirs." : l.lockedText);
       else if (l.kind === "npc") this.events.dialog(id, l.id.startsWith("adv_") ? { npc: "vendor", tab: "party" } : { npc: l.id });
       else if (l.id === "crypt") this.inspectCrypt(id, p, l);
       else {
@@ -624,19 +637,34 @@ export class Game {
   }
 
   private inspectCrypt(id: string, p: Player, l: LandmarkDef): void {
-    // Waiting to fight the Hollow Priest, but it's gone (someone else killed it): it rises again.
+    if (this.state.cryptOpen) this.enterCrypt(id, p);
+    else this.events.notice(id, l.lockedText);
+  }
+
+  /** Down the stairs under the chapel, into the crypt. */
+  private enterCrypt(id: string, p: Player): void {
+    // Here for the Hollow Priest, but it's gone (someone else destroyed it)? It keeps its vigil again.
     const waiting = p.active.some((qs) => {
       const o = getQuest(qs.id)?.steps[qs.step]?.objective;
-      return o?.type === "kill" && o.enemies.includes("hollow_priest");
+      return (o?.type === "kill" && o.enemies.includes("hollow_priest")) || (o?.type === "reach" && o.landmark === "crypt_thorns");
     });
-    if (waiting && !this.specialAlive("hollow_priest")) {
-      this.spawnSpecial("hollow_priest");
-      this.events.notice(id, "Something stirs again in the crypt below, and climbs toward you.");
-      return;
-    }
-    if (this.state.cryptBurned) this.events.notice(id, "The crypt door stands open. Ash covers the steps where the thorns burned.");
-    else if (this.state.cryptOpen) this.events.notice(id, "The crypt door stands open. Black thorns writhe on the steps below.");
-    else this.events.notice(id, l.lockedText);
+    if (waiting && !this.state.cryptBurned && !this.specialAlive("hollow_priest")) this.spawnSpecial("hollow_priest");
+    this.teleportTo(id, CRYPT_ENTRY.x, CRYPT_ENTRY.z);
+    p.facing = 0;
+    this.events.notice(
+      id,
+      this.state.cryptBurned
+        ? "You go down the stone stairs. The air still smells of burnt thorns."
+        : "You go down the stone stairs into the cold. Far ahead, something is singing.",
+    );
+  }
+
+  /** Back up the stairs into Ashford's chapel yard. */
+  private leaveCrypt(id: string, p: Player): void {
+    const door = this.world.landmarks.find((m) => m.id === "crypt");
+    if (!door) return;
+    this.teleportTo(id, door.x + 1.5, door.z + 1.5);
+    this.events.notice(id, "You climb back up into the grey light of Ashford.");
   }
 
   /** What finishing certain quest steps does to the world. */
@@ -966,6 +994,7 @@ export class Game {
       if (p.fetchOffer !== questId || p.active.some((a) => getQuest(a.id)?.repeatable)) return;
     } else if (p.quests.includes(questId)) return;
     if (q.requires && !p.quests.includes(q.requires)) return;
+    if (q.minLevel && p.level < q.minLevel) return;
     this.startQuest(id, p, questId);
   }
 
@@ -1474,7 +1503,7 @@ export class Game {
     const spot = this.findFreeSpotNear(x, z, 1);
     p.x = spot.x;
     p.z = spot.z;
-    p.region = inDungeon(spot.x, spot.z) ? "dungeon" : "valley";
+    p.region = inCrypt(spot.x, spot.z) ? "crypt" : inDungeon(spot.x, spot.z) ? "dungeon" : "valley";
     rt.intent = { dirX: 0, dirZ: 0, target: null };
     rt.attackTargetId = null;
     return true;
@@ -1892,6 +1921,8 @@ export class Game {
   /** You come back by the stream, or at the camp fire once it is built. */
   private respawn(p: Player, rt: PlayerRuntime): void {
     const home = p.region === "dungeon" ? DUNGEON_CELL : this.state.campBuilt ? this.campPos : this.world.spawn;
+    // Falling in the crypt: you come back by the fire, above ground.
+    if (p.region === "crypt") p.region = "valley";
     const spot = this.findFreeSpotNear(home.x, home.z, 3);
     p.x = spot.x;
     p.z = spot.z;
@@ -2027,13 +2058,13 @@ export class Game {
     return false;
   }
 
-  /** Bring out a named creature (Old Corwin, the Hollow Priest) at its spot. */
-  private spawnSpecial(kind: string): void {
-    const sp = SPECIALS[kind];
-    const def = getEnemy(kind);
+  /** Bring out a creature with a fixed spot (Old Corwin, Greyjaw, the Hollow Priest, the crypt's dead). */
+  private spawnSpecial(key: string): void {
+    const sp = SPECIALS[key];
+    const def = getEnemy(sp?.kind ?? key);
     if (!sp || !def) return;
     const at = sp.at();
-    this.createEnemy(def, sp.level, this.findFreeSpotNear(at.x, at.z, 1), { special: kind, leash: sp.leash });
+    this.createEnemy(def, sp.level, this.findFreeSpotNear(at.x, at.z, 1), { special: key, leash: sp.leash });
   }
 
   /** Bosses: a blast around them every few seconds, and minions once badly hurt. */

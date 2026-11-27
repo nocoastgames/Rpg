@@ -43,7 +43,7 @@ south-west to the ruins and up the western valley to the cave.
 | Zone | Levels | Creatures | Status effect | Where |
 | --- | --- | --- | --- | --- |
 | Tusk Meadow | 1–2 | Tusked boars, wild hares | none | Open grassland east of the ford, a minute from the clearing |
-| Greypine Wood | 2–3 | Grey wolves, hares | Bleeding (20% of hits): 3 damage a second for 5 s | The dense pine forest filling the north |
+| Greypine Wood | 2–3 | Grey wolves, hares; Greyjaw (named, level 2) at the wolves' den on its south edge | Bleeding (20% of hits): 3 damage a second for 5 s | The dense pine forest filling the north |
 | Ashford (the village) | 2–3 | Risen villagers, skeletons; Old Corwin the Gravedigger (named, level 3); the Hollow Priest (boss, level 4) | none (the Priest's blast blights) | On the old road, east of the ford |
 | Webbed Hollow | 3–4 | Hollow spiders | Poisoned (35%): 2 damage a second for 8 s | The south, toward the gorge |
 | The Thornbrake | 4–5 | Thornlings | Blighted (25%): you deal 25% less damage for 10 s | The far north-west, in front of the cave |
@@ -96,11 +96,29 @@ potions:
 Wren hits hardest against a single target and is weakest against a pack;
 Brannoc and Ilse are the safe picks for the Thornbrake.
 
-Old Corwin (level 3) is a fair fight at level 3. The Hollow Priest (level 4
-boss) is a party fight: take a companion.
+Named creatures (`NAMED_ONLY=1 npm run balance -w server`):
 
-Rough pacing: the first quest takes you to about level 3, and the hunting
-grounds carry you to 5 (about 1,150 experience in total).
+| Creature | Where | Alone | With a companion |
+| --- | --- | --- | --- |
+| Greyjaw (level 2) | The wolves' den, Greypine Wood | level 2: win, ~55% health left | level 2: win, 80–88% left |
+| Old Corwin (level 3) | Ashford's graveyard | level 3: win, 25–65% left | |
+| The Hollow Priest (level 4 boss) | The crypt's thorn chamber | level 4: always lose | level 4: win, 50–70% left |
+
+### Pacing
+
+Levelling is slow on purpose, and the story quests are tuned to it
+(`xpForNextLevel` in `shared/src/stats.ts`: 360 × level^1.15, so 360 XP to
+level 2, 799 to level 3, 1,271 to level 4, 1,774 to level 5):
+
+- **Level 2 as you finish Shelter.** The quest's steps and the boars you
+  hunt for hides leave you short; building the fire and the quest reward
+  (120 XP) take you over.
+- **Level 3 as you finish Teeth in the Pines**, Haskel's wolf hunt. Ashford
+  waits for it (and for level 3).
+- **Level 4 by the time you reach the Hollow Priest**, deep in the crypt.
+
+A test (`pacing` in `shared/test/valley.test.ts`) checks these against the
+fewest and most kills each quest is likely to take.
 
 ## Shrines
 
@@ -178,8 +196,9 @@ pulled back to a sheltered clearing west of the stream to wait, with four
 other stranded travellers; everyone is stuck in the valley until the kingdom
 beyond digs the road out. He used to trade with **Ashford**, a farming
 village on the old road east of the ford, and found it overrun by the dead.
-Until your campfire is built he only talks about that; afterwards he asks
-you to find out what happened in Ashford.
+Until your campfire is built he only talks about that. Then he sends you
+after the wolves (*Teeth in the Pines*), and once that's done and you're
+level 3, he asks you to find out what happened in Ashford.
 
 Talk to him (interact) to open his window:
 
@@ -280,21 +299,59 @@ lists:
 You follow the story quest you're on unless you pick another; the choice is
 remembered on this device.
 
-## Third quest: The Silent Village
+## Third quest: Teeth in the Pines
 
-From Haskel, once your campfire is built. About twenty minutes; the village's dead are level 2–3 and the
-Hollow Priest is a level 4 boss.
+From Haskel, once your campfire is built. He won't send a greenhorn to
+Ashford: wolves from Greypine Wood have been at his mules.
 
 | Step | Task | Reward |
 | --- | --- | --- |
-| 1. The old west road | Find Ashford | 40 XP |
-| 2. Put them to rest | Destroy 8 risen villagers or skeletons | 90 XP |
-| 3. What happened here | Search the cart, the well and the headman's journal (2 s each) | 70 XP |
-| 4. The gravedigger | Kill Old Corwin in the graveyard for the crypt key | 70 XP |
-| 5. Under the chapel | Unlock the crypt (3 s); the Hollow Priest climbs out | 30 XP |
-| 6. The Hollow Priest | Destroy it. Every 7 s it blasts everything within 4.5 m (and blights it); at half health it calls two skeletons | 150 XP |
-| 7. Root and ash | Burn the black thorns in the crypt (4 s) | 60 XP |
-| 8. Report to Haskel | Talk to him | 150 XP, 25 coins, and your first **upper-body armour** for your calling |
+| 1. Thin the pack | Kill 8 grey wolves in Greypine Wood (levels 2–3) | 60 XP |
+| 2. Greyjaw | Find the wolves' den at the south edge of Greypine Wood and kill Greyjaw, the old pack leader (level 2, named; comes back after a minute) | 80 XP |
+| 3. Back to the caravan | Show Haskel the pelt | 170 XP + 220 XP, 15 coins |
+
+Finishing it takes you to level 3.
+
+## Fourth quest: The Silent Village
+
+From Haskel, once you've done Teeth in the Pines and reached **level 3**.
+About half an hour; the village's dead are level 2–3, the crypt's are 3–4,
+and the Hollow Priest is a level 4 boss.
+
+| Step | Task | Reward |
+| --- | --- | --- |
+| 1. The old west road | Cross the ford and find Ashford | 60 XP |
+| 2. Put them to rest | Destroy 8 risen villagers or skeletons | 150 XP |
+| 3. What happened here | Search the cart, the well and the headman's journal (2 s each) | 150 XP |
+| 4. The gravedigger | Kill Old Corwin in the graveyard for the crypt key | 150 XP |
+| 5. Under the chapel | Unlock the crypt (3 s) | 60 XP |
+| 6. Into the dark | Go down into the crypt and reach the thorn chamber | 260 XP |
+| 7. The Hollow Priest | Destroy it. Every 7 s it blasts everything within 4.5 m (and blights it); at half health it calls two skeletons | 150 XP |
+| 8. Root and ash | Burn the heart of the black thorns (4 s) | 60 XP |
+| 9. Report to Haskel | Climb out and talk to him | 150 XP, 25 coins, and your first **upper-body armour** for your calling |
+
+### The crypt under the chapel
+
+Once unlocked, the crypt door leads down (interact: *Go down into the
+crypt*) to a small dungeon of its own:
+
+```
+  Stair hall ── Ossuary ──┐
+  (way out)   2 skeletons │ (a risen in the passage)
+                          │
+            Burial hall ──┘ ── The Thorn Chamber
+     2 risen, a level 4 skeleton,   the Hollow Priest,
+     two sarcophagi                 the heart of the thorns
+```
+
+- Lit by torches and the purple glow of the thorns; the map shows the rooms
+  while you're down there, and the quest arrow points through the door
+  (down, or back up) when your goal is on the other side.
+- The crypt's dead come back 90 seconds after they fall. The Hollow Priest
+  doesn't; if someone else destroyed it before you, it's waiting again
+  when you go down.
+- Fall in the crypt and you wake by the camp fire above ground.
+- The stairs in the stair hall take you back up into Ashford.
 
 | Calling | Armour |
 | --- | --- |
@@ -323,9 +380,7 @@ cell in **the castle dungeon**, far from the valley.
   back.
 
 The crypt is shared world state like the camp: once someone unlocks it the
-door stays open, and once the thorns are burned they stay burned. If you
-reach the Hollow Priest step after someone else has destroyed it, inspect the
-crypt and it rises again for you.
+door stays open, and once the thorns are burned they stay burned.
 
 ## Dev commands
 
@@ -334,6 +389,7 @@ crypt and it rises again for you.
 | `/tp camp`, `/tp shrine_<god>`, `/tp tusk_meadow` (any zone id) | Teleport |
 | `/tp vendor`, `/tp village`, `/tp crypt` | Teleport to Haskel, Ashford, the crypt |
 | `/step [quest]` | Finish the current step of a quest (default: your first active one) |
-| `/quest voices`, `/quest make_camp`, `/quest silent_village` | Start (if needed) and finish a whole quest |
+| `/quest voices`, `/quest make_camp`, `/quest grey_pack`, `/quest silent_village` | Start (if needed) and finish a whole quest |
+| `/tp wolf_den`, `/tp crypt_stairs`, `/tp crypt_thorns` | Teleport to Greyjaw's den, into the crypt, to the thorn chamber |
 | `/coins <n>` | Set your coins |
 | `/near <creature>` | Teleport next to the nearest creature of a kind (`skeleton`, `risen`, `wolf`…) |

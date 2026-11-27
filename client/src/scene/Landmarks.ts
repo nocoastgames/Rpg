@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { getFaith, mulberry32, type GateId, type Structure, type World } from "@rpg/shared";
+import { CRYPT_HEART, CRYPT_ORIGIN, CRYPT_ROOMS, cryptSdf, getFaith, mulberry32, type GateId, type Structure, type World } from "@rpg/shared";
 import { applyOcclusionCutout } from "./occlusion.ts";
 import { toonMaterial } from "./toon.ts";
 import { groundHeight } from "./Environment.ts";
@@ -47,6 +47,9 @@ export class Landmarks {
   private crypt: { door: THREE.Object3D; thorns: THREE.Object3D; light: THREE.PointLight } | null = null;
   private cellTorch: { light: THREE.PointLight; flame: THREE.Mesh } | null = null;
   private cryptKey = "";
+  /** The crypt under Ashford: its lights (only lit while you're down there) and the thorn heart. */
+  private readonly cryptLights: THREE.Light[] = [];
+  private cryptHeart: { thorns: THREE.Object3D; ash: THREE.Object3D; light: THREE.PointLight } | null = null;
   private readonly gated = new Map<GateId, THREE.Object3D[]>();
   private readonly runeMat: THREE.MeshToonMaterial;
   private readonly seals: THREE.Object3D[] = [];
@@ -118,6 +121,17 @@ export class Landmarks {
     this.crypt.door.rotation.y = open ? -1.9 : 0;
     this.crypt.thorns.visible = !burned;
     this.crypt.light.color.set(burned ? "#ff9a4a" : "#8a5cff");
+    if (this.cryptHeart) {
+      this.cryptHeart.thorns.visible = !burned;
+      this.cryptHeart.ash.visible = burned;
+      this.cryptHeart.light.color.set(burned ? "#ff7a3a" : "#8a5cff");
+      this.cryptHeart.light.intensity = burned ? 6 : 26;
+    }
+  }
+
+  /** Underground lights only burn while you're underground (every light costs every surface). */
+  setRegion(region: string): void {
+    for (const l of this.cryptLights) l.visible = region === "crypt";
   }
 
   // --- Campsite ---------------------------------------------------------------
@@ -390,6 +404,12 @@ export class Landmarks {
         break;
       case "cell":
         this.buildCell(g, rng);
+        break;
+      case "crypt_dungeon":
+        this.buildCryptDungeon(g, rng);
+        break;
+      case "wolf_den":
+        this.buildWolfDen(g, rng);
         break;
       default:
         return null;
@@ -703,5 +723,176 @@ export class Landmarks {
     built.visible = false;
     g.add(site, built);
     this.camp = { site, built, flames, fire };
+  }
+
+  /**
+   * The crypt under Ashford, from the shared floor plan: flagstone floors,
+   * walls wherever the floor ends (cut low on the sides facing the camera),
+   * stairs up, pillars, sarcophagi, bone piles, torches, and the heart of the
+   * black thorns. Local coordinates match CRYPT_ROOMS.
+   */
+  private buildCryptDungeon(g: THREE.Group, rng: () => number): void {
+    const dark = new THREE.Mesh(new THREE.PlaneGeometry(140, 110), new THREE.MeshBasicMaterial({ color: "#040303" }));
+    dark.rotation.x = -Math.PI / 2;
+    dark.position.set(24, -0.03, 12);
+    g.add(dark);
+    for (const r of CRYPT_ROOMS) {
+      const w = r.x1 - r.x0;
+      const d = r.z1 - r.z0;
+      const floor = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat(r.corridor ? "#4a453e" : r.id === "thorns" ? "#463c4c" : "#5a554c"));
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.set((r.x0 + r.x1) / 2, r.corridor ? 0.005 : 0.01, (r.z0 + r.z1) / 2);
+      floor.receiveShadow = true;
+      g.add(floor);
+      if (!r.corridor) {
+        for (let i = 0; i < Math.round((w * d) / 6); i++) {
+          g.add(mesh(new THREE.BoxGeometry(0.8 + rng() * 0.5, 0.03, 0.6 + rng() * 0.4), mat(i % 2 ? "#55504a" : "#423e38"), r.x0 + 0.5 + rng() * (w - 1), 0.02, r.z0 + 0.5 + rng() * (d - 1)));
+        }
+      }
+    }
+
+    // Walls: one 1 m segment on every floor edge that meets rock.
+    const inside = (lx: number, lz: number) => cryptSdf(CRYPT_ORIGIN.x + lx, CRYPT_ORIGIN.z + lz) > 0;
+    const tall: THREE.Matrix4[] = [];
+    const low: THREE.Matrix4[] = [];
+    const m4 = (x: number, y: number, z: number, sx: number, sy: number, sz: number) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion(), new THREE.Vector3(sx, sy, sz));
+    for (let lx = -6; lx < 55; lx++) {
+      for (let lz = -7; lz < 31; lz++) {
+        const cx = lx + 0.5;
+        const cz = lz + 0.5;
+        if (!inside(cx, cz)) continue;
+        // Far sides (toward -x and -z, away from the camera): full height.
+        if (!inside(cx - 1, cz)) tall.push(m4(lx - 0.25, 1.6, cz, 0.5, 3.2, 1.02));
+        if (!inside(cx, cz - 1)) tall.push(m4(cx, 1.6, lz - 0.25, 1.02, 3.2, 0.5));
+        // Near sides: low, so you can see in.
+        if (!inside(cx + 1, cz)) low.push(m4(lx + 1.25, 0.3, cz, 0.5, 0.6, 1.02));
+        if (!inside(cx, cz + 1)) low.push(m4(cx, 0.3, lz + 1.25, 1.02, 0.6, 0.5));
+      }
+    }
+    const box = new THREE.BoxGeometry(1, 1, 1);
+    for (const [list, color] of [[tall, "#5a5650"], [low, "#4e4a44"]] as const) {
+      const inst = new THREE.InstancedMesh(box, mat(color), list.length);
+      list.forEach((m, i) => inst.setMatrixAt(i, m));
+      inst.castShadow = true;
+      inst.receiveShadow = true;
+      inst.computeBoundingSphere();
+      g.add(inst);
+    }
+
+    // Stairs up, against the far wall of the stair hall.
+    for (let i = 0; i < 6; i++) g.add(mesh(new THREE.BoxGeometry(2.4, 0.22 * (i + 1), 0.45), mat(i % 2 ? "#5e5a52" : "#55514a"), 0, 0.11 * (i + 1), -1.6 - i * 0.42));
+    // Light spilling down the stairs from the chapel above.
+    const daylight = new THREE.PointLight("#c8d0e8", 10, 9, 2);
+    daylight.position.set(0, 3, -3);
+    g.add(daylight);
+    this.cryptLights.push(daylight);
+
+    // Pillars in the ossuary and the thorn chamber; sarcophagi in the burial hall (same spots as their colliders).
+    for (const [x, z] of [[18, -3.5], [24, -3.5], [18, 3.5], [24, 3.5], [41, 14.5], [41, 25.5], [50, 14.5], [50, 25.5]] as const) {
+      g.add(mesh(new THREE.CylinderGeometry(0.42, 0.5, 3.2, 8), mat("#6a655c"), x, 1.6, z));
+    }
+    for (const [x, z, rot] of [[17, 22, 0], [25, 18, 0.1]] as const) {
+      const sar = new THREE.Group();
+      sar.add(mesh(new THREE.BoxGeometry(1.0, 0.8, 2.2), mat("#6e6a62"), 0, 0.4, 0));
+      sar.add(mesh(new THREE.BoxGeometry(1.15, 0.14, 2.35), mat("#7a766c"), 0.08, 0.86, 0));
+      sar.position.set(x, 0, z);
+      sar.rotation.y = rot + 0.6;
+      g.add(sar);
+    }
+    // Bone piles and skulls along the ossuary's far walls.
+    const bone = mat("#d8d0b8");
+    for (let i = 0; i < 26; i++) {
+      const alongX = i < 13;
+      const t = rng();
+      const x = alongX ? 16.4 + t * 9.2 : 16.4 + rng() * 0.6;
+      const z = alongX ? -4.4 + rng() * 0.6 : -4.4 + t * 9;
+      const b = mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.5 + rng() * 0.3, 4), bone, x, 0.08 + rng() * 0.2, z);
+      b.rotation.set(Math.PI / 2, rng() * 3, rng());
+      g.add(b);
+      if (i % 4 === 0) g.add(mesh(new THREE.SphereGeometry(0.13, 6, 5), bone, x, 0.15, z));
+    }
+
+    // A cold dim fill so the stone reads in the dark (only lit while you're down here).
+    const fill = new THREE.HemisphereLight("#9aa4c8", "#3a3028", 2.6);
+    g.add(fill);
+    this.cryptLights.push(fill);
+    // Torches on the far walls: flames everywhere, real light in the ossuary and the burial hall.
+    for (const [x, z, lit] of [[-3.8, 2, false], [16.2, 0, true], [14.2, 20, true], [27.8, 15.2, false]] as const) {
+      const flame = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.32, 6), new THREE.MeshBasicMaterial({ color: "#ffb040" }));
+      flame.geometry.translate(0, 0.16, 0);
+      flame.position.set(x, 2.1, z);
+      g.add(flame, mesh(new THREE.BoxGeometry(0.08, 0.45, 0.08), mat("#5e4329"), x, 1.85, z));
+      if (lit) {
+        const torch = new THREE.PointLight("#ff9a3a", 18, 12, 2);
+        torch.position.set(x + 1, 2.3, z);
+        g.add(torch);
+        this.cryptLights.push(torch);
+      }
+    }
+
+    // The heart of the black thorns, and thorns creeping along the chamber.
+    const thorns = new THREE.Group();
+    const hx = CRYPT_HEART.x - CRYPT_ORIGIN.x;
+    const hz = CRYPT_HEART.z - CRYPT_ORIGIN.z;
+    for (let i = 0; i < 34; i++) {
+      const a = rng() * Math.PI * 2;
+      const r = rng() * 1.3;
+      const h = 1.2 + rng() * 2.2;
+      const t = mesh(new THREE.ConeGeometry(0.12 + rng() * 0.14, h, 4), mat(rng() < 0.25 ? "#5a1a2e" : "#1c1424"), hx + Math.cos(a) * r, h / 2 - 0.1, hz + Math.sin(a) * r);
+      t.rotation.set((rng() - 0.5) * 0.8, rng() * 3, (rng() - 0.5) * 0.8);
+      thorns.add(t);
+    }
+    thorns.add(mesh(new THREE.SphereGeometry(0.55, 8, 6), mat("#3a1030", "#8a2a7a"), hx, 1.0, hz));
+    for (let i = 0; i < 40; i++) {
+      const edge = i % 4;
+      const x = edge === 0 ? 38.5 + rng() * 13 : edge === 1 ? 38.6 + rng() * 0.8 : 39 + rng() * 12;
+      const z = edge === 0 ? 12.6 + rng() * 0.8 : edge === 1 ? 12.5 + rng() * 15 : 12.5 + rng() * 15;
+      if (edge >= 2 && Math.hypot(x - hx, z - hz) < 4) continue;
+      const h = 0.4 + rng() * 1.1;
+      const t = mesh(new THREE.ConeGeometry(0.06 + rng() * 0.06, h, 4), mat("#1c1424"), x, h / 2, z);
+      t.rotation.set((rng() - 0.5) * 0.9, rng() * 3, (rng() - 0.5) * 0.9);
+      thorns.add(t);
+    }
+    g.add(thorns);
+    const ash = new THREE.Mesh(new THREE.CircleGeometry(2.2, 14), mat("#2a2624"));
+    ash.rotation.x = -Math.PI / 2;
+    ash.position.set(hx, 0.03, hz);
+    ash.visible = false;
+    g.add(ash);
+    const heartLight = new THREE.PointLight("#8a5cff", 26, 16, 2);
+    heartLight.position.set(hx, 1.6, hz);
+    g.add(heartLight);
+    this.cryptLights.push(heartLight);
+    this.cryptHeart = { thorns, ash, light: heartLight };
+    for (const l of this.cryptLights) l.visible = false;
+  }
+
+  /** Greyjaw's den: a hollow under the roots of a fallen pine, rocks piled round, bones in the dirt. */
+  private buildWolfDen(g: THREE.Group, rng: () => number): void {
+    const hollow = new THREE.Mesh(new THREE.CircleGeometry(1.3, 12), new THREE.MeshBasicMaterial({ color: "#0c0a08" }));
+    hollow.rotation.x = -Math.PI / 2;
+    hollow.position.set(0, 0.04, 0);
+    hollow.scale.set(1.2, 0.8, 1);
+    g.add(hollow);
+    for (let i = 0; i < 9; i++) {
+      const a = Math.PI * 0.15 + (i / 8) * Math.PI * 1.1;
+      const r = mesh(new THREE.DodecahedronGeometry(0.55 + rng() * 0.45, 0), mat(rng() < 0.4 ? "#5f5a54" : "#6f6a62"), Math.cos(a) * 1.8, 0.35, -Math.sin(a) * 1.5);
+      r.rotation.set(rng() * 3, rng() * 3, rng() * 3);
+      g.add(r);
+    }
+    // The fallen pine: trunk across the back, its root plate standing up.
+    const trunk = mesh(new THREE.CylinderGeometry(0.32, 0.4, 6, 7), mat("#5a3e28"), 0.4, 0.5, -1.9);
+    trunk.rotation.z = Math.PI / 2;
+    trunk.rotation.y = 0.15;
+    g.add(trunk);
+    const roots = mesh(new THREE.CylinderGeometry(1.4, 1.4, 0.35, 9), mat("#4a3826"), -2.7, 1.1, -1.7);
+    roots.rotation.z = Math.PI / 2;
+    g.add(roots);
+    const bone = mat("#d8d0b8");
+    for (let i = 0; i < 9; i++) {
+      const b = mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.45, 4), bone, (rng() - 0.5) * 3.4, 0.05, 0.6 + rng() * 1.4);
+      b.rotation.set(Math.PI / 2, rng() * 3, 0);
+      g.add(b);
+    }
   }
 }

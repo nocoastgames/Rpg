@@ -3,6 +3,7 @@
  * Deliberately general: a place, the middle of a hunting ground, or the
  * nearest pick-up you still need; never a creature's exact position.
  */
+import { inCrypt } from "./crypt.ts";
 import { ENEMIES } from "./enemies.ts";
 import { getQuest } from "./quests.ts";
 import { ZONES, fromUV, type LandmarkDef, type ZoneDef } from "./valley.ts";
@@ -57,8 +58,15 @@ function nearestZoneFor(enemies: readonly string[], x: number, z: number): ZoneD
 /** Where step `stepIndex` of a quest sends you, or null if it points nowhere in particular. */
 export function questTarget(questId: string, stepIndex: number, ctx: QuestTargetContext): QuestTarget | null {
   const t = rawTarget(questId, stepIndex, ctx);
+  if (!t) return null;
+  // The crypt is its own place: point at the way in (or out) until you're on the right side.
+  const there = inCrypt(t.x, t.z);
+  if (there !== inCrypt(ctx.x, ctx.z)) {
+    const door = ctx.landmarks.find((l) => l.id === (there ? "crypt" : "crypt_stairs"));
+    if (door) return { x: door.x, z: door.z, radius: 0, label: there ? "The crypt under the chapel" : "The stairs up" };
+  }
   const where = getQuest(questId)?.steps[stepIndex]?.where;
-  return t && where ? { ...t, label: where } : t;
+  return where ? { ...t, label: where } : t;
 }
 
 function rawTarget(questId: string, stepIndex: number, ctx: QuestTargetContext): QuestTarget | null {

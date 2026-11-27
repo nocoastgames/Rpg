@@ -64,6 +64,8 @@ export interface QuestDef {
   next?: string;
   /** Only offered once this quest is done. */
   requires?: string;
+  /** Only offered from this level. */
+  minLevel?: number;
 }
 
 /** The first quest: you wake alone by the stream and hear people in the distance. */
@@ -78,7 +80,7 @@ export const VOICES_QUEST: QuestDef = {
       text: "Follow the voices west, away from the stream.",
       objective: { type: "reach", landmark: "vendor", radius: 18 },
       where: "The voices",
-      xp: 30,
+      xp: 20,
       doneText: "A covered cart, a smoky cookfire and a handful of travellers. A grey-bearded man raises a hand: \"Easy, friend. You look half-drowned.\"",
     },
     {
@@ -86,7 +88,7 @@ export const VOICES_QUEST: QuestDef = {
       text: "Talk to the grey-bearded man by the cart.",
       objective: { type: "interact", landmark: "vendor" },
       where: "The grey-bearded man",
-      xp: 30,
+      xp: 20,
       doneText: "\"Haskel. You're welcome to stay near the caravan, but we've no wood to spare. You'll have to build your own campfire. That clearing beside us is yours.\"",
     },
   ],
@@ -102,21 +104,21 @@ export const CAMP_QUEST: QuestDef = {
       title: "Firewood",
       text: "Gather dry branches from the deadfall in the woods around the caravan.",
       objective: { type: "gather", node: "deadfall", count: 8, seconds: 1.5 },
-      xp: 40,
+      xp: 20,
       doneText: "An armful of dry wood. Enough to keep a fire going through the night.",
     },
     {
       title: "A ring of stones",
       text: "Collect smooth stones from the stream banks to ring the fire.",
       objective: { type: "gather", node: "river_stone", count: 6, seconds: 1.5 },
-      xp: 50,
+      xp: 20,
       doneText: "Heavy, smooth and cold. They'll keep the fire where it belongs.",
     },
     {
       title: "Hides",
       text: "Hunt tusked boars in Tusk Meadow, across the ford, for hides to stretch over a lean-to.",
       objective: { type: "kill", enemies: ["boar"], count: 4, chance: 0.7, failText: "The hide is torn to ribbons. Useless." },
-      xp: 80,
+      xp: 30,
       doneText: "Four rough hides. They stink, but they'll keep the rain off.",
       marker: "tusk_meadow",
     },
@@ -124,10 +126,48 @@ export const CAMP_QUEST: QuestDef = {
       title: "Make camp",
       text: "Return to the clearing beside the caravan and build your campfire.",
       objective: { type: "interact", landmark: "campsite", seconds: 4, verb: "Build your camp", effect: "build_camp" },
-      xp: 120,
+      xp: 60,
       doneText: "The fire catches. For the first time since you woke, you're warm. Haskel nods across at you from his cart: he has something to ask.",
     },
   ],
+  // Finishing Shelter is what takes you to level 2.
+  reward: { xp: 120 },
+};
+
+/** Haskel won't send a greenhorn to Ashford: thin the wolves first. Takes you to level 3. */
+export const WOLF_QUEST: QuestDef = {
+  id: "grey_pack",
+  name: "Teeth in the Pines",
+  giver: "vendor",
+  requires: "make_camp",
+  intro: "Wolves from Greypine Wood have been at Haskel's mules every night. Thin the pack and bring down its leader, and he'll trust you with Ashford.",
+  steps: [
+    {
+      title: "Thin the pack",
+      text: "Hunt grey wolves in Greypine Wood, north of the caravan.",
+      objective: { type: "kill", enemies: ["wolf"], count: 8 },
+      xp: 60,
+      doneText: "The woods go quiet. Then, from somewhere deeper among the pines, a long low howl answers.",
+      marker: "greypine_wood",
+    },
+    {
+      title: "Greyjaw",
+      text: "Find the wolves' den in Greypine Wood and kill Greyjaw, the old pack leader.",
+      objective: { type: "kill", enemies: ["greyjaw"], count: 1 },
+      xp: 80,
+      doneText: "Greyjaw goes down hard. His pelt is grey as ash and heavy as a blanket.",
+      marker: "wolf_den",
+    },
+    {
+      title: "Back to the caravan",
+      text: "Show Haskel the old wolf's pelt.",
+      objective: { type: "interact", landmark: "vendor" },
+      xp: 170,
+      doneText: "Haskel turns the great grey pelt over in his hands, then looks at you properly for the first time. \"Alright. You'll do for Ashford.\"",
+    },
+  ],
+  // Finishing the hunt is what takes you to level 3.
+  reward: { coins: 15, xp: 220 },
 };
 
 /** Haskel's quest: find out what happened to Ashford. About twenty minutes. */
@@ -135,14 +175,15 @@ export const VILLAGE_QUEST: QuestDef = {
   id: "silent_village",
   name: "The Silent Village",
   giver: "vendor",
-  requires: "make_camp",
+  requires: "grey_pack",
+  minLevel: 3,
   intro: "Haskel wants to know what happened to Ashford, the farming village on the old road east of the ford.",
   steps: [
     {
       title: "The old west road",
       text: "Cross the stream at the ford and follow the old road east to Ashford.",
       objective: { type: "reach", landmark: "village", radius: 13 },
-      xp: 40,
+      xp: 60,
       doneText: "Doors hang open. Nothing moves in Ashford but the dead.",
       marker: "village",
     },
@@ -150,7 +191,7 @@ export const VILLAGE_QUEST: QuestDef = {
       title: "Put them to rest",
       text: "Destroy the risen dead and skeletons that walk Ashford's lanes.",
       objective: { type: "kill", enemies: ["risen", "skeleton"], count: 8 },
-      xp: 90,
+      xp: 150,
       doneText: "The lanes are quieter. For now.",
       marker: "ashford",
     },
@@ -158,7 +199,7 @@ export const VILLAGE_QUEST: QuestDef = {
       title: "What happened here",
       text: "Search Ashford for signs of what happened: the cart by the gate, the well, the headman's house.",
       objective: { type: "gather", node: "clue", count: 3, seconds: 2 },
-      xp: 70,
+      xp: 150,
       doneText: "Corwin the gravedigger opened the old crypt. Everything went wrong after that.",
       marker: "village",
     },
@@ -166,7 +207,7 @@ export const VILLAGE_QUEST: QuestDef = {
       title: "The gravedigger",
       text: "Find Old Corwin in the graveyard south of the chapel. He still carries the crypt key.",
       objective: { type: "kill", enemies: ["gravedigger"], count: 1 },
-      xp: 70,
+      xp: 150,
       doneText: "A heavy iron key hangs from what's left of Corwin's belt.",
       marker: "village",
     },
@@ -174,27 +215,34 @@ export const VILLAGE_QUEST: QuestDef = {
       title: "Under the chapel",
       text: "Unlock the crypt beneath the chapel.",
       objective: { type: "interact", landmark: "crypt", seconds: 3, verb: "Unlock the crypt", effect: "unseal_crypt" },
-      xp: 30,
-      doneText: "The door grinds open. Something below stops singing, and starts to climb.",
+      xp: 60,
+      doneText: "The door grinds open on stairs going down into the dark. From somewhere far below comes a thin, tuneless singing.",
+    },
+    {
+      title: "Into the dark",
+      text: "Go down into the crypt and follow the singing through the ossuary and the burial hall.",
+      objective: { type: "reach", landmark: "crypt_thorns", radius: 6 },
+      xp: 260,
+      doneText: "A chamber choked with black thorns. In the middle of them something tall and robed turns, still singing, toward you.",
     },
     {
       title: "The Hollow Priest",
-      text: "Destroy the thing that rose from the crypt.",
+      text: "Destroy the Hollow Priest in the thorn chamber.",
       objective: { type: "kill", enemies: ["hollow_priest"], count: 1 },
       xp: 150,
-      doneText: "The Hollow Priest falls apart into black dust, and the dust crawls toward the thorns.",
-      marker: "crypt",
+      doneText: "The Hollow Priest falls apart into black dust, and the dust crawls toward the heart of the thorns.",
+      marker: "crypt_thorns",
     },
     {
       title: "Root and ash",
-      text: "Burn the black thorns choking the crypt so nothing else rises.",
-      objective: { type: "interact", landmark: "crypt", seconds: 4, verb: "Burn the black thorns", effect: "burn_thorns" },
+      text: "Burn the heart of the black thorns so nothing else rises.",
+      objective: { type: "interact", landmark: "crypt_heart", seconds: 4, verb: "Burn the heart of the thorns", effect: "burn_thorns" },
       xp: 60,
       doneText: "The thorns curl, hiss and burn. Something deep under the valley stirs, and goes still.",
     },
     {
       title: "Report to Haskel",
-      text: "Tell Haskel what you found in Ashford.",
+      text: "Climb out of the crypt and tell Haskel what you found under Ashford.",
       objective: { type: "interact", landmark: "vendor" },
       xp: 150,
       doneText: "Haskel listens without a word, then lights a signal fire on the rockslide for the kingdom's men beyond.",
@@ -235,7 +283,7 @@ export const FETCH_QUESTS: readonly QuestDef[] = [
   fetch("thorns", "Curious Thorns", "thorn_splinter", 4, 16, 60, "Bring Haskel 4 black thorns. He knows a scholar who'd pay for them."),
 ];
 
-export const QUESTS: readonly QuestDef[] = [VOICES_QUEST, CAMP_QUEST, VILLAGE_QUEST, ...FETCH_QUESTS];
+export const QUESTS: readonly QuestDef[] = [VOICES_QUEST, CAMP_QUEST, WOLF_QUEST, VILLAGE_QUEST, ...FETCH_QUESTS];
 
 /** The quest every new character starts with. */
 export const FIRST_QUEST = VOICES_QUEST.id;

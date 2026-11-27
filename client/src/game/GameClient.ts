@@ -16,6 +16,9 @@ import {
   MAP_FLAG,
   TRADE_RANGE,
   VILLAGE_QUEST,
+  CAMP_QUEST,
+  WOLF_QUEST,
+  type QuestDef,
   type DialogEvent,
   type CutsceneEvent,
   GUARD_POST,
@@ -293,7 +296,7 @@ export class GameClient {
   private updateLighting(): void {
     if (this.hour === this.appliedHour) return;
     this.appliedHour = this.hour;
-    this.lighting = this.region === "dungeon" ? dungeonLighting() : lightingAt(this.hour);
+    this.lighting = this.region !== "valley" ? dungeonLighting() : lightingAt(this.hour);
     this.env.applyLighting(this.lighting, this.scene);
     this.post.setGrade(this.lighting);
     this.landmarks.setGlow(this.lighting.glow);
@@ -823,8 +826,9 @@ export class GameClient {
     });
     if (ready) return "❓ ";
     // Nothing to offer until your campfire's built.
-    if (VILLAGE_QUEST.requires && !me.quests.includes(VILLAGE_QUEST.requires)) return "";
-    const villageOpen = !me.quests.includes(VILLAGE_QUEST.id) && !me.active.some((q) => q.id === VILLAGE_QUEST.id);
+    if (!me.quests.includes(CAMP_QUEST.id)) return "";
+    const offered = (q: QuestDef) => !me.quests.includes(q.id) && !me.active.some((a) => a.id === q.id) && (!q.requires || me.quests.includes(q.requires)) && me.level >= (q.minLevel ?? 0);
+    const villageOpen = offered(WOLF_QUEST) || offered(VILLAGE_QUEST);
     const jobOpen = !me.active.some((q) => !!getQuest(q.id)?.repeatable);
     return villageOpen || jobOpen ? "❗ " : "";
   }
@@ -848,6 +852,7 @@ export class GameClient {
       return me.quests.includes(prayedFlag(me.faith)) ? `Pray to ${getFaith(me.faith)?.name ?? "your god"}` : "Pray to receive your blessing";
     }
     if (l.kind === "camp") return this.room.state.campBuilt ? "Rest by the fire" : "Inspect the clearing";
+    if (l.id === "crypt" && this.room.state.cryptOpen) return "Go down into the crypt";
     return l.verb;
   }
 
@@ -1066,8 +1071,10 @@ export class GameClient {
     if (me && me.region && me.region !== this.region) {
       this.region = me.region;
       this.appliedHour = -1;
-      this.env.setOutdoors(this.region !== "dungeon");
+      this.env.setOutdoors(this.region === "valley");
+      this.landmarks.setRegion(this.region);
       if (this.region === "dungeon") window.setTimeout(() => this.hud.banner("The Castle Dungeon", "Far from the valley"), 400);
+      if (this.region === "crypt") window.setTimeout(() => this.hud.banner("The Crypt of Ashford", "Under the chapel"), 400);
     }
     if (me) {
       this.landmarks.setCalling(me.faith, me.quests.includes(prayedFlag(me.faith)));
@@ -1122,7 +1129,7 @@ export class GameClient {
         if (Math.hypot(e.x - this.pred.x, e.z - this.pred.z) < 30) markers.push({ x: e.x, z: e.z, kind: "enemy" });
       });
       // Quest markers: pick-ups you still need, places steps point to, hunting grounds to search.
-      const mapInfo: MapContext = { faith: me.faith, objectiveZones: [], hasMap: me.quests.includes(MAP_FLAG), unknown: me.region === "dungeon" };
+      const mapInfo: MapContext = { faith: me.faith, objectiveZones: [], hasMap: me.quests.includes(MAP_FLAG), unknown: me.region === "dungeon", underground: me.region === "crypt" };
       for (const n of this.world.nodes) if (this.wantsNode(me, n)) markers.push({ x: n.x, z: n.z, kind: "node" });
       me.active.forEach((qs) => {
         const quest = getQuest(qs.id);

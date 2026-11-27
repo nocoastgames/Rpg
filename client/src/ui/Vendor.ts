@@ -1,4 +1,4 @@
-import { ADVENTURERS, VENDOR_LINES, VENDOR_NPC, VILLAGE_QUEST, canEquip, getItem, getQuest, type QuestDef } from "@rpg/shared";
+import { ADVENTURERS, CAMP_QUEST, VENDOR_LINES, VENDOR_NPC, VILLAGE_QUEST, WOLF_QUEST, canEquip, getItem, getQuest, type QuestDef } from "@rpg/shared";
 import type { PlayerView } from "../types.ts";
 import { h } from "./dom.ts";
 
@@ -71,7 +71,7 @@ export class VendorPanel {
 
   render(p: PlayerView, baseClass: string, hiredBy: ReadonlyMap<string, string> = new Map()): void {
     if (!this.isOpen) return;
-    const parts = [this.tab, p.coins, p.fetchOffer, p.weapon, p.quests.length, p.adventurer, [...hiredBy].join()];
+    const parts = [this.tab, p.level, p.coins, p.fetchOffer, p.weapon, p.quests.length, p.adventurer, [...hiredBy].join()];
     p.active.forEach((q) => parts.push(`${q.id}:${q.step}:${q.count}`));
     p.inventory.forEach((s) => parts.push(`${s.itemId}:${s.qty}`));
     const key = parts.join("|");
@@ -88,12 +88,20 @@ export class VendorPanel {
     const say = (text: string) => out.push(h("p.vendor-line", null, text));
     const village = p.active.find((q) => q.id === VILLAGE_QUEST.id);
     const done = p.quests.includes(VILLAGE_QUEST.id);
-    const campDone = p.quests.includes(VILLAGE_QUEST.requires ?? "");
+    const campDone = p.quests.includes(CAMP_QUEST.id);
+    const wolves = p.active.find((q) => q.id === WOLF_QUEST.id);
+    const wolvesDone = p.quests.includes(WOLF_QUEST.id);
     if (done) say(VENDOR_LINES.after);
     else if (village) say(VENDOR_LINES.during);
     else if (!campDone) VENDOR_LINES.welcome.forEach(say);
-    else {
+    else if (wolves) say(VENDOR_LINES.wolvesDuring);
+    else if (!wolvesDone) {
       VENDOR_LINES.intro.forEach(say);
+      VENDOR_LINES.wolves.forEach(say);
+      out.push(this.button(`Accept: ${WOLF_QUEST.name}`, () => this.cb.accept(WOLF_QUEST.id), true));
+    } else if (p.level < (VILLAGE_QUEST.minLevel ?? 0)) say(VENDOR_LINES.notYet);
+    else {
+      say(VENDOR_LINES.ready);
       say(VENDOR_LINES.ask);
       out.push(this.button(`Accept: ${VILLAGE_QUEST.name}`, () => this.cb.accept(VILLAGE_QUEST.id), true));
     }

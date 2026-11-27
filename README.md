@@ -195,7 +195,10 @@ screen to run full-screen (it ships a web app manifest).
     voices west to Haskel's caravan (*Voices in the Distance*). He lets you
     stay near, but you must build **your own campfire** beside it (*Shelter*:
     gather firewood and river stones, hunt boars for hides, make camp; about
-    ten minutes).
+    ten minutes). Then he sends you after the wolves of Greypine Wood and
+    their leader Greyjaw (*Teeth in the Pines*) before trusting you with
+    Ashford, whose story ends in **a small crypt dungeon** under the chapel.
+    Levelling is slow: level 2 as Shelter ends, 3 as the wolf hunt does.
     Resting there heals you, makes you Well Rested (+15% XP) and brings every
     hunting ground back to full strength. You respawn at the camp once it's
     built.

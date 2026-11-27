@@ -1,4 +1,6 @@
 import {
+  CRYPT_ROOMS,
+  cryptPoint,
   distanceToTrail,
   distanceToWater,
   forestDensity,
@@ -45,6 +47,8 @@ export interface MapContext {
   hasMap?: boolean;
   /** Somewhere the map doesn't cover (the castle dungeon). */
   unknown?: boolean;
+  /** Under Ashford: the crypt's rooms are drawn instead of the valley. */
+  underground?: boolean;
   /** Where the followed quest points: marked, with an arrow at the edge when it's off the map. */
   quest?: { x: number; z: number; radius: number; label: string };
 }
@@ -184,7 +188,11 @@ export class Minimap {
     let scale: number; // canvas px per metre
     let cu: number;
     let cv: number;
-    if ((this.large && ctxInfo?.hasMap) || !self) {
+    if (ctxInfo?.underground && self) {
+      // The crypt is small: zoom right in.
+      scale = Math.min(W, H) / (this.large ? 70 : 45);
+      ({ u: cu, v: cv } = toUV(self.x, self.z));
+    } else if ((this.large && ctxInfo?.hasMap) || !self) {
       // With Haskel's map: the whole valley.
       scale = Math.min(W / (U1 - U0), H / (V1 - V0));
       cu = (U0 + U1) / 2;
@@ -202,48 +210,75 @@ export class Minimap {
       return { px: W / 2 + (u - cu) * scale, py: H / 2 + (v - cv) * scale };
     };
 
-    ctx.imageSmoothingEnabled = true;
-    const tl = { px: W / 2 + (U0 - cu) * scale, py: H / 2 + (V0 - cv) * scale };
-    if (ctxInfo?.hasMap) ctx.drawImage(this.bg, tl.px, tl.py, (U1 - U0) * scale, (V1 - V0) * scale);
-    else {
-      // Unexplored land is blank parchment.
-      ctx.fillStyle = "#2a2620";
+    if (ctxInfo?.underground) {
+      // Under Ashford: just the crypt's rooms and corridors, as you'd sketch them.
+      ctx.fillStyle = "#0e0c0a";
       ctx.fillRect(0, 0, W, H);
-      ctx.drawImage(this.explored, tl.px, tl.py, (U1 - U0) * scale, (V1 - V0) * scale);
-    }
-
-    // Hunting grounds: named on the large map once found; the quest's target ground is ringed.
-    ctx.textAlign = "center";
-    for (const zn of ZONES) {
-      const c = toPx(...xz(zn.u, zn.v));
-      const target = !!ctxInfo?.objectiveZones?.includes(zn.id);
-      if (target) {
-        ctx.save();
-        ctx.setLineDash([4 * dpr, 4 * dpr]);
-        ctx.strokeStyle = "#fff3b0";
-        ctx.lineWidth = 1.5 * dpr;
+      ctx.fillStyle = "#4a4238";
+      ctx.strokeStyle = "#7a6a50";
+      ctx.lineWidth = dpr;
+      for (const r of CRYPT_ROOMS) {
+        const corners = [cryptPoint(r.x0, r.z0), cryptPoint(r.x1, r.z0), cryptPoint(r.x1, r.z1), cryptPoint(r.x0, r.z1)].map((c) => toPx(c.x, c.z));
         ctx.beginPath();
-        ctx.arc(c.px, c.py, zn.radius * scale, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
+        corners.forEach((c, i) => (i ? ctx.lineTo(c.px, c.py) : ctx.moveTo(c.px, c.py)));
+        ctx.closePath();
+        ctx.fill();
       }
-      if (this.large && (discovered.has(zn.id) || target)) {
-        ctx.font = `italic ${Math.round(11 * dpr)}px Georgia, serif`;
-        ctx.fillStyle = "rgba(255, 230, 200, 0.85)";
-        ctx.fillText(`${zn.name} (${zn.levels[0]}–${zn.levels[1]})`, c.px, c.py);
-      }
-    }
-
-    // Landmarks (only once discovered; your god's shrine and the campsite always).
-    ctx.font = `${Math.round(11 * dpr)}px Cinzel, Georgia, serif`;
-    for (const l of this.world.landmarks) {
-      const always = l.kind === "camp" || (l.kind === "shrine" && l.faith === ctxInfo?.faith);
-      if (l.discoverRadius === 0 || (!discovered.has(l.id) && !always)) continue;
-      const { px, py } = toPx(l.x, l.z);
-      this.drawLandmark(ctx, l, px, py, dpr, !!l.gate && !openGates.has(l.gate), l.faith === ctxInfo?.faith);
       if (this.large) {
-        ctx.fillStyle = "#f3e6c4";
-        ctx.fillText(l.name, px, py - 9 * dpr);
+        ctx.fillStyle = "#c8b890";
+        ctx.font = `italic ${Math.round(10 * dpr)}px Georgia, serif`;
+        ctx.textAlign = "center";
+        for (const r of CRYPT_ROOMS) {
+          if (!r.name) continue;
+          const c = cryptPoint((r.x0 + r.x1) / 2, (r.z0 + r.z1) / 2);
+          const { px, py } = toPx(c.x, c.z);
+          ctx.fillText(r.name, px, py);
+        }
+      }
+    } else {
+      ctx.imageSmoothingEnabled = true;
+      const tl = { px: W / 2 + (U0 - cu) * scale, py: H / 2 + (V0 - cv) * scale };
+      if (ctxInfo?.hasMap) ctx.drawImage(this.bg, tl.px, tl.py, (U1 - U0) * scale, (V1 - V0) * scale);
+      else {
+        // Unexplored land is blank parchment.
+        ctx.fillStyle = "#2a2620";
+        ctx.fillRect(0, 0, W, H);
+        ctx.drawImage(this.explored, tl.px, tl.py, (U1 - U0) * scale, (V1 - V0) * scale);
+      }
+
+      // Hunting grounds: named on the large map once found; the quest's target ground is ringed.
+      ctx.textAlign = "center";
+      for (const zn of ZONES) {
+        const c = toPx(...xz(zn.u, zn.v));
+        const target = !!ctxInfo?.objectiveZones?.includes(zn.id);
+        if (target) {
+          ctx.save();
+          ctx.setLineDash([4 * dpr, 4 * dpr]);
+          ctx.strokeStyle = "#fff3b0";
+          ctx.lineWidth = 1.5 * dpr;
+          ctx.beginPath();
+          ctx.arc(c.px, c.py, zn.radius * scale, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+        if (this.large && (discovered.has(zn.id) || target)) {
+          ctx.font = `italic ${Math.round(11 * dpr)}px Georgia, serif`;
+          ctx.fillStyle = "rgba(255, 230, 200, 0.85)";
+          ctx.fillText(`${zn.name} (${zn.levels[0]}–${zn.levels[1]})`, c.px, c.py);
+        }
+      }
+
+      // Landmarks (only once discovered; your god's shrine and the campsite always).
+      ctx.font = `${Math.round(11 * dpr)}px Cinzel, Georgia, serif`;
+      for (const l of this.world.landmarks) {
+        const always = l.kind === "camp" || (l.kind === "shrine" && l.faith === ctxInfo?.faith);
+        if (l.discoverRadius === 0 || (!discovered.has(l.id) && !always)) continue;
+        const { px, py } = toPx(l.x, l.z);
+        this.drawLandmark(ctx, l, px, py, dpr, !!l.gate && !openGates.has(l.gate), l.faith === ctxInfo?.faith);
+        if (this.large) {
+          ctx.fillStyle = "#f3e6c4";
+          ctx.fillText(l.name, px, py - 9 * dpr);
+        }
       }
     }
 

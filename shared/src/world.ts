@@ -7,11 +7,13 @@
  * states (sealed/open) are synced.
  */
 import { PLAYER_RADIUS, WATER_INTERACT_RANGE, WORLD_HALF } from "./constants.ts";
+import { CRYPT_ORIGIN, cryptPoint, cryptSdf, inCrypt } from "./crypt.ts";
 import { mulberry32, randRange } from "./rng.ts";
 import {
   CAMP,
   CAMP_CLEARING_RADIUS,
   CARAVAN_CLEARING_RADIUS,
+  WOLF_DEN,
   DUNGEON_CELL,
   dungeonSdf,
   inDungeon,
@@ -88,6 +90,10 @@ export type StructureKind =
   | "vendor_cart"
   /** The castle dungeon cell you're thrown into. */
   | "cell"
+  /** The crypt under Ashford: rooms, walls, torches and the thorn heart, from the shared floor plan. */
+  | "crypt_dungeon"
+  /** Greyjaw's den in Greypine Wood. */
+  | "wolf_den"
   /** Ashford's buildings and yard (see VILLAGE_PIECES). */
   | VillagePieceKind;
 
@@ -356,6 +362,18 @@ function buildStructures(): { structures: Structure[]; colliders: Collider[] } {
       default:
         add({ kind: piece.kind, ...p, rotation: rot, scale: 1 }, piece.kind === "headstone" ? 0.3 : piece.kind === "crypt" ? 0.9 : undefined);
     }
+  }
+
+  // The wolves' den in Greypine Wood: a root hollow and rocks.
+  const den = fromUV(WOLF_DEN.u, WOLF_DEN.v);
+  add({ kind: "wolf_den", ...den, rotation: 0.3, scale: 1 }, 1.4);
+
+  // The crypt under Ashford, far away: drawn as one piece from its floor plan (walls come from cryptSdf).
+  add({ kind: "crypt_dungeon", x: CRYPT_ORIGIN.x, z: CRYPT_ORIGIN.z, rotation: 0, scale: 1 });
+  // Pillars and sarcophagi to fight around.
+  for (const [lx, lz, r] of [[18, -3.5, 0.5], [24, -3.5, 0.5], [18, 3.5, 0.5], [24, 3.5, 0.5], [17, 22, 0.9], [25, 18, 0.9], [41, 14.5, 0.6], [41, 25.5, 0.6], [50, 14.5, 0.6], [50, 25.5, 0.6]] as const) {
+    const c = cryptPoint(lx, lz);
+    colliders.push({ x: c.x, z: c.z, r });
   }
 
   // The dungeon cell, far away: a cot and a bucket to bump into.
@@ -658,8 +676,9 @@ export function resolveCollisions(world: World, x: number, z: number, radius = P
   return { x: Math.max(-lim, Math.min(lim, x)), z: Math.max(-lim, Math.min(lim, z)) };
 }
 
-/** Where you can walk: the valley, or (far away) the dungeon cell. */
+/** Where you can walk: the valley, or (far away) the dungeon cell or the crypt under Ashford. */
 export function walkableSdf(x: number, z: number): number {
+  if (inCrypt(x, z)) return cryptSdf(x, z);
   return inDungeon(x, z) ? dungeonSdf(x, z) : valleySdf(x, z);
 }
 

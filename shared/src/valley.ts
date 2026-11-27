@@ -1,3 +1,4 @@
+import { CRYPT_HEART, CRYPT_STAIRS, cryptPoint, inCrypt } from "./crypt.ts";
 import { ADVENTURERS } from "./adventurers.ts";
 
 /**
@@ -81,6 +82,9 @@ export const CAVE_ALCOVE_START = { u: -900, v: -1450 };
 export const CAVE_ALCOVE_RADIUS = 5;
 
 export const RUINS_CENTER = { u: -800, v: 1250 };
+
+/** The wolves' den: a hollow under the roots in the south of Greypine Wood, where Greyjaw lairs. */
+export const WOLF_DEN = { u: 200, v: -420 };
 export const RUINS_ROTATION = 0.35;
 
 /** Where you wake: the west bank of the stream, south of the valley's middle. */
@@ -393,9 +397,14 @@ export function terrainHeight(x: number, z: number): number {
 /** Centre of the cell (world x/z), well outside the valley's map. */
 export const DUNGEON_CELL = { x: 8000, z: 40, halfW: 3.2, halfD: 2.6 };
 
-/** Anywhere in the dungeon's patch of the world. */
-export function inDungeon(x: number, z: number): boolean {
+/** Inside the castle cell's patch of the world. */
+export function inCell(x: number, z: number): boolean {
   return Math.abs(x - DUNGEON_CELL.x) < 40 && Math.abs(z - DUNGEON_CELL.z) < 40;
+}
+
+/** Anywhere underground and far from the valley: the castle cell or the crypt under Ashford. */
+export function inDungeon(x: number, z: number): boolean {
+  return inCell(x, z) || inCrypt(x, z);
 }
 
 /** Signed distance to the cell walls (positive inside). */
@@ -556,6 +565,47 @@ export function landmarks(): LandmarkDef[] {
       verb: "Inspect the crypt",
       lockedText: "Stone steps lead down under the chapel to an iron door. Black thorns have pushed up between the flagstones.",
       discoverRadius: 0,
+    },
+    // The crypt under the chapel (far away, like the cell): the stairs back up, the thorn chamber, the heart.
+    {
+      id: "crypt_stairs",
+      kind: "inspect",
+      name: "Stairs to the Chapel",
+      ...CRYPT_STAIRS,
+      interactRadius: 2.4,
+      verb: "Climb back up",
+      lockedText: "",
+      discoverRadius: 0,
+    },
+    {
+      id: "crypt_thorns",
+      kind: "inspect",
+      name: "The Thorn Chamber",
+      ...cryptPoint(42, 20),
+      interactRadius: 0,
+      verb: "",
+      lockedText: "",
+      discoverRadius: 0,
+    },
+    {
+      id: "crypt_heart",
+      kind: "inspect",
+      name: "Heart of the Thorns",
+      ...CRYPT_HEART,
+      interactRadius: 3,
+      verb: "Inspect the thorns",
+      lockedText: "A knot of black thorns as thick as a man, pulsing faintly. The roots run down into the rock, deeper than you can see.",
+      discoverRadius: 0,
+    },
+    {
+      id: "wolf_den",
+      kind: "inspect",
+      name: "The Wolves' Den",
+      ...at(WOLF_DEN.u, WOLF_DEN.v),
+      interactRadius: 2.6,
+      verb: "Look into the den",
+      lockedText: "A hollow under the roots of a fallen pine. Gnawed bones, tufts of grey fur and the reek of wet dog.",
+      discoverRadius: 16,
     },
     {
       id: "dungeon_cell",

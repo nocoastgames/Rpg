@@ -72,7 +72,11 @@ export function levelGapMultiplier(attackerLevel: number, defenderLevel: number)
   return Math.min(2.5, Math.max(0.25, 1 + LEVEL_GAP_STEP * (attackerLevel - defenderLevel)));
 }
 
-/** Experience required to go from `level` to `level + 1`. */
+/**
+ * Experience required to go from `level` to `level + 1`. Tuned with the
+ * starting quests: level 2 as Shelter is finished, level 3 as Teeth in the
+ * Pines is (see docs/VALLEY.md, "Pacing").
+ */
 export function xpForNextLevel(level: number): number {
-  return Math.round(60 * Math.pow(level, 1.6));
+  return Math.round(360 * Math.pow(level, 1.15));
 }
